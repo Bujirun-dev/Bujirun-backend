@@ -16,7 +16,7 @@ import reactor.core.scheduler.Schedulers;
  * 사용 시점: 배포 직후 초기 데이터 적재, 즉시 갱신 필요 시
  */
 @RestController
-@RequestMapping("/admin/migration")
+@RequestMapping("/api/admin/migration")
 @RequiredArgsConstructor
 public class MigrationController {
 
