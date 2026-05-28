@@ -3,11 +3,10 @@ spring:
     url: ${DB_URL:jdbc:postgresql://localhost:5432/bujirun}
     username: ${DB_USERNAME:bujirun}
     password: ${DB_PASSWORD:bujirun}
-    driver-class-name: org.postgresql.Driver
   jpa:
     hibernate:
       ddl-auto: validate
-    show-sql: true
+    show-sql: false
     properties:
       hibernate:
         dialect: org.hibernate.dialect.PostgreSQLDialect
@@ -18,3 +17,6 @@ spring:
 
 server:
   port: 8080
+
+tourapi:
+  service-key: ${TOURAPI_SERVICE_KEY}
