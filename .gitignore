@@ -40,3 +40,11 @@ out/
 .env
 application-local.yaml
 application-secret.yaml
+
+### Mac ###
+.DS_Store
+**/.DS_Store
+
+### Postman ###
+.postman/
+postman/

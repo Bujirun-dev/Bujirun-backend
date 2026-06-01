@@ -20,3 +20,7 @@ server:
 
 tourapi:
   service-key: ${TOURAPI_SERVICE_KEY}
+
+groq:
+  api:
+    key: ${GROQ_API_KEY}
