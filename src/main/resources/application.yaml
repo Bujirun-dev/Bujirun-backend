@@ -14,6 +14,9 @@ spring:
     enabled: true
     locations: classpath:db/migration
     baseline-on-migrate: true
+  mvc:
+    async:
+      request-timeout: -1  # 타임아웃 없음
 
 server:
   port: 8080
