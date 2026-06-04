@@ -128,7 +128,8 @@ public class MigrationService {
                 tourApiClient.fetchDetailIntro(contentId);
 
         Sigungu sigungu = sigunguRepository.findByCode(item.getSigungucode()).orElse(null);
-        String category = CATEGORY_MAP.getOrDefault(item.getContenttypeid(), "기타");
+//        String category = CATEGORY_MAP.getOrDefault(item.getContenttypeid(), "기타");
+        String category = resolveCategory(item.getCat1());
         String operatingHours = intro.map(DetailIntroResponse.IntroItem::getUsetime).orElse(null);
 
         Optional<TourSpot> existing = tourSpotRepository.findByContentId(contentId);
@@ -176,6 +177,18 @@ public class MigrationService {
         if (t.contains("카페")    || t.contains("루프탑"))                       tags.add("카페");
 
         return tags;
+    }
+
+    private String resolveCategory(String cat1) {
+        if (cat1 == null) return "관광지";
+        return switch (cat1) {
+            case "A01" -> "자연·공원";
+            case "A02" -> "역사·문화";
+            case "A03" -> "체험·놀이";
+            case "A04" -> "쇼핑";
+            case "A05" -> "음식";
+            default    -> "관광지";
+        };
     }
 
     // 기존 parseDouble 메서드 교체
