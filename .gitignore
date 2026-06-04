@@ -40,3 +40,5 @@ out/
 .env
 application-local.yaml
 application-secret.yaml
+
+docker-compose.yml
