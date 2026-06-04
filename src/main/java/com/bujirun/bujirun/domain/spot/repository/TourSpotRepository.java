@@ -47,4 +47,10 @@ public interface TourSpotRepository extends JpaRepository<TourSpot, UUID> {
             """, nativeQuery = true)
     List<TourSpot> findUnvisited(@Param("userId") String userId,
                                  @Param("limit") int limit);
+
+    List<TourSpot> findByContentIdIn(List<String> contentIds);
+
+    List<TourSpot> findByCategoryInOrderByName(List<String> categories);
 }
+
+

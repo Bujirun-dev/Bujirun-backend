@@ -37,6 +37,7 @@ public class TourApiResponse {
             private String firstimage;
             private String mapx;        // 경도 → lng
             private String mapy;        // 위도 → lat
+            private String cat1;        // 카테고리
         }
     }
 
