@@ -14,10 +14,10 @@ import java.util.Optional;
 @Component
 public class TourApiClient {
 
-    private static final String BASE_URL          = "https://apis.data.go.kr/B551011/KorService2";
-    private static final int    AREA_CODE_BUSAN   = 6;
-    private static final int    CONTENT_TYPE_SPOT = 12;
-    private static final int    NUM_OF_ROWS       = 1000;
+    private static final String BASE_URL        = "https://apis.data.go.kr/B551011/KorService2";
+    private static final int    AREA_CODE_BUSAN = 6;
+    private static final int CONTENT_TYPE_SPOT = 12;
+    private static final int    NUM_OF_ROWS     = 1000;
 
     private final WebClient webClient;
     private final String    serviceKey;
@@ -28,18 +28,19 @@ public class TourApiClient {
         this.serviceKey = serviceKey;
     }
 
+    // contentTypeId 파라미터 제거 → 전체 타입 조회
     public AreaListResponse fetchAreaList(int pageNo) {
         log.info("[TourAPI] areaBasedList - pageNo={}", pageNo);
         return webClient.get()
                 .uri(uri -> uri.path("/areaBasedList2")
-                        .queryParam("serviceKey",    serviceKey)
-                        .queryParam("MobileOS",      "ETC")
-                        .queryParam("MobileApp",     "BujiRun")
-                        .queryParam("_type",         "json")
-                        .queryParam("areaCode",      AREA_CODE_BUSAN)
+                        .queryParam("serviceKey", serviceKey)
+                        .queryParam("MobileOS",   "ETC")
+                        .queryParam("MobileApp",  "BujiRun")
+                        .queryParam("_type",      "json")
                         .queryParam("contentTypeId", CONTENT_TYPE_SPOT)
-                        .queryParam("numOfRows",     NUM_OF_ROWS)
-                        .queryParam("pageNo",        pageNo)
+                        .queryParam("areaCode",   AREA_CODE_BUSAN)
+                        .queryParam("numOfRows",  NUM_OF_ROWS)
+                        .queryParam("pageNo",     pageNo)
                         .build())
                 .retrieve()
                 .bodyToMono(AreaListResponse.class)
