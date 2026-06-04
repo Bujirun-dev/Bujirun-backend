@@ -41,6 +41,7 @@ out/
 application-local.yaml
 application-secret.yaml
 
+docker-compose.yml
 ### Mac ###
 .DS_Store
 **/.DS_Store
