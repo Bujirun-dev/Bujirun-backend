@@ -1,11 +1,10 @@
-package com.bujirun.bujirun.domain.schedule.client;
+package com.bujirun.bujirun.domain.itinerary.generate.client;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 import org.springframework.web.reactive.function.client.WebClient;
-import reactor.core.publisher.Mono;
 
 import java.util.List;
 import java.util.Map;

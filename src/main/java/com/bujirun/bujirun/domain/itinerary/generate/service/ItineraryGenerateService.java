@@ -1,9 +1,9 @@
-package com.bujirun.bujirun.domain.schedule.service;
+package com.bujirun.bujirun.domain.itinerary.generate.service;
 
-import com.bujirun.bujirun.domain.schedule.client.GroqClient;
-import com.bujirun.bujirun.domain.schedule.dto.ScheduleResponse;
-import com.bujirun.bujirun.domain.schedule.dto.SpotInfo;
-import com.bujirun.bujirun.domain.schedule.dto.SwipeRequest;
+import com.bujirun.bujirun.domain.itinerary.generate.client.GroqClient;
+import com.bujirun.bujirun.domain.itinerary.generate.dto.response.ItineraryGenerateResponse;
+import com.bujirun.bujirun.domain.itinerary.generate.dto.response.SpotInfo;
+import com.bujirun.bujirun.domain.itinerary.generate.dto.request.SwipeRequest;
 import com.bujirun.bujirun.domain.spot.entity.TourSpot;
 import com.bujirun.bujirun.domain.spot.repository.TourSpotRepository;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -18,13 +18,13 @@ import java.util.stream.Collectors;
 @Slf4j
 @Service
 @RequiredArgsConstructor
-public class ScheduleService {
+public class ItineraryGenerateService {
 
     private final GroqClient groqClient;
     private final TourSpotRepository tourSpotRepository;
     private final ObjectMapper objectMapper;
 
-    public ScheduleResponse generateSchedule(SwipeRequest request) {
+    public ItineraryGenerateResponse generateSchedule(SwipeRequest request) {
 
         // 1. 스와이프 결과에서 contentId 목록 추출
         List<String> likedIds = request.getSwipes().stream()
@@ -146,7 +146,7 @@ public class ScheduleService {
         return sb.toString();
     }
 
-    private ScheduleResponse parseResponse(String rawResponse, List<SpotInfo> candidates) {
+    private ItineraryGenerateResponse parseResponse(String rawResponse, List<SpotInfo> candidates) {
         try {
             // JSON 앞뒤 불필요한 텍스트 제거
             String json = rawResponse.trim();
@@ -160,7 +160,7 @@ public class ScheduleService {
             Map<String, SpotInfo> spotMap = candidates.stream()
                     .collect(Collectors.toMap(SpotInfo::getContentId, s -> s));
 
-            return ScheduleResponse.builder()
+            return ItineraryGenerateResponse.builder()
                     .planA(parsePlan(root.get("planA"), spotMap))
                     .planB(parsePlan(root.get("planB"), spotMap))
                     .planC(parsePlan(root.get("planC"), spotMap))
@@ -172,10 +172,10 @@ public class ScheduleService {
         }
     }
 
-    private ScheduleResponse.PlanOption parsePlan(JsonNode planNode, Map<String, SpotInfo> spotMap) {
+    private ItineraryGenerateResponse.PlanOption parsePlan(JsonNode planNode, Map<String, SpotInfo> spotMap) {
         if (planNode == null) return null;
 
-        List<ScheduleResponse.DayPlan> days = new ArrayList<>();
+        List<ItineraryGenerateResponse.DayPlan> days = new ArrayList<>();
         JsonNode daysNode = planNode.get("days");
 
         if (daysNode != null && daysNode.isArray()) {
@@ -192,14 +192,14 @@ public class ScheduleService {
                     }
                 }
 
-                days.add(ScheduleResponse.DayPlan.builder()
+                days.add(ItineraryGenerateResponse.DayPlan.builder()
                         .day(day)
                         .spots(spots)
                         .build());
             }
         }
 
-        return ScheduleResponse.PlanOption.builder()
+        return ItineraryGenerateResponse.PlanOption.builder()
                 .type(planNode.path("type").asText())
                 .label(planNode.path("label").asText())
                 .description(planNode.path("description").asText())
