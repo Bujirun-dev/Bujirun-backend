@@ -27,5 +27,6 @@ public class ItineraryGenerateResponse {
     public static class DayPlan {
         private int day;
         private List<SpotInfo> spots;
+        private List<TransitRouteResponse> routes; // 구간별 이동 정보 (spots[0]→spots[1], spots[1]→spots[2] ...)
     }
 }
