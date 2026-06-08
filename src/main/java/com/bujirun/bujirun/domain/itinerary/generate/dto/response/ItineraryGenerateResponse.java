@@ -1,4 +1,4 @@
-package com.bujirun.bujirun.domain.schedule.dto;
+package com.bujirun.bujirun.domain.itinerary.generate.dto.response;
 
 import lombok.Builder;
 import lombok.Getter;
@@ -7,7 +7,7 @@ import java.util.List;
 
 @Getter
 @Builder
-public class ScheduleResponse {
+public class ItineraryGenerateResponse {
 
     private PlanOption planA; // 취향 집중형
     private PlanOption planB; // 균형 최적형

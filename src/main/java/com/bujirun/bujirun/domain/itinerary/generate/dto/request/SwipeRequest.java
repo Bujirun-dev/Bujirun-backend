@@ -1,4 +1,4 @@
-package com.bujirun.bujirun.domain.schedule.dto;
+package com.bujirun.bujirun.domain.itinerary.generate.dto.request;
 
 import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.NotNull;
