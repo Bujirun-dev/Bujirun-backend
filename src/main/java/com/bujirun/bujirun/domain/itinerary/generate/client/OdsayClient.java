@@ -1,10 +1,13 @@
 package com.bujirun.bujirun.domain.itinerary.generate.client;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import io.netty.resolver.DefaultAddressResolverGroup;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.client.reactive.ReactorClientHttpConnector;
 import org.springframework.stereotype.Component;
 import org.springframework.web.reactive.function.client.WebClient;
+import reactor.netty.http.client.HttpClient;
 
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
@@ -20,6 +23,9 @@ public class OdsayClient {
         this.apiKey = apiKey;
         this.webClient = WebClient.builder()
                 .baseUrl("https://api.odsay.com/v1/api")
+                .clientConnector(new ReactorClientHttpConnector(
+                        HttpClient.create().resolver(DefaultAddressResolverGroup.INSTANCE)
+                ))
                 .build();
     }
 
