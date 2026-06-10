@@ -2,6 +2,7 @@ package com.bujirun.bujirun.domain.itinerary.generate.service;
 
 import com.bujirun.bujirun.domain.itinerary.generate.client.OdsayClient;
 import com.bujirun.bujirun.domain.itinerary.generate.dto.response.SpotInfo;
+import com.bujirun.bujirun.domain.itinerary.generate.dto.response.SubPath;
 import com.bujirun.bujirun.domain.itinerary.generate.dto.response.TransitOption;
 import com.bujirun.bujirun.domain.itinerary.generate.dto.response.TransitRouteResponse;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -10,6 +11,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 
 @Slf4j
@@ -49,6 +51,7 @@ public class TransitRouteService {
             options.add(calcWalk(distanceM));
             options.add(calcTaxi(distanceM));
 
+            options.sort(Comparator.comparingInt(TransitOption::totalTime));
             routes.add(new TransitRouteResponse(options));
         }
 
@@ -57,41 +60,51 @@ public class TransitRouteService {
 
     private TransitOption parseTransit(JsonNode root) {
         JsonNode path = root.path("result").path("path").get(0);
-        if (path == null) return null;
+        if (path == null) {
+            log.warn("ODsay 경로 없음 (결과 path null)");
+            return null;
+        }
 
         JsonNode info = path.path("info");
-        String transitType = "대중교통";
-        String routeNo = "";
+        List<SubPath> subPaths = new ArrayList<>();
 
-        JsonNode subPaths = path.path("subPath");
-        if (subPaths.isArray()) {
-            for (JsonNode sub : subPaths) {
+        JsonNode subPathNodes = path.path("subPath");
+        if (subPathNodes.isArray()) {
+            for (JsonNode sub : subPathNodes) {
                 int trafficType = sub.path("trafficType").asInt();
-                if (trafficType == 1) {
-                    transitType = "지하철";
-                    routeNo = sub.path("lane").get(0).path("name").asText();
-                    break;
+                if (trafficType == 3) {
+                    // 도보 구간
+                    subPaths.add(new SubPath("도보", sub.path("sectionTime").asInt(), "", 0));
                 } else if (trafficType == 2) {
-                    transitType = "버스";
-                    routeNo = sub.path("lane").get(0).path("busNo").asText();
-                    break;
+                    // 버스 구간
+                    String busNo = sub.path("lane").get(0).path("busNo").asText();
+                    subPaths.add(new SubPath("버스", sub.path("sectionTime").asInt(), busNo, sub.path("stationCount").asInt()));
+                } else if (trafficType == 1) {
+                    // 지하철 구간
+                    String lineName = sub.path("lane").get(0).path("name").asText();
+                    subPaths.add(new SubPath("지하철", sub.path("sectionTime").asInt(), lineName, sub.path("stationCount").asInt()));
                 }
             }
         }
 
-        return new TransitOption(
-                transitType,
+        log.info("ODsay 경로 조회 성공 — {}분 · {}원 · 환승{}회",
                 info.path("totalTime").asInt(),
                 info.path("payment").asInt(),
-                routeNo,
+                info.path("busTransitCount").asInt() + info.path("subwayTransitCount").asInt());
+
+        return new TransitOption(
+                "대중교통",
+                info.path("totalTime").asInt(),
+                info.path("payment").asInt(),
                 info.path("busTransitCount").asInt() + info.path("subwayTransitCount").asInt(),
-                false
+                false,
+                subPaths
         );
     }
 
     private TransitOption calcWalk(double distanceM) {
         int timeMin = (int) Math.ceil(distanceM / WALK_SPEED_MPS / 60);
-        return new TransitOption("도보", timeMin, 0, "", 0, true);
+        return new TransitOption("도보", timeMin, 0, 0, true, List.of());
     }
 
     private TransitOption calcTaxi(double distanceM) {
@@ -101,8 +114,8 @@ public class TransitRouteService {
         } else {
             fare = TAXI_BASE_FARE + (int) ((distanceM - TAXI_BASE_METER) * TAXI_EXTRA_FARE_PER_M);
         }
-        int timeMin = (int) Math.ceil(distanceM / 1000 / 30 * 60); // 평균 30km/h
-        return new TransitOption("택시", timeMin, fare, "", 0, true);
+        int timeMin = (int) Math.ceil(distanceM / 1000 / 30 * 60);
+        return new TransitOption("택시", timeMin, fare, 0, true, List.of());
     }
 
 //    하버사인

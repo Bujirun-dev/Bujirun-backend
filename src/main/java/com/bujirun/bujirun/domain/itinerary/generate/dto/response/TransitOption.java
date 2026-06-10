@@ -1,10 +1,12 @@
 package com.bujirun.bujirun.domain.itinerary.generate.dto.response;
 
+import java.util.List;
+
 public record TransitOption(
         String type,
         int totalTime,
         int totalFare,
-        String routeNo,
         int transferCount,
-        boolean estimated
+        boolean estimated,
+        List<SubPath> subPaths
 ) {}
