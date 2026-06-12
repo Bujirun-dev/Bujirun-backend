@@ -23,6 +23,7 @@ public class ItineraryGenerateService {
     private final GroqClient groqClient;
     private final TourSpotRepository tourSpotRepository;
     private final ObjectMapper objectMapper;
+    private final TransitRouteService transitRouteService;
 
     public ItineraryGenerateResponse generateSchedule(SwipeRequest request) {
 
@@ -195,6 +196,7 @@ public class ItineraryGenerateService {
                 days.add(ItineraryGenerateResponse.DayPlan.builder()
                         .day(day)
                         .spots(spots)
+                        .routes(transitRouteService.getRoutesForDay(spots))
                         .build());
             }
         }

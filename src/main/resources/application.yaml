@@ -27,3 +27,7 @@ tourapi:
 groq:
   api:
     key: ${GROQ_API_KEY}
+
+odsay:
+  api:
+    key: ${ODSAY_API_KEY}
