@@ -26,8 +26,12 @@ public class TransitRouteService {
     private static final int TAXI_BASE_METER = 2000;         // 기본요금 적용 거리 (2km)
     private static final double TAXI_EXTRA_FARE_PER_M = 100.0 / 132.0; // 100원/132m
 
-    public List<TransitRouteResponse> getRoutesForDay(List<SpotInfo> spots) {
+    public List<TransitRouteResponse> getRoutesForDay(List<SpotInfo> spots, String optimizationType) {
         List<TransitRouteResponse> routes = new ArrayList<>();
+
+        Comparator<TransitOption> comparator = "TRANSFER_MIN".equals(optimizationType)
+                ? Comparator.comparingInt(TransitOption::transferCount)
+                : Comparator.comparingInt(TransitOption::totalTime);
 
         for (int i = 0; i < spots.size() - 1; i++) {
             SpotInfo from = spots.get(i);
@@ -51,7 +55,7 @@ public class TransitRouteService {
             options.add(calcWalk(distanceM));
             options.add(calcTaxi(distanceM));
 
-            options.sort(Comparator.comparingInt(TransitOption::totalTime));
+            options.sort(comparator);
             routes.add(new TransitRouteResponse(options));
         }
 
