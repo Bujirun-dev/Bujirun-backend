@@ -25,7 +25,7 @@ public class ItineraryGenerateService {
     private final ObjectMapper objectMapper;
     private final TransitRouteService transitRouteService;
 
-    public ItineraryGenerateResponse generateSchedule(SwipeRequest request) {
+    public ItineraryGenerateResponse generateItinerary(SwipeRequest request) {
 
         // 1. 스와이프 결과에서 contentId 목록 추출
         List<String> likedIds = request.getSwipes().stream()
@@ -51,31 +51,39 @@ public class ItineraryGenerateService {
                 .limit(3)
                 .toList();
 
-        List<TourSpot> candidateSpots = tourSpotRepository
+        List<TourSpot> categorySpots = tourSpotRepository
                 .findByCategoryInOrderByName(preferredCategories)
                 .stream()
                 .filter(s -> !dislikedIds.contains(s.getContentId()))
-                .limit(30)
+                .filter(s -> !likedIds.contains(s.getContentId()))
+                .limit(30 - likedSpots.size())
                 .toList();
+
+        List<TourSpot> allCandidates = new ArrayList<>(likedSpots);
+        allCandidates.addAll(categorySpots);
 
         // 4. 여행 일수 계산
         long tripDays = request.getStartDate().until(request.getEndDate()).getDays() + 1;
 
         // 5. 후보 관광지를 SpotInfo로 변환
-        List<SpotInfo> candidates = candidateSpots.stream()
+        List<SpotInfo> candidates = allCandidates.stream()
+                .map(this::toSpotInfo)
+                .toList();
+
+        List<SpotInfo> likedSpotInfos = likedSpots.stream()
                 .map(this::toSpotInfo)
                 .toList();
 
         // 6. Groq 호출
         String systemPrompt = buildSystemPrompt();
-        String userPrompt = buildUserPrompt(preferenceVector, candidates, tripDays, request.getOptimizationType());
+        String userPrompt = buildUserPrompt(likedSpotInfos, preferenceVector, candidates, tripDays, request.getOptimizationType());
 
         log.info("Groq 호출 시작 - 후보 관광지 {}개, 여행 {}일", candidates.size(), tripDays);
         String rawResponse = groqClient.chat(systemPrompt, userPrompt);
         log.info("Groq 응답 수신 완료");
 
         // 7. JSON 파싱 → ScheduleResponse 변환
-        return parseResponse(rawResponse, candidates);
+        return parseResponse(rawResponse, candidates, request.getOptimizationType());
     }
 
     private String buildSystemPrompt() {
@@ -111,13 +119,20 @@ public class ItineraryGenerateService {
                 """;
     }
 
-    private String buildUserPrompt(Map<String, Long> preferenceVector,
+    private String buildUserPrompt(List<SpotInfo> likedSpots,
+                                   Map<String, Long> preferenceVector,
                                    List<SpotInfo> candidates,
                                    long tripDays,
                                    String optimizationType) {
         StringBuilder sb = new StringBuilder();
 
-        sb.append("## 사용자 성향 벡터 (카테고리별 선호도)\n");
+        sb.append("## 좋아요한 장소 목록\n");
+        likedSpots.forEach(spot ->
+                sb.append("- 이름: ").append(spot.getName())
+                        .append(", 카테고리: ").append(spot.getCategory())
+                        .append(", 지역: ").append(spot.getSigungu()).append("\n"));
+
+        sb.append("\n## 사용자 성향 벡터 (카테고리별 선호도)\n");
         preferenceVector.forEach((category, count) ->
                 sb.append("- ").append(category).append(": ").append(count).append("회 좋아요\n"));
 
@@ -125,6 +140,7 @@ public class ItineraryGenerateService {
                 switch (optimizationType != null ? optimizationType : "TIME_SHORT") {
                     case "WALK_MIN" -> "도보 최소화";
                     case "COST_SAVE" -> "비용 절약";
+                    case "TRANSFER_MIN" -> "환승 최소화";
                     default -> "시간 단축";
                 }
         ).append("\n");
@@ -142,12 +158,15 @@ public class ItineraryGenerateService {
         );
 
         sb.append("\n위 후보 관광지 중에서만 선택하여 A/B/C 3가지 일정을 생성하세요.");
-        sb.append("\nA안은 선호 카테고리 집중, B안은 지리적으로 가까운 관광지 묶기, C안은 다양한 카테고리 포함.");
+        sb.append("\nA안은 선호 카테고리에 집중하고, 위 좋아요한 장소 목록에 있는 장소를 일정에 최대한 포함하세요.");
+        sb.append("\nB안은 동선이 꼬이지 않도록 각 후보 관광지의 위도·경도를 기준으로 같은 권역(예: 수영구·해운대구, 중구·영도구 등 인접한 구/군)끼리 묶어서 묶음 단위로 하루 일정을 구성하세요. 서로 먼 권역의 관광지를 같은 날 또는 인접한 순서에 배치하지 마세요.");
+        sb.append("\nC안은 다양한 카테고리 포함.");
+        sb.append("\nA안은 선호 카테고리에 집중하고, 위 좋아요한 장소 목록에 있는 장소를 가능한 한 많이 포함하세요.");
 
         return sb.toString();
     }
 
-    private ItineraryGenerateResponse parseResponse(String rawResponse, List<SpotInfo> candidates) {
+    private ItineraryGenerateResponse parseResponse(String rawResponse, List<SpotInfo> candidates, String optimizationType) {
         try {
             // JSON 앞뒤 불필요한 텍스트 제거
             String json = rawResponse.trim();
@@ -162,9 +181,9 @@ public class ItineraryGenerateService {
                     .collect(Collectors.toMap(SpotInfo::getContentId, s -> s));
 
             return ItineraryGenerateResponse.builder()
-                    .planA(parsePlan(root.get("planA"), spotMap))
-                    .planB(parsePlan(root.get("planB"), spotMap))
-                    .planC(parsePlan(root.get("planC"), spotMap))
+                    .planA(parsePlan(root.get("planA"), spotMap, optimizationType))
+                    .planB(parsePlan(root.get("planB"), spotMap, optimizationType))
+                    .planC(parsePlan(root.get("planC"), spotMap, optimizationType))
                     .build();
 
         } catch (Exception e) {
@@ -173,7 +192,7 @@ public class ItineraryGenerateService {
         }
     }
 
-    private ItineraryGenerateResponse.PlanOption parsePlan(JsonNode planNode, Map<String, SpotInfo> spotMap) {
+    private ItineraryGenerateResponse.PlanOption parsePlan(JsonNode planNode, Map<String, SpotInfo> spotMap, String optimizationType) {
         if (planNode == null) return null;
 
         List<ItineraryGenerateResponse.DayPlan> days = new ArrayList<>();
@@ -196,7 +215,7 @@ public class ItineraryGenerateService {
                 days.add(ItineraryGenerateResponse.DayPlan.builder()
                         .day(day)
                         .spots(spots)
-                        .routes(transitRouteService.getRoutesForDay(spots))
+                        .routes(transitRouteService.getRoutesForDay(spots, optimizationType))
                         .build());
             }
         }

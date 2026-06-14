@@ -20,9 +20,9 @@ public class ItineraryGenerateController {
      * POST /api/itineraries/generate
      */
     @PostMapping("/generate")
-    public ApiResponse<ItineraryGenerateResponse> generateSchedule(
+    public ApiResponse<ItineraryGenerateResponse> generateItinerary(
             @Valid @RequestBody SwipeRequest request) {
-        ItineraryGenerateResponse response = itineraryGenerateService.generateSchedule(request);
+        ItineraryGenerateResponse response = itineraryGenerateService.generateItinerary(request);
         return ApiResponse.ok(response);
     }
 }

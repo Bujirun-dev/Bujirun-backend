@@ -19,7 +19,7 @@ public class SwipeRequest {
     @NotNull
     private LocalDate endDate;
 
-    private String optimizationType; // "WALK_MIN" | "COST_SAVE" | "TIME_SHORT"
+    private String optimizationType; // "WALK_MIN" | "COST_SAVE" | "TIME_SHORT" | "TRANSFER_MIN"
 
     @Getter
     public static class SwipeItem {
