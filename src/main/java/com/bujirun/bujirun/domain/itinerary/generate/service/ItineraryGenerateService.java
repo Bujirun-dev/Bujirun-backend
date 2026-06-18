@@ -94,25 +94,14 @@ public class ItineraryGenerateService {
                 {
                   "planA": {
                     "type": "A",
-                    "label": "취향 집중형",
-                    "description": "선호 태그에 집중한 일정",
-                    "days": [
-                      {
-                        "day": 1,
-                        "spotContentIds": ["contentId1", "contentId2", "contentId3"]
-                      }
-                    ]
+                    "label": "취향 집중 코스",
+                    "description": "공통 취향을 가장 많이 반영한 일정",
+                    "days": [...]
                   },
                   "planB": {
                     "type": "B",
-                    "label": "균형 최적형",
-                    "description": "이동 효율을 우선한 일정",
-                    "days": [...]
-                  },
-                  "planC": {
-                    "type": "C",
-                    "label": "자유 편집형",
-                    "description": "다양한 카테고리를 포함한 일정",
+                    "label": "뚜벅이 최적 코스",
+                    "description": "이동 시간을 줄이고 효율적으로 즐기는 일정",
                     "days": [...]
                   }
                 }
@@ -157,11 +146,10 @@ public class ItineraryGenerateService {
                         .append(", 위치: (").append(spot.getLat()).append(", ").append(spot.getLng()).append(")\n")
         );
 
-        sb.append("\n위 후보 관광지 중에서만 선택하여 A/B/C 3가지 일정을 생성하세요.");
+        sb.append("\n위 후보 관광지 중에서만 선택하여 A/B 2가지 일정을 생성하세요.");
         sb.append("\nA안은 선호 카테고리에 집중하고, 위 좋아요한 장소 목록에 있는 장소를 일정에 최대한 포함하세요.");
         sb.append("\nB안은 동선이 꼬이지 않도록 각 후보 관광지의 위도·경도를 기준으로 같은 권역(예: 수영구·해운대구, 중구·영도구 등 인접한 구/군)끼리 묶어서 묶음 단위로 하루 일정을 구성하세요. 서로 먼 권역의 관광지를 같은 날 또는 인접한 순서에 배치하지 마세요.");
-        sb.append("\nC안은 다양한 카테고리 포함.");
-        sb.append("\nA안은 선호 카테고리에 집중하고, 위 좋아요한 장소 목록에 있는 장소를 가능한 한 많이 포함하세요.");
+
 
         return sb.toString();
     }
@@ -183,7 +171,7 @@ public class ItineraryGenerateService {
             return ItineraryGenerateResponse.builder()
                     .planA(parsePlan(root.get("planA"), spotMap, optimizationType))
                     .planB(parsePlan(root.get("planB"), spotMap, optimizationType))
-                    .planC(parsePlan(root.get("planC"), spotMap, optimizationType))
+                    .planC(null)  // C안은 프론트에서 처리
                     .build();
 
         } catch (Exception e) {
