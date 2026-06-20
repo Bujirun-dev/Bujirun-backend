@@ -6,6 +6,7 @@ import com.bujirun.bujirun.domain.itinerary.generate.dto.response.SpotInfo;
 import com.bujirun.bujirun.domain.itinerary.generate.dto.request.SwipeRequest;
 import com.bujirun.bujirun.domain.spot.entity.TourSpot;
 import com.bujirun.bujirun.domain.spot.repository.TourSpotRepository;
+import com.bujirun.bujirun.global.util.GeoUtils;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
@@ -171,8 +172,8 @@ public class ItineraryGenerateService {
                     .collect(Collectors.toMap(SpotInfo::getContentId, s -> s));
 
             return ItineraryGenerateResponse.builder()
-                    .planA(parsePlan(root.get("planA"), spotMap, optimizationType))
-                    .planB(parsePlan(root.get("planB"), spotMap, optimizationType))
+                    .planA(parsePlan(root.get("planA"), spotMap, optimizationType, false)) // A안: 취향 집중 → Groq 추천 순서 그대로 유지
+                    .planB(parsePlan(root.get("planB"), spotMap, optimizationType, true)) // B안: 뚜벅이 최적 → 좌표 기반 최근접 이웃으로 동선 재정렬
                     .planC(null)  // C안은 프론트에서 처리
                     .build();
 
@@ -182,7 +183,7 @@ public class ItineraryGenerateService {
         }
     }
 
-    private ItineraryGenerateResponse.PlanOption parsePlan(JsonNode planNode, Map<String, SpotInfo> spotMap, String optimizationType) {
+    private ItineraryGenerateResponse.PlanOption parsePlan(JsonNode planNode, Map<String, SpotInfo> spotMap, String optimizationType, boolean optimizeOrder) {
         if (planNode == null) return null;
 
         List<ItineraryGenerateResponse.DayPlan> days = new ArrayList<>();
@@ -207,6 +208,10 @@ public class ItineraryGenerateService {
                     }
                 }
 
+                if (optimizeOrder && spots.size() > 2) {
+                    spots = sortByNearestNeighbor(spots);
+                }
+
                 days.add(ItineraryGenerateResponse.DayPlan.builder()
                         .day(day)
                         .spots(spots)
@@ -223,6 +228,36 @@ public class ItineraryGenerateService {
                 .build();
     }
 
+    private List<SpotInfo> sortByNearestNeighbor(List<SpotInfo> spots) {
+        List<SpotInfo> remaining = new ArrayList<>(spots);
+        List<SpotInfo> sorted = new ArrayList<>();
+
+        SpotInfo current = remaining.remove(0);
+        sorted.add(current);
+
+        while (!remaining.isEmpty()) {
+            SpotInfo nearest = null;
+            double minDist = Double.MAX_VALUE;
+
+            for (SpotInfo candidate : remaining) {
+                double dist = GeoUtils.haversineDistance(
+                        current.getLat(), current.getLng(),
+                        candidate.getLat(), candidate.getLng()
+                );
+                if (dist < minDist) {
+                    minDist = dist;
+                    nearest = candidate;
+                }
+            }
+
+            sorted.add(nearest);
+            remaining.remove(nearest);
+            current = nearest;
+        }
+
+        return sorted;
+    }
+    
     private SpotInfo toSpotInfo(TourSpot spot) {
         return SpotInfo.builder()
                 .contentId(spot.getContentId())
