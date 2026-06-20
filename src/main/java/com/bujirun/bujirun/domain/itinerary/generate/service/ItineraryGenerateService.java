@@ -89,7 +89,9 @@ public class ItineraryGenerateService {
     private String buildSystemPrompt() {
         return """
                 당신은 부산 여행 일정을 생성하는 전문가입니다.
-                반드시 아래 JSON 형식만 출력하세요. 설명이나 마크다운 없이 순수 JSON만 출력하세요.
+                            반드시 아래 JSON 형식만 출력하세요. 설명이나 마크다운 없이 순수 JSON만 출력하세요.
+                            필드명과 타입을 정확히 지키세요. "day"는 1부터 시작하는 정수이며, "date"가 아닙니다.
+                            "spotContentIds"는 contentId 문자열 배열이며, "places" 같은 객체 배열이 아닙니다.
                 
                 {
                   "planA": {
@@ -188,13 +190,18 @@ public class ItineraryGenerateService {
 
         if (daysNode != null && daysNode.isArray()) {
             for (JsonNode dayNode : daysNode) {
-                int day = dayNode.get("day").asInt();
-                List<SpotInfo> spots = new ArrayList<>();
+                JsonNode dayField = dayNode.get("day");
+                if (dayField == null || !dayField.isInt()) {
+                    log.warn("day 필드 누락 또는 형식 불일치, 해당 day 스킵: {}", dayNode);
+                    continue;
+                }
+                int day = dayField.asInt();
 
+                List<SpotInfo> spots = new ArrayList<>();
                 JsonNode spotIds = dayNode.get("spotContentIds");
                 if (spotIds != null && spotIds.isArray()) {
                     for (JsonNode idNode : spotIds) {
-                        String contentId = idNode.asText();
+                        String contentId = idNode.isTextual() ? idNode.asText() : String.valueOf(idNode.asLong());
                         SpotInfo spot = spotMap.get(contentId);
                         if (spot != null) spots.add(spot);
                     }
