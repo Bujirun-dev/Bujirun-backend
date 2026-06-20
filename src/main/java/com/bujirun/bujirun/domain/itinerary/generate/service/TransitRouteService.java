@@ -77,16 +77,35 @@ public class TransitRouteService {
             for (JsonNode sub : subPathNodes) {
                 int trafficType = sub.path("trafficType").asInt();
                 if (trafficType == 3) {
-                    // 도보 구간
-                    subPaths.add(new SubPath("도보", sub.path("sectionTime").asInt(), "", 0));
+                    // 도보 구간 — 정류장 정보 없음
+                    subPaths.add(new SubPath(
+                            "도보", sub.path("sectionTime").asInt(), "", 0,
+                            "", "", 0, 0, 0, 0
+                    ));
                 } else if (trafficType == 2) {
                     // 버스 구간
                     String busNo = sub.path("lane").get(0).path("busNo").asText();
-                    subPaths.add(new SubPath("버스", sub.path("sectionTime").asInt(), busNo, sub.path("stationCount").asInt()));
+                    subPaths.add(new SubPath(
+                            "버스", sub.path("sectionTime").asInt(), busNo, sub.path("stationCount").asInt(),
+                            sub.path("startName").asText(),
+                            sub.path("endName").asText(),
+                            sub.path("startX").asDouble(),
+                            sub.path("startY").asDouble(),
+                            sub.path("endX").asDouble(),
+                            sub.path("endY").asDouble()
+                    ));
                 } else if (trafficType == 1) {
                     // 지하철 구간
                     String lineName = sub.path("lane").get(0).path("name").asText();
-                    subPaths.add(new SubPath("지하철", sub.path("sectionTime").asInt(), lineName, sub.path("stationCount").asInt()));
+                    subPaths.add(new SubPath(
+                            "지하철", sub.path("sectionTime").asInt(), lineName, sub.path("stationCount").asInt(),
+                            sub.path("startName").asText(),
+                            sub.path("endName").asText(),
+                            sub.path("startX").asDouble(),
+                            sub.path("startY").asDouble(),
+                            sub.path("endX").asDouble(),
+                            sub.path("endY").asDouble()
+                    ));
                 }
             }
         }
