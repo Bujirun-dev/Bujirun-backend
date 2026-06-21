@@ -11,7 +11,7 @@ import reactor.core.scheduler.Schedulers;
 
 /**
  * 수동 마이그레이션 실행 API (관리자 전용)
- * POST /admin/migration/run
+ * POST /api/admin/migration/run
  *
  * 사용 시점: 배포 직후 초기 데이터 적재, 즉시 갱신 필요 시
  */
