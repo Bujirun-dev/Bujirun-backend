@@ -25,6 +25,8 @@ public class ItineraryGenerateService {
     private final TourSpotRepository tourSpotRepository;
     private final ObjectMapper objectMapper;
     private final TransitRouteService transitRouteService;
+    private static final List<Double> RADIUS_STEPS_M = List.of(15_000.0, 25_000.0, 40_000.0); // 15km → 25km → 40km
+    private static final int MIN_CANDIDATES = 20; // 후보 장소 최소 개수
 
     public ItineraryGenerateResponse generateItinerary(SwipeRequest request) {
 
@@ -52,14 +54,33 @@ public class ItineraryGenerateService {
                 .limit(3)
                 .toList();
 
-        List<TourSpot> categorySpots = tourSpotRepository
+        // 3-1. 좋아요한 곳들의 중심 좌표 계산 (좋아요 0개면 null → 거리 필터 스킵)
+        Double centerLat = null;
+        Double centerLng = null;
+        if (!likedSpots.isEmpty()) {
+            List<TourSpot> spotsWithCoord = likedSpots.stream()
+                    .filter(s -> s.getLat() != null && s.getLng() != null)
+                    .toList();
+            if (!spotsWithCoord.isEmpty()) {
+                centerLat = spotsWithCoord.stream().mapToDouble(s -> s.getLat().doubleValue()).average().orElseThrow();
+                centerLng = spotsWithCoord.stream().mapToDouble(s -> s.getLng().doubleValue()).average().orElseThrow();
+            }
+        }
+
+        List<TourSpot> filteredByCategory = tourSpotRepository
                 .findByCategoryInOrderByName(preferredCategories)
                 .stream()
                 .filter(s -> !dislikedIds.contains(s.getContentId()))
                 .filter(s -> !likedIds.contains(s.getContentId()))
+                .toList();
+
+        // 3-2. 좋아요 중심 좌표 기준 거리 필터링 (반경 단계적으로 확대)
+        List<TourSpot> categorySpots = filterByRadiusWithFallback(filteredByCategory, centerLat, centerLng)
+                .stream()
                 .limit(30 - likedSpots.size())
                 .toList();
 
+        // 3-3. 좋아요한 곳 + 거리 필터링된 카테고리 후보 합치기
         List<TourSpot> allCandidates = new ArrayList<>(likedSpots);
         allCandidates.addAll(categorySpots);
 
@@ -270,5 +291,28 @@ public class ItineraryGenerateService {
                 .thumbnailUrl(spot.getThumbnailUrl())
                 .operatingHours(spot.getOperatingHours())
                 .build();
+    }
+
+    private List<TourSpot> filterByRadiusWithFallback(List<TourSpot> spots, Double centerLat, Double centerLng) {
+        if (centerLat == null) return spots; // 콜드 스타트(좋아요 0개 또는 좌표 없음) → 필터링 스킵
+
+        for (double radius : RADIUS_STEPS_M) {
+            List<TourSpot> filtered = spots.stream()
+                    .filter(s -> isWithinRadius(s, centerLat, centerLng, radius))
+                    .toList();
+            if (filtered.size() >= MIN_CANDIDATES) {
+                log.info("후보 반경 {}km 적용, {}개 확보", radius / 1000, filtered.size());
+                return filtered;
+            }
+        }
+        log.warn("반경을 최대로 넓혀도 후보 부족, 거리 필터링 없이 전체 후보 사용");
+        return spots;
+    }
+
+    private boolean isWithinRadius(TourSpot spot, double centerLat, double centerLng, double radiusM) {
+        if (spot.getLat() == null || spot.getLng() == null) return false;
+        double dist = GeoUtils.haversineDistance(centerLat, centerLng,
+                spot.getLat().doubleValue(), spot.getLng().doubleValue());
+        return dist <= radiusM;
     }
 }
