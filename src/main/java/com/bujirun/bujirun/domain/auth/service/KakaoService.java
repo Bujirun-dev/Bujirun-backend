@@ -5,6 +5,10 @@ import com.bujirun.bujirun.domain.auth.dto.KakaoTokenResponse;
 import com.bujirun.bujirun.domain.auth.dto.KakaoUserInfoResponse;
 import com.bujirun.bujirun.domain.auth.entity.User;
 import com.bujirun.bujirun.domain.auth.repository.UserRepository;
+import com.bujirun.bujirun.global.jwt.JwtProvider;
+import com.bujirun.bujirun.global.jwt.JwtProperties;
+import com.bujirun.bujirun.global.jwt.RefreshTokenRepository;
+import com.bujirun.bujirun.global.jwt.dto.TokenResponse;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
@@ -13,9 +17,6 @@ import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
 import org.springframework.web.client.RestClient;
 
-import com.bujirun.bujirun.global.jwt.JwtProvider;
-import com.bujirun.bujirun.global.jwt.dto.TokenResponse;
-
 @Service
 @RequiredArgsConstructor
 public class KakaoService {
@@ -23,6 +24,8 @@ public class KakaoService {
     private final KakaoConfig kakaoConfig;
     private final UserRepository userRepository;
     private final JwtProvider jwtProvider;
+    private final JwtProperties jwtProperties;                    // 만료 시간 가져오려고 추가
+    private final RefreshTokenRepository refreshTokenRepository;  // Redis 저장소 추가
 
     private static final String TOKEN_REQUEST_URL = "https://kauth.kakao.com/oauth/token";
     private static final String USER_INFO_REQUEST_URL = "https://kapi.kakao.com/v2/user/me";
@@ -74,13 +77,20 @@ public class KakaoService {
                                 .build()
                 ));
     }
-    // 4단계: 유저 정보로 JWT 토큰 발급
+
+    // 4단계: Access Token 발급
     public TokenResponse createToken(User user) {
         return jwtProvider.createTokenResponse(user.getId());
     }
-    // Refresh Token 생성 (쿠키 저장용)
-    public String createRefreshToken(User user) {
-        return jwtProvider.createRefreshToken(user.getId());
-    }
 
+    // Refresh Token 생성 + Redis에 저장
+    public String createRefreshToken(User user) {
+        String refreshToken = jwtProvider.createRefreshToken(user.getId());
+        refreshTokenRepository.save(
+                user.getId(),
+                refreshToken,
+                jwtProperties.getRefreshTokenExpiration() // 만료 시간(2주) 함께 저장
+        );
+        return refreshToken;
+    }
 }
