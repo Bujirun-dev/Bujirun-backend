@@ -2,9 +2,12 @@ package com.bujirun.bujirun.domain.auth.controller;
 
 import com.bujirun.bujirun.domain.auth.dto.KakaoTokenResponse;
 import com.bujirun.bujirun.domain.auth.dto.KakaoUserInfoResponse;
-import com.bujirun.bujirun.domain.auth.entity.User;  // ← ① import 추가
+import com.bujirun.bujirun.domain.auth.entity.User;
 import com.bujirun.bujirun.domain.auth.service.KakaoService;
+import com.bujirun.bujirun.global.jwt.dto.TokenResponse;
 import com.bujirun.bujirun.global.response.ApiResponse;
+import jakarta.servlet.http.Cookie;
+import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -18,19 +21,32 @@ public class KakaoController {
 
     // 카카오 로그인 콜백 엔드포인트
     // - 카카오 콘솔에 등록한 리다이렉트 URI와 경로가 정확히 일치해야 함
-    // - 사용자가 동의 화면에서 [동의하고 계속하기]를 누르면 카카오가 이 URL로 code를 실어서 호출함
     @GetMapping("/api/auth/kakao/callback")
-    public ApiResponse<User> kakaoCallback(@RequestParam("code") String code) {  // ← ② 반환 타입 변경
+    public ApiResponse<TokenResponse> kakaoCallback(
+            @RequestParam("code") String code,
+            HttpServletResponse response) {
 
-        // 1단계: 인가 코드(code) -> 카카오 액세스 토큰으로 교환
+        // 1단계: 인가 코드 -> 카카오 액세스 토큰
         KakaoTokenResponse tokenResponse = kakaoService.getToken(code);
 
-        // 2단계: 액세스 토큰 -> 사용자 정보(닉네임, 이메일 등) 조회
+        // 2단계: 액세스 토큰 -> 사용자 정보
         KakaoUserInfoResponse userInfo = kakaoService.getUserInfo(tokenResponse.getAccessToken());
 
-        // 3단계: DB에서 기존 회원 조회, 없으면 신규 가입
-        User user = kakaoService.findOrCreateUser(userInfo);  // ← ③ 이 줄 추가, TODO 주석 삭제
+        // 3단계: DB 회원가입/로그인 처리
+        User user = kakaoService.findOrCreateUser(userInfo);
 
-        return ApiResponse.ok(user);  // ← ④ userInfo → user로 변경
+        // 4단계: JWT 발급
+        TokenResponse token = kakaoService.createToken(user);
+
+        // Refresh Token을 httpOnly 쿠키에 저장 (TODO: Redis 연동 후 추가 예정)
+        Cookie refreshCookie = new Cookie("refresh_token",
+                kakaoService.createRefreshToken(user));
+        refreshCookie.setHttpOnly(true);  // JS에서 접근 불가 (보안)
+        refreshCookie.setPath("/");
+        refreshCookie.setMaxAge(60 * 60 * 24 * 14); // 2주
+        response.addCookie(refreshCookie);
+
+        // Access Token은 응답 바디로 전달
+        return ApiResponse.ok(token);
     }
 }

@@ -13,12 +13,16 @@ import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
 import org.springframework.web.client.RestClient;
 
+import com.bujirun.bujirun.global.jwt.JwtProvider;
+import com.bujirun.bujirun.global.jwt.dto.TokenResponse;
+
 @Service
 @RequiredArgsConstructor
 public class KakaoService {
 
     private final KakaoConfig kakaoConfig;
     private final UserRepository userRepository;
+    private final JwtProvider jwtProvider;
 
     private static final String TOKEN_REQUEST_URL = "https://kauth.kakao.com/oauth/token";
     private static final String USER_INFO_REQUEST_URL = "https://kapi.kakao.com/v2/user/me";
@@ -70,4 +74,13 @@ public class KakaoService {
                                 .build()
                 ));
     }
+    // 4단계: 유저 정보로 JWT 토큰 발급
+    public TokenResponse createToken(User user) {
+        return jwtProvider.createTokenResponse(user.getId());
+    }
+    // Refresh Token 생성 (쿠키 저장용)
+    public String createRefreshToken(User user) {
+        return jwtProvider.createRefreshToken(user.getId());
+    }
+
 }
