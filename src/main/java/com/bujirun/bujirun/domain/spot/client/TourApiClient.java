@@ -16,7 +16,6 @@ public class TourApiClient {
 
     private static final String BASE_URL        = "https://apis.data.go.kr/B551011/KorService2";
     private static final int    AREA_CODE_BUSAN = 6;
-    private static final int CONTENT_TYPE_SPOT = 12;
     private static final int    NUM_OF_ROWS     = 1000;
 
     private final WebClient webClient;
@@ -28,16 +27,15 @@ public class TourApiClient {
         this.serviceKey = serviceKey;
     }
 
-    // contentTypeId 파라미터 제거 → 전체 타입 조회
-    public AreaListResponse fetchAreaList(int pageNo) {
-        log.info("[TourAPI] areaBasedList - pageNo={}", pageNo);
+    public AreaListResponse fetchAreaList(int pageNo, int contentTypeId) {
+        log.info("[TourAPI] areaBasedList - contentTypeId={}, pageNo={}", contentTypeId, pageNo);
         return webClient.get()
                 .uri(uri -> uri.path("/areaBasedList2")
                         .queryParam("serviceKey", serviceKey)
                         .queryParam("MobileOS",   "ETC")
                         .queryParam("MobileApp",  "BujiRun")
                         .queryParam("_type",      "json")
-                        .queryParam("contentTypeId", CONTENT_TYPE_SPOT)
+                        .queryParam("contentTypeId", contentTypeId)
                         .queryParam("areaCode",   AREA_CODE_BUSAN)
                         .queryParam("numOfRows",  NUM_OF_ROWS)
                         .queryParam("pageNo",     pageNo)
@@ -48,7 +46,7 @@ public class TourApiClient {
                 .block();
     }
 
-    public Optional<DetailIntroResponse.IntroItem> fetchDetailIntro(String contentId) {
+    public Optional<DetailIntroResponse.IntroItem> fetchDetailIntro(String contentId, int contentTypeId) {
         try {
             DetailIntroResponse res = webClient.get()
                     .uri(uri -> uri.path("/detailIntro2")
@@ -57,7 +55,7 @@ public class TourApiClient {
                             .queryParam("MobileApp",     "BujiRun")
                             .queryParam("_type",         "json")
                             .queryParam("contentId",     contentId)
-                            .queryParam("contentTypeId", CONTENT_TYPE_SPOT)
+                            .queryParam("contentTypeId", contentTypeId)
                             .build())
                     .retrieve()
                     .bodyToMono(DetailIntroResponse.class)
@@ -70,7 +68,7 @@ public class TourApiClient {
                     .map(list -> list.get(0));
 
         } catch (Exception e) {
-            log.warn("[TourAPI] detailIntro 실패 - contentId={}, {}", contentId, e.getMessage());
+            log.warn("[TourAPI] detailIntro 실패 - contentId={}, contentTypeId={}, {}", contentId, contentTypeId, e.getMessage());
             return Optional.empty();
         }
     }
