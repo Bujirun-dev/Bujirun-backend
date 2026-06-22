@@ -46,6 +46,17 @@ public class TransitRouteService {
                         to.getLng(), to.getLat()
                 );
                 TransitOption transitOption = parseTransit(result);
+
+                // 추가: null이면 1회 재시도
+                if (transitOption == null) {
+                    log.info("ODsay 경로 없음 — 재시도 {} → {}", from.getName(), to.getName());
+                    result = odsayClient.searchTransitRoute(
+                            from.getLng(), from.getLat(),
+                            to.getLng(), to.getLat()
+                    );
+                    transitOption = parseTransit(result);
+                }
+
                 if (transitOption != null) options.add(transitOption);
             } catch (Exception e) {
                 log.warn("ODsay 경로 조회 실패 {} → {}: {}", from.getName(), to.getName(), e.getMessage());
