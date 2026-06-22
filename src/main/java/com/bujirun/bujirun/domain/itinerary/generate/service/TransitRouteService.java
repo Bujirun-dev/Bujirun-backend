@@ -5,6 +5,7 @@ import com.bujirun.bujirun.domain.itinerary.generate.dto.response.SpotInfo;
 import com.bujirun.bujirun.domain.itinerary.generate.dto.response.SubPath;
 import com.bujirun.bujirun.domain.itinerary.generate.dto.response.TransitOption;
 import com.bujirun.bujirun.domain.itinerary.generate.dto.response.TransitRouteResponse;
+import com.bujirun.bujirun.global.util.GeoUtils;
 import com.fasterxml.jackson.databind.JsonNode;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -51,7 +52,8 @@ public class TransitRouteService {
             }
 
             // 도보 + 택시
-            double distanceM = haversineDistance(from.getLat(), from.getLng(), to.getLat(), to.getLng());
+            double distanceM = GeoUtils.haversineDistance(from.getLat(), from.getLng(), to.getLat(), to.getLng());
+
             options.add(calcWalk(distanceM));
             options.add(calcTaxi(distanceM));
 
@@ -77,16 +79,35 @@ public class TransitRouteService {
             for (JsonNode sub : subPathNodes) {
                 int trafficType = sub.path("trafficType").asInt();
                 if (trafficType == 3) {
-                    // 도보 구간
-                    subPaths.add(new SubPath("도보", sub.path("sectionTime").asInt(), "", 0));
+                    // 도보 구간 — 정류장 정보 없음
+                    subPaths.add(new SubPath(
+                            "도보", sub.path("sectionTime").asInt(), "", 0,
+                            "", "", 0, 0, 0, 0
+                    ));
                 } else if (trafficType == 2) {
                     // 버스 구간
                     String busNo = sub.path("lane").get(0).path("busNo").asText();
-                    subPaths.add(new SubPath("버스", sub.path("sectionTime").asInt(), busNo, sub.path("stationCount").asInt()));
+                    subPaths.add(new SubPath(
+                            "버스", sub.path("sectionTime").asInt(), busNo, sub.path("stationCount").asInt(),
+                            sub.path("startName").asText(),
+                            sub.path("endName").asText(),
+                            sub.path("startX").asDouble(),
+                            sub.path("startY").asDouble(),
+                            sub.path("endX").asDouble(),
+                            sub.path("endY").asDouble()
+                    ));
                 } else if (trafficType == 1) {
                     // 지하철 구간
                     String lineName = sub.path("lane").get(0).path("name").asText();
-                    subPaths.add(new SubPath("지하철", sub.path("sectionTime").asInt(), lineName, sub.path("stationCount").asInt()));
+                    subPaths.add(new SubPath(
+                            "지하철", sub.path("sectionTime").asInt(), lineName, sub.path("stationCount").asInt(),
+                            sub.path("startName").asText(),
+                            sub.path("endName").asText(),
+                            sub.path("startX").asDouble(),
+                            sub.path("startY").asDouble(),
+                            sub.path("endX").asDouble(),
+                            sub.path("endY").asDouble()
+                    ));
                 }
             }
         }
@@ -122,14 +143,4 @@ public class TransitRouteService {
         return new TransitOption("택시", timeMin, fare, 0, true, List.of());
     }
 
-//    하버사인
-    private double haversineDistance(double lat1, double lng1, double lat2, double lng2) {
-        final int R = 6371000;
-        double dLat = Math.toRadians(lat2 - lat1);
-        double dLng = Math.toRadians(lng2 - lng1);
-        double a = Math.sin(dLat / 2) * Math.sin(dLat / 2)
-                + Math.cos(Math.toRadians(lat1)) * Math.cos(Math.toRadians(lat2))
-                * Math.sin(dLng / 2) * Math.sin(dLng / 2);
-        return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-    }
 }
