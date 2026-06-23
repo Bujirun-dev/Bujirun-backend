@@ -46,11 +46,11 @@ public class ItineraryItem {
 
     public void update(int orderIndex, LocalTime arrivalTime, Integer durationMin,
                        String travelMode, Integer travelTimeMin, String memo) {
-        this.orderIndex    = orderIndex;
-        this.arrivalTime   = arrivalTime;
-        this.durationMin   = durationMin;
-        this.travelMode    = travelMode;
-        this.travelTimeMin = travelTimeMin;
-        this.memo          = memo;
+        this.orderIndex = orderIndex;
+        if (arrivalTime   != null) this.arrivalTime   = arrivalTime;
+        if (durationMin   != null) this.durationMin   = durationMin;
+        if (travelMode    != null) this.travelMode    = travelMode;
+        if (travelTimeMin != null) this.travelTimeMin = travelTimeMin;
+        if (memo          != null) this.memo          = memo;
     }
 }
