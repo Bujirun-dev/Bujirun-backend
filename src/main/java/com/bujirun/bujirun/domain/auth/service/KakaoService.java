@@ -36,8 +36,8 @@ public class KakaoService {
         MultiValueMap<String, String> formData = new LinkedMultiValueMap<>();
         formData.add("grant_type", "authorization_code");
         formData.add("client_id", kakaoConfig.getClientId());
-        formData.add("redirect_uri", kakaoConfig.getRedirectUri());
         formData.add("client_secret", kakaoConfig.getClientSecret());
+        formData.add("redirect_uri", kakaoConfig.getRedirectUri());
         formData.add("code", code);
 
         RestClient restClient = RestClient.create();
