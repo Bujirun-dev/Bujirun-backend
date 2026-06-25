@@ -9,6 +9,13 @@ import org.springframework.security.config.annotation.web.configuration.EnableWe
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+import org.springframework.web.cors.CorsConfiguration;
+import org.springframework.web.cors.CorsConfigurationSource;
+import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
+
+import java.util.List;
+
+import static org.springframework.security.config.Customizer.withDefaults;
 
 @Configuration
 @EnableWebSecurity
@@ -20,15 +27,31 @@ public class SecurityConfig {
     @Bean
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
         http
-                .csrf(csrf -> csrf.disable()) // API 서버이므로 CSRF 비활성화
-                .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS)) // 세션 사용 안함
+                .cors(withDefaults())          // CORS 설정 적용
+                .csrf(csrf -> csrf.disable())  // API 서버이므로 CSRF 비활성화
+                .sessionManagement(session -> session
+                        .sessionCreationPolicy(SessionCreationPolicy.STATELESS)) // JWT 사용으로 세션 미사용
                 .authorizeHttpRequests(auth -> auth
-                        .requestMatchers("/api/auth/**").permitAll() // 로그인/재발급 API는 인증 없이 접근 가능
-                        .anyRequest().authenticated() // 그 외 모든 API는 인증 필요
+                        .requestMatchers("/api/auth/**").permitAll() // 로그인/재발급은 인증 없이 허용
+                        .anyRequest().authenticated()                // 나머지는 인증 필요
                 )
-                // 핵심: UsernamePasswordAuthenticationFilter 이전에 우리가 만든 필터 배치
-                .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class);
+                .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class); // JWT 필터 등록
 
         return http.build();
+    }
+
+    // CORS 정책 — 프론트(localhost:3000) 요청 및 쿠키 허용
+    @Bean
+    public CorsConfigurationSource corsConfigurationSource() {
+        CorsConfiguration config = new CorsConfiguration();
+        config.setAllowedOrigins(List.of("http://localhost:3000"));
+        config.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
+        config.setAllowedHeaders(List.of("*"));
+        config.setAllowCredentials(true); // refresh_token 쿠키 전달에 필수
+        config.setMaxAge(3600L);          // preflight 캐시 1시간
+
+        UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
+        source.registerCorsConfiguration("/**", config);
+        return source;
     }
 }
