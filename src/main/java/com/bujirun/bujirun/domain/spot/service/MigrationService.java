@@ -28,6 +28,7 @@ public class MigrationService {
     private final TourSpotRepository    tourSpotRepository;
     private final TourSpotTagRepository tourSpotTagRepository;
     private final SigunguRepository     sigunguRepository;
+    private static final List<Integer> TARGET_CONTENT_TYPES = List.of(12, 14, 28); // 관광지, 문화시설, 레포츠
 
     private static final Map<Integer, String> CATEGORY_MAP = Map.of(
             12, "관광지",
@@ -97,25 +98,31 @@ public class MigrationService {
 
     private List<AreaListResponse.AreaItem> fetchAllPages() {
         List<AreaListResponse.AreaItem> result = new ArrayList<>();
-        int pageNo = 1;
 
-        while (true) {
-            AreaListResponse response = tourApiClient.fetchAreaList(pageNo);
+        for (int contentTypeId : TARGET_CONTENT_TYPES) {
+            int pageNo = 1;
+            int collectedForType = 0;
 
-            if (response == null
-                    || response.getResponse().getBody().getItems() == null
-                    || response.getResponse().getBody().getItems().getItem() == null) break;
+            while (true) {
+                AreaListResponse response = tourApiClient.fetchAreaList(pageNo, contentTypeId);
 
-            List<AreaListResponse.AreaItem> items =
-                    response.getResponse().getBody().getItems().getItem();
+                if (response == null
+                        || response.getResponse().getBody().getItems() == null
+                        || response.getResponse().getBody().getItems().getItem() == null) break;
 
-            if (items.isEmpty()) break;
+                List<AreaListResponse.AreaItem> items =
+                        response.getResponse().getBody().getItems().getItem();
 
-            result.addAll(items);
-            log.info("[fetchAllPages] page={}, 수집={}, 누적={}", pageNo, items.size(), result.size());
+                if (items.isEmpty()) break;
 
-            if (result.size() >= response.getResponse().getBody().getTotalCount()) break;
-            pageNo++;
+                result.addAll(items);
+                collectedForType += items.size();
+                log.info("[fetchAllPages] contentTypeId={}, page={}, 수집={}, 해당타입누적={}",
+                        contentTypeId, pageNo, items.size(), collectedForType);
+
+                if (collectedForType >= response.getResponse().getBody().getTotalCount()) break;
+                pageNo++;
+            }
         }
 
         return result;
@@ -123,9 +130,10 @@ public class MigrationService {
 
     private boolean upsertSpot(AreaListResponse.AreaItem item) {
         String contentId = item.getContentid();
+        int contentTypeId = item.getContenttypeid();
 
         Optional<DetailIntroResponse.IntroItem> intro =
-                tourApiClient.fetchDetailIntro(contentId);
+                tourApiClient.fetchDetailIntro(contentId, contentTypeId);
 
         Sigungu sigungu = sigunguRepository.findByCode(item.getSigungucode()).orElse(null);
 //        String category = CATEGORY_MAP.getOrDefault(item.getContenttypeid(), "기타");

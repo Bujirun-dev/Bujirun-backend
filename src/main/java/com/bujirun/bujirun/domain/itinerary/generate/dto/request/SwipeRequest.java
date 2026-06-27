@@ -1,4 +1,4 @@
-package com.bujirun.bujirun.domain.schedule.dto;
+package com.bujirun.bujirun.domain.itinerary.generate.dto.request;
 
 import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.NotNull;
@@ -19,7 +19,7 @@ public class SwipeRequest {
     @NotNull
     private LocalDate endDate;
 
-    private String optimizationType; // "WALK_MIN" | "COST_SAVE" | "TIME_SHORT"
+    private String optimizationType; // "WALK_MIN" | "COST_SAVE" | "TIME_SHORT" | "TRANSFER_MIN"
 
     @Getter
     public static class SwipeItem {

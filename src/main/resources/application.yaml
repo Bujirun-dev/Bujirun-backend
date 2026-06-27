@@ -17,6 +17,10 @@ spring:
   mvc:
     async:
       request-timeout: -1  # 타임아웃 없음
+  data:
+    redis:
+      host: localhost  # 로컬 Redis 주소
+      port: 6379       # Redis 기본 포트
 
 server:
   port: 8080
@@ -27,3 +31,17 @@ tourapi:
 groq:
   api:
     key: ${GROQ_API_KEY}
+
+odsay:
+  api:
+    key: ${ODSAY_API_KEY}
+
+kakao:
+  client-id: ${KAKAO_CLIENT_ID}
+  client-secret: ${KAKAO_CLIENT_SECRET}
+  redirect-uri: ${KAKAO_REDIRECT_URI}
+
+jwt:
+  secret: ${JWT_SECRET}
+  access-token-expiration: 1800000
+  refresh-token-expiration: 1209600000
