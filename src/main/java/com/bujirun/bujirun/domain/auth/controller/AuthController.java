@@ -30,7 +30,7 @@ public class AuthController {
         // 쿠키에서 Refresh Token 꺼내기
         Cookie[] cookies = request.getCookies();
         if (cookies == null) {
-            throw new RuntimeException("쿠키가 없습니다");
+            throw new IllegalArgumentException("쿠키가 없습니다");
         }
 
         String refreshToken = Arrays.stream(cookies)
@@ -41,7 +41,7 @@ public class AuthController {
 
         // Refresh Token 유효성 검증
         if (!jwtProvider.validateToken(refreshToken)) {
-            throw new RuntimeException("유효하지 않은 Refresh Token입니다");
+            throw new IllegalArgumentException("유효하지 않은 Refresh Token입니다");
         }
 
         // 토큰에서 유저 ID 추출
@@ -50,7 +50,7 @@ public class AuthController {
         // Redis에 저장된 Refresh Token과 비교
         String savedToken = refreshTokenRepository.find(userId);
         if (!refreshToken.equals(savedToken)) {
-            throw new RuntimeException("Refresh Token이 일치하지 않습니다");
+            throw new IllegalArgumentException("Refresh Token이 일치하지 않습니다");
         }
 
         // 새 Access Token 발급
