@@ -65,6 +65,27 @@ public class BusArrivalService implements ArrivalInfoProvider {
         }
     }
 
+    public Integer getArrivalByArsId(String arsId, String routeNo) {
+        if (arsId == null || arsId.isBlank()) return null;
+        try {
+            String xml = webClient.get()
+                    .uri(uriBuilder -> uriBuilder
+                            .scheme("http")
+                            .host("apis.data.go.kr")
+                            .path("/6260000/BusanBIMS/bitArrByArsno")
+                            .queryParam("serviceKey", apiKey)
+                            .queryParam("arsno", arsId)
+                            .build())
+                    .retrieve()
+                    .bodyToMono(String.class)
+                    .block();
+            return parseMin1(xml, routeNo);
+        } catch (Exception e) {
+            log.warn("버스 도착정보 조회 실패 arsId={}: {}", arsId, e.getMessage());
+            return null;
+        }
+    }
+    
     private Integer parseMin1(String xml, String routeNo) throws Exception {
         log.info("parseMin1 호출 — routeNo={}, xml 길이={}", routeNo, xml.length());
         Document doc = DocumentBuilderFactory.newInstance()
