@@ -9,6 +9,7 @@ import java.util.UUID;
 public record ItineraryDetailResponse(
         UUID id,
         UUID userId,
+        UUID sessionId,
         String title,
         String planType,
         String status,
@@ -20,6 +21,7 @@ public record ItineraryDetailResponse(
         return new ItineraryDetailResponse(
                 itinerary.getId(),
                 itinerary.getUserId(),
+                itinerary.getSessionId(),
                 itinerary.getTitle(),
                 itinerary.getPlanType(),
                 itinerary.getStatus(),
