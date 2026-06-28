@@ -31,17 +31,20 @@ public class ItineraryService {
     // ── Itinerary ──────────────────────────────────────────────────
 
     @Transactional
-    public ItineraryDetailResponse create(CreateItineraryRequest req) {
+    public ItineraryDetailResponse create(CreateItineraryRequest req, UUID userId) {
         Itinerary itinerary = Itinerary.builder()
-                .userId(req.userId())
+                .userId(userId)
+                .sessionId(UUID.randomUUID())
                 .planType(req.planType() != null ? req.planType() : "A")
                 .title(req.title())
                 .build();
         return ItineraryDetailResponse.from(itineraryRepository.save(itinerary));
     }
 
-    public ItineraryDetailResponse getById(UUID id) {
-        return ItineraryDetailResponse.from(findWithDetails(id));
+    public ItineraryDetailResponse getById(UUID id, UUID userId) {
+        Itinerary itinerary = findWithDetails(id);
+        validateOwner(itinerary, userId);
+        return ItineraryDetailResponse.from(itinerary);
     }
 
     public List<ItinerarySummaryResponse> getByUserId(UUID userId) {
@@ -51,26 +54,29 @@ public class ItineraryService {
     }
 
     @Transactional
-    public ItineraryDetailResponse update(UUID id, UpdateItineraryRequest req) {
+    public ItineraryDetailResponse update(UUID id, UpdateItineraryRequest req, UUID userId) {
         Itinerary itinerary = findWithDetails(id);
+        validateOwner(itinerary, userId);
         if (req.title() != null)  itinerary.updateTitle(req.title());
         if ("confirmed".equals(req.status())) itinerary.confirm();
         return ItineraryDetailResponse.from(itinerary);
     }
 
     @Transactional
-    public void delete(UUID id) {
+    public void delete(UUID id, UUID userId) {
         Itinerary itinerary = itineraryRepository.findById(id)
                 .orElseThrow(() -> new EntityNotFoundException("일정을 찾을 수 없습니다. id=" + id));
+        validateOwner(itinerary, userId);
         itineraryRepository.delete(itinerary);
     }
 
     // ── Day ────────────────────────────────────────────────────────
 
     @Transactional
-    public ItineraryDayResponse addDay(UUID itineraryId, AddDayRequest req) {
+    public ItineraryDayResponse addDay(UUID itineraryId, AddDayRequest req, UUID userId) {
         Itinerary itinerary = itineraryRepository.findById(itineraryId)
                 .orElseThrow(() -> new EntityNotFoundException("일정을 찾을 수 없습니다. id=" + itineraryId));
+        validateOwner(itinerary, userId);
 
         if (itineraryDayRepository.existsByItineraryIdAndDayNumber(itineraryId, req.dayNumber())) {
             throw new IllegalArgumentException("이미 존재하는 Day 번호입니다. dayNumber=" + req.dayNumber());
@@ -85,20 +91,22 @@ public class ItineraryService {
     }
 
     @Transactional
-    public void deleteDay(UUID itineraryId, UUID dayId) {
+    public void deleteDay(UUID itineraryId, UUID dayId, UUID userId) {
         ItineraryDay day = itineraryDayRepository.findById(dayId)
                 .filter(d -> d.getItinerary().getId().equals(itineraryId))
                 .orElseThrow(() -> new EntityNotFoundException("Day를 찾을 수 없습니다. id=" + dayId));
+        validateOwner(day.getItinerary(), userId);
         itineraryDayRepository.delete(day);
     }
 
     // ── Item ────────────────────────────────────────────────────────
 
     @Transactional
-    public ItineraryItemResponse addItem(UUID itineraryId, UUID dayId, AddItemRequest req) {
+    public ItineraryItemResponse addItem(UUID itineraryId, UUID dayId, AddItemRequest req, UUID userId) {
         ItineraryDay day = itineraryDayRepository.findById(dayId)
                 .filter(d -> d.getItinerary().getId().equals(itineraryId))
                 .orElseThrow(() -> new EntityNotFoundException("Day를 찾을 수 없습니다. id=" + dayId));
+        validateOwner(day.getItinerary(), userId);
 
         TourSpot spot = tourSpotRepository.findById(req.spotId())
                 .orElseThrow(() -> new EntityNotFoundException("관광지를 찾을 수 없습니다. id=" + req.spotId()));
@@ -117,20 +125,28 @@ public class ItineraryService {
     }
 
     @Transactional
-    public ItineraryItemResponse updateItem(UUID itineraryId, UUID dayId, UUID itemId, UpdateItemRequest req) {
+    public ItineraryItemResponse updateItem(UUID itineraryId, UUID dayId, UUID itemId, UpdateItemRequest req, UUID userId) {
         ItineraryItem item = findItem(itineraryId, dayId, itemId);
+        validateOwner(item.getDay().getItinerary(), userId);
         item.update(req.orderIndex(), req.arrivalTime(), req.durationMin(),
                 req.travelMode(), req.travelTimeMin(), req.memo());
         return ItineraryItemResponse.from(item);
     }
 
     @Transactional
-    public void deleteItem(UUID itineraryId, UUID dayId, UUID itemId) {
+    public void deleteItem(UUID itineraryId, UUID dayId, UUID itemId, UUID userId) {
         ItineraryItem item = findItem(itineraryId, dayId, itemId);
+        validateOwner(item.getDay().getItinerary(), userId);
         itineraryItemRepository.delete(item);
     }
 
     // ── 내부 헬퍼 ──────────────────────────────────────────────────
+
+    private void validateOwner(Itinerary itinerary, UUID userId) {
+        if (!itinerary.getUserId().equals(userId)) {
+            throw new IllegalArgumentException("해당 일정에 대한 권한이 없습니다.");
+        }
+    }
 
     private Itinerary findWithDetails(UUID id) {
         return itineraryRepository.findById(id)

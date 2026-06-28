@@ -7,6 +7,7 @@ import com.bujirun.bujirun.global.response.ApiResponse;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
@@ -25,20 +26,23 @@ public class ItineraryController {
 
     @PostMapping
     public Mono<ResponseEntity<ApiResponse<ItineraryDetailResponse>>> create(
-            @RequestBody @Valid CreateItineraryRequest req) {
-        return blocking(() -> itineraryService.create(req))
+            @RequestBody @Valid CreateItineraryRequest req,
+            @AuthenticationPrincipal UUID userId) {
+        return blocking(() -> itineraryService.create(req, userId))
                 .map(r -> ResponseEntity.status(201).body(ApiResponse.ok(r)));
     }
 
     @GetMapping("/{id}")
-    public Mono<ResponseEntity<ApiResponse<ItineraryDetailResponse>>> getById(@PathVariable UUID id) {
-        return blocking(() -> itineraryService.getById(id))
+    public Mono<ResponseEntity<ApiResponse<ItineraryDetailResponse>>> getById(
+            @PathVariable UUID id,
+            @AuthenticationPrincipal UUID userId) {
+        return blocking(() -> itineraryService.getById(id, userId))
                 .map(r -> ResponseEntity.ok(ApiResponse.ok(r)));
     }
 
     @GetMapping
     public Mono<ResponseEntity<ApiResponse<List<ItinerarySummaryResponse>>>> getList(
-            @RequestParam UUID userId) {
+            @AuthenticationPrincipal UUID userId) {
         return blocking(() -> itineraryService.getByUserId(userId))
                 .map(r -> ResponseEntity.ok(ApiResponse.ok(r)));
     }
@@ -46,14 +50,17 @@ public class ItineraryController {
     @PatchMapping("/{id}")
     public Mono<ResponseEntity<ApiResponse<ItineraryDetailResponse>>> update(
             @PathVariable UUID id,
-            @RequestBody @Valid UpdateItineraryRequest req) {
-        return blocking(() -> itineraryService.update(id, req))
+            @RequestBody @Valid UpdateItineraryRequest req,
+            @AuthenticationPrincipal UUID userId) {
+        return blocking(() -> itineraryService.update(id, req, userId))
                 .map(r -> ResponseEntity.ok(ApiResponse.ok(r)));
     }
 
     @DeleteMapping("/{id}")
-    public Mono<ResponseEntity<Void>> delete(@PathVariable UUID id) {
-        return Mono.fromRunnable(() -> itineraryService.delete(id))
+    public Mono<ResponseEntity<Void>> delete(
+            @PathVariable UUID id,
+            @AuthenticationPrincipal UUID userId) {
+        return Mono.fromRunnable(() -> itineraryService.delete(id, userId))
                 .subscribeOn(Schedulers.boundedElastic())
                 .thenReturn(ResponseEntity.noContent().<Void>build());
     }
@@ -63,16 +70,18 @@ public class ItineraryController {
     @PostMapping("/{itineraryId}/days")
     public Mono<ResponseEntity<ApiResponse<ItineraryDayResponse>>> addDay(
             @PathVariable UUID itineraryId,
-            @RequestBody @Valid AddDayRequest req) {
-        return blocking(() -> itineraryService.addDay(itineraryId, req))
+            @RequestBody @Valid AddDayRequest req,
+            @AuthenticationPrincipal UUID userId) {
+        return blocking(() -> itineraryService.addDay(itineraryId, req, userId))
                 .map(r -> ResponseEntity.status(201).body(ApiResponse.ok(r)));
     }
 
     @DeleteMapping("/{itineraryId}/days/{dayId}")
     public Mono<ResponseEntity<Void>> deleteDay(
             @PathVariable UUID itineraryId,
-            @PathVariable UUID dayId) {
-        return Mono.fromRunnable(() -> itineraryService.deleteDay(itineraryId, dayId))
+            @PathVariable UUID dayId,
+            @AuthenticationPrincipal UUID userId) {
+        return Mono.fromRunnable(() -> itineraryService.deleteDay(itineraryId, dayId, userId))
                 .subscribeOn(Schedulers.boundedElastic())
                 .thenReturn(ResponseEntity.noContent().<Void>build());
     }
@@ -83,8 +92,9 @@ public class ItineraryController {
     public Mono<ResponseEntity<ApiResponse<ItineraryItemResponse>>> addItem(
             @PathVariable UUID itineraryId,
             @PathVariable UUID dayId,
-            @RequestBody @Valid AddItemRequest req) {
-        return blocking(() -> itineraryService.addItem(itineraryId, dayId, req))
+            @RequestBody @Valid AddItemRequest req,
+            @AuthenticationPrincipal UUID userId) {
+        return blocking(() -> itineraryService.addItem(itineraryId, dayId, req, userId))
                 .map(r -> ResponseEntity.status(201).body(ApiResponse.ok(r)));
     }
 
@@ -93,8 +103,9 @@ public class ItineraryController {
             @PathVariable UUID itineraryId,
             @PathVariable UUID dayId,
             @PathVariable UUID itemId,
-            @RequestBody @Valid UpdateItemRequest req) {
-        return blocking(() -> itineraryService.updateItem(itineraryId, dayId, itemId, req))
+            @RequestBody @Valid UpdateItemRequest req,
+            @AuthenticationPrincipal UUID userId) {
+        return blocking(() -> itineraryService.updateItem(itineraryId, dayId, itemId, req, userId))
                 .map(r -> ResponseEntity.ok(ApiResponse.ok(r)));
     }
 
@@ -102,8 +113,9 @@ public class ItineraryController {
     public Mono<ResponseEntity<Void>> deleteItem(
             @PathVariable UUID itineraryId,
             @PathVariable UUID dayId,
-            @PathVariable UUID itemId) {
-        return Mono.fromRunnable(() -> itineraryService.deleteItem(itineraryId, dayId, itemId))
+            @PathVariable UUID itemId,
+            @AuthenticationPrincipal UUID userId) {
+        return Mono.fromRunnable(() -> itineraryService.deleteItem(itineraryId, dayId, itemId, userId))
                 .subscribeOn(Schedulers.boundedElastic())
                 .thenReturn(ResponseEntity.noContent().<Void>build());
     }
