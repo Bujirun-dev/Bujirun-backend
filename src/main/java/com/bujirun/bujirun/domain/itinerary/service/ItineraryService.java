@@ -31,9 +31,9 @@ public class ItineraryService {
     // ── Itinerary ──────────────────────────────────────────────────
 
     @Transactional
-    public ItineraryDetailResponse create(CreateItineraryRequest req) {
+    public ItineraryDetailResponse create(CreateItineraryRequest req, UUID userId) {
         Itinerary itinerary = Itinerary.builder()
-                .userId(req.userId())
+                .userId(userId)
                 .planType(req.planType() != null ? req.planType() : "A")
                 .title(req.title())
                 .build();

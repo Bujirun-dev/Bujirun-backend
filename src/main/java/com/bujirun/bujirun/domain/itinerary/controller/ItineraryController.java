@@ -7,6 +7,7 @@ import com.bujirun.bujirun.global.response.ApiResponse;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
@@ -25,8 +26,9 @@ public class ItineraryController {
 
     @PostMapping
     public Mono<ResponseEntity<ApiResponse<ItineraryDetailResponse>>> create(
-            @RequestBody @Valid CreateItineraryRequest req) {
-        return blocking(() -> itineraryService.create(req))
+            @RequestBody @Valid CreateItineraryRequest req,
+            @AuthenticationPrincipal UUID userId) {
+        return blocking(() -> itineraryService.create(req, userId))
                 .map(r -> ResponseEntity.status(201).body(ApiResponse.ok(r)));
     }
 
@@ -38,7 +40,7 @@ public class ItineraryController {
 
     @GetMapping
     public Mono<ResponseEntity<ApiResponse<List<ItinerarySummaryResponse>>>> getList(
-            @RequestParam UUID userId) {
+            @AuthenticationPrincipal UUID userId) {
         return blocking(() -> itineraryService.getByUserId(userId))
                 .map(r -> ResponseEntity.ok(ApiResponse.ok(r)));
     }
