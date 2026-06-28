@@ -19,8 +19,8 @@ spring:
       request-timeout: -1  # 타임아웃 없음
   data:
     redis:
-      host: localhost  # 로컬 Redis 주소
-      port: 6379       # Redis 기본 포트
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
 
 server:
   port: 8080
