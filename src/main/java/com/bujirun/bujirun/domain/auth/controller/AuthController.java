@@ -38,7 +38,7 @@ public class AuthController {
                 .filter(c -> c.getName().equals("refresh_token"))
                 .findFirst()
                 .map(Cookie::getValue)
-                .orElseThrow(() -> new RuntimeException("Refresh Token이 없습니다"));
+                .orElseThrow(() -> new IllegalArgumentException("Refresh Token이 없습니다"));
 
         // Refresh Token 유효성 검증
         if (!jwtProvider.validateToken(refreshToken)) {
