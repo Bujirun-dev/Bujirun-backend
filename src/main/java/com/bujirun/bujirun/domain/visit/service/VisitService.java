@@ -25,7 +25,7 @@ public class VisitService {
     private final TourSpotRepository tourSpotRepository;
 
     @Transactional
-    public VisitResponse verify(VisitRequest req) {
+    public VisitResponse verify(VisitRequest req, UUID userId) {
         TourSpot spot = tourSpotRepository.findById(req.tourSpotId())
                 .orElseThrow(() -> new EntityNotFoundException("관광지를 찾을 수 없습니다. id=" + req.tourSpotId()));
 
@@ -42,7 +42,7 @@ public class VisitService {
         boolean verified = distance <= radius;
 
         Visit visit = Visit.builder()
-                .userId(req.userId())
+                .userId(userId)
                 .spot(spot)
                 .gpsLat(BigDecimal.valueOf(req.gpsLat()))
                 .gpsLng(BigDecimal.valueOf(req.gpsLng()))
