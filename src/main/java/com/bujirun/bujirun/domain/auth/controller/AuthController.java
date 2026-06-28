@@ -6,6 +6,7 @@ import com.bujirun.bujirun.global.jwt.dto.TokenResponse;
 import com.bujirun.bujirun.global.response.ApiResponse;
 import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -60,5 +61,30 @@ public class AuthController {
                 .build();
 
         return ApiResponse.ok(token);
+    }
+    @PostMapping("/logout")
+    public ApiResponse<Void> logout(HttpServletRequest request, HttpServletResponse response) {
+
+        // 쿠키에서 Refresh Token 꺼내기
+        Cookie[] cookies = request.getCookies();
+        if (cookies != null) {
+            Arrays.stream(cookies)
+                    .filter(c -> c.getName().equals("refresh_token"))
+                    .findFirst()
+                    .ifPresent(c -> {
+                        // Redis에서 Refresh Token 삭제
+                        UUID userId = jwtProvider.extractUserId(c.getValue());
+                        refreshTokenRepository.delete(userId);
+                    });
+        }
+
+        // HttpOnly Cookie 만료 처리
+        Cookie cookie = new Cookie("refresh_token", null);
+        cookie.setHttpOnly(true);
+        cookie.setPath("/");
+        cookie.setMaxAge(0);
+        response.addCookie(cookie);
+
+        return ApiResponse.ok(null);
     }
 }
