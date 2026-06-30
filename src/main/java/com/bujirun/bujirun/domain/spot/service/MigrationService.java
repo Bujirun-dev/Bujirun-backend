@@ -28,7 +28,7 @@ public class MigrationService {
     private final TourSpotRepository    tourSpotRepository;
     private final TourSpotTagRepository tourSpotTagRepository;
     private final SigunguRepository     sigunguRepository;
-    private static final List<Integer> TARGET_CONTENT_TYPES = List.of(12, 14, 28, 38); // 관광지, 문화시설, 레포츠, 쇼핑
+    private static final List<Integer> TARGET_CONTENT_TYPES = List.of(12, 14, 28); // 관광지, 문화시설, 레포츠
 
     private static final Map<Integer, String> CATEGORY_MAP = Map.of(
             12, "관광지",
