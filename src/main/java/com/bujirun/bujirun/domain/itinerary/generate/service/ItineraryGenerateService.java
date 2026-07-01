@@ -1,5 +1,6 @@
 package com.bujirun.bujirun.domain.itinerary.generate.service;
 
+import com.bujirun.bujirun.domain.collection.repository.CollectionEntryRepository;
 import com.bujirun.bujirun.domain.itinerary.generate.client.GroqClient;
 import com.bujirun.bujirun.domain.itinerary.generate.dto.response.ItineraryGenerateResponse;
 import com.bujirun.bujirun.domain.itinerary.generate.dto.response.SpotInfo;
@@ -25,12 +26,14 @@ public class ItineraryGenerateService {
     private final TourSpotRepository tourSpotRepository;
     private final ObjectMapper objectMapper;
     private final TransitRouteService transitRouteService;
+    private final CollectionEntryRepository collectionEntryRepository;
+
     private static final List<Double> RADIUS_STEPS_M = List.of(15_000.0, 25_000.0, 40_000.0); // 15km → 25km → 40km
     private static final int MIN_CANDIDATES = 20; // 후보 장소 최소 개수
 
-    public ItineraryGenerateResponse generateItinerary(SwipeRequest request) {
+    public ItineraryGenerateResponse generateItinerary(SwipeRequest request, UUID userId) {
 
-        // 1. 스와이프 결과에서 contentId 목록 추출
+        // 스와이프 결과에서 contentId 목록 추출
         List<String> likedIds = request.getSwipes().stream()
                 .filter(SwipeRequest.SwipeItem::isLiked)
                 .map(SwipeRequest.SwipeItem::getContentId)
@@ -41,20 +44,20 @@ public class ItineraryGenerateService {
                 .map(SwipeRequest.SwipeItem::getContentId)
                 .toList();
 
-        // 2. DB에서 좋아요한 관광지 조회 → 성향 벡터(카테고리별 선호도) 생성
+        // DB에서 좋아요한 관광지 조회 → 성향 벡터(카테고리별 선호도) 생성
         List<TourSpot> likedSpots = tourSpotRepository.findByContentIdIn(likedIds);
         Map<String, Long> preferenceVector = likedSpots.stream()
                 .filter(s -> s.getCategory() != null)
                 .collect(Collectors.groupingBy(TourSpot::getCategory, Collectors.counting()));
 
-        // 3. 선호 카테고리 기준으로 후보 관광지 조회 (최대 30개)
+        // 선호 카테고리 기준으로 후보 관광지 조회 (최대 30개)
         List<String> preferredCategories = preferenceVector.entrySet().stream()
                 .sorted(Map.Entry.<String, Long>comparingByValue().reversed())
                 .map(Map.Entry::getKey)
                 .limit(3)
                 .toList();
 
-        // 3-1. 좋아요한 곳들의 중심 좌표 계산 (좋아요 0개면 null → 거리 필터 스킵)
+        // 좋아요한 곳들의 중심 좌표 계산 (좋아요 0개면 null → 거리 필터 스킵)
         Double centerLat = null;
         Double centerLng = null;
         if (!likedSpots.isEmpty()) {
@@ -74,20 +77,31 @@ public class ItineraryGenerateService {
                 .filter(s -> !likedIds.contains(s.getContentId()))
                 .toList();
 
-        // 3-2. 좋아요 중심 좌표 기준 거리 필터링 (반경 단계적으로 확대)
+        // 좋아요 중심 좌표 기준 거리 필터링 (반경 단계적으로 확대)
         List<TourSpot> categorySpots = filterByRadiusWithFallback(filteredByCategory, centerLat, centerLng)
                 .stream()
                 .limit(30 - likedSpots.size())
                 .toList();
 
-        // 3-3. 좋아요한 곳 + 거리 필터링된 카테고리 후보 합치기
+        // 좋아요한 곳 + 거리 필터링된 카테고리 후보 합치기
+        Set<UUID> collectedSpotIds = collectionEntryRepository
+                .findByUserIdAndCollectedTrue(userId)
+                .stream()
+                .map(ce -> ce.getSpot().getId())
+                .collect(Collectors.toSet());
+
         List<TourSpot> allCandidates = new ArrayList<>(likedSpots);
         allCandidates.addAll(categorySpots);
 
-        // 4. 여행 일수 계산
+        // 미수집 먼저, 수집 완료 나중 (둘 다 후보 포함)
+        allCandidates.sort(Comparator.comparing(
+                spot -> collectedSpotIds.contains(spot.getId()) ? 1 : 0
+        ));
+
+        // 여행 일수 계산
         long tripDays = request.getStartDate().until(request.getEndDate()).getDays() + 1;
 
-        // 5. 후보 관광지를 SpotInfo로 변환
+        // 후보 관광지를 SpotInfo로 변환
         List<SpotInfo> candidates = allCandidates.stream()
                 .map(this::toSpotInfo)
                 .toList();
@@ -96,7 +110,7 @@ public class ItineraryGenerateService {
                 .map(this::toSpotInfo)
                 .toList();
 
-        // 6. Groq 호출
+        // Groq 호출
         String systemPrompt = buildSystemPrompt();
         String userPrompt = buildUserPrompt(likedSpotInfos, preferenceVector, candidates, tripDays, request.getOptimizationType());
 
@@ -104,7 +118,7 @@ public class ItineraryGenerateService {
         String rawResponse = groqClient.chat(systemPrompt, userPrompt);
         log.info("Groq 응답 수신 완료");
 
-        // 7. JSON 파싱 → ScheduleResponse 변환
+        // JSON 파싱 → ScheduleResponse 변환
         return parseResponse(rawResponse, candidates, request.getOptimizationType());
     }
 

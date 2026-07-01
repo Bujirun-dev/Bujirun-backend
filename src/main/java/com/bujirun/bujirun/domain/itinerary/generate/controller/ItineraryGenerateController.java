@@ -6,7 +6,10 @@ import com.bujirun.bujirun.domain.itinerary.generate.service.ItineraryGenerateSe
 import com.bujirun.bujirun.global.response.ApiResponse;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
+
+import java.util.UUID;
 
 @RestController
 @RequestMapping("/api/itineraries")
@@ -21,8 +24,8 @@ public class ItineraryGenerateController {
      */
     @PostMapping("/generate")
     public ApiResponse<ItineraryGenerateResponse> generateItinerary(
-            @Valid @RequestBody SwipeRequest request) {
-        ItineraryGenerateResponse response = itineraryGenerateService.generateItinerary(request);
-        return ApiResponse.ok(response);
+            @Valid @RequestBody SwipeRequest request,
+            @AuthenticationPrincipal UUID userId) {
+        return ApiResponse.ok(itineraryGenerateService.generateItinerary(request, userId));
     }
 }
