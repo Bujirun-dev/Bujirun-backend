@@ -48,6 +48,10 @@ public class TourSpot {
     @Column(name = "synced_at", nullable = false)
     private LocalDateTime syncedAt;
 
+    @Column(name = "is_collection", nullable = false)
+    @Builder.Default
+    private boolean collection = false;
+
     @PrePersist
     public void prePersist() {
         this.syncedAt = LocalDateTime.now();
