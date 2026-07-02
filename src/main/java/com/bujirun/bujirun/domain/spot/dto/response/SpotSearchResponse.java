@@ -1,0 +1,31 @@
+package com.bujirun.bujirun.domain.spot.dto.response;
+
+import com.bujirun.bujirun.domain.spot.entity.TourSpot;
+
+import java.util.UUID;
+
+public record SpotSearchResponse(
+        UUID spotId,
+        String name,
+        String category,
+        Integer sigunguId,
+        String sigunguName,
+        String address,
+        String thumbnailUrl,
+        boolean isCollection,
+        boolean collected
+) {
+    public static SpotSearchResponse from(TourSpot spot, boolean collected) {
+        return new SpotSearchResponse(
+                spot.getId(),
+                spot.getName(),
+                spot.getCategory(),
+                spot.getSigungu() != null ? spot.getSigungu().getId() : null,
+                spot.getSigungu() != null ? spot.getSigungu().getName() : null,
+                spot.getAddress(),
+                spot.getThumbnailUrl(),
+                spot.isCollection(),
+                collected
+        );
+    }
+}

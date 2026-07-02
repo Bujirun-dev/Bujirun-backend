@@ -1,4 +1,4 @@
-package com.bujirun.bujirun.domain.spot.dto;
+package com.bujirun.bujirun.domain.spot.dto.response;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import lombok.Getter;
