@@ -6,6 +6,7 @@ import com.bujirun.bujirun.domain.log.entity.TravelLogItem;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -27,11 +28,17 @@ public record TravelLogDetailResponse(
                 .mapToInt(d -> d.getItems().size())
                 .sum();
 
-        int dayCount = itinerary.getDays().size();
-        String duration = dayCount <= 1 ? "당일치기" : (dayCount - 1) + "박 " + dayCount + "일";
+        String duration;
+        if (itinerary.getStartAt() != null && itinerary.getEndAt() != null) {
+            int days = (int) ChronoUnit.DAYS.between(itinerary.getStartAt(), itinerary.getEndAt()) + 1;
+            duration = days <= 1 ? "당일치기" : (days - 1) + "박 " + days + "일";
+        } else {
+            int dayCount = itinerary.getDays().size();
+            duration = dayCount <= 1 ? "당일치기" : (dayCount - 1) + "박 " + dayCount + "일";
+        }
 
-        LocalDate startDate = itinerary.getDays().isEmpty() ? null
-                : itinerary.getDays().get(0).getDate();
+        LocalDate startDate = itinerary.getStartAt() != null ? itinerary.getStartAt()
+                : (itinerary.getDays().isEmpty() ? null : itinerary.getDays().get(0).getDate());
 
         List<TravelLogDayResponse> days = itinerary.getDays().stream()
                 .map(d -> TravelLogDayResponse.of(d, logItemMap))

@@ -23,8 +23,8 @@ public record TravelLogSummaryResponse(
                 .mapToInt(d -> d.getItems().size())
                 .sum();
 
-        LocalDate startDate = itinerary.getDays().isEmpty() ? null
-                : itinerary.getDays().get(0).getDate();
+        LocalDate startDate = itinerary.getStartAt() != null ? itinerary.getStartAt()
+                : (itinerary.getDays().isEmpty() ? null : itinerary.getDays().get(0).getDate());
 
         return new TravelLogSummaryResponse(
                 log.getId(),
