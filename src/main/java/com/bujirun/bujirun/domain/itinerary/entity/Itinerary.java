@@ -9,6 +9,7 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
+import java.time.LocalDate;
 
 @Entity
 @Table(name = "itineraries")
@@ -37,6 +38,12 @@ public class Itinerary {
 
     private String title;
 
+    @Column(name = "start_at")
+    private LocalDate startAt;
+
+    @Column(name = "end_at")
+    private LocalDate endAt;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
 
@@ -62,6 +69,11 @@ public class Itinerary {
 
     public void updateTitle(String title) {
         this.title = title;
+    }
+
+    public void updatePeriod(LocalDate startAt, LocalDate endAt) {
+        this.startAt = startAt;
+        this.endAt = endAt;
     }
 
     public void confirm() {
