@@ -1,6 +1,6 @@
 package com.bujirun.bujirun.domain.spot.client;
 
-import com.bujirun.bujirun.domain.spot.dto.TourApiResponse.*;
+import com.bujirun.bujirun.domain.spot.dto.response.TourApiResponse.*;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
