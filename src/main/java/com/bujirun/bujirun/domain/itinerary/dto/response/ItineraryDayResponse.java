@@ -4,6 +4,7 @@ import com.bujirun.bujirun.domain.itinerary.entity.ItineraryDay;
 
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 
 public record ItineraryDayResponse(
@@ -12,12 +13,12 @@ public record ItineraryDayResponse(
         LocalDate date,
         List<ItineraryItemResponse> items
 ) {
-    public static ItineraryDayResponse from(ItineraryDay day) {
+    public static ItineraryDayResponse from(ItineraryDay day, Set<UUID> collectedSpotIds) {
         return new ItineraryDayResponse(
                 day.getId(),
                 day.getDayNumber(),
                 day.getDate(),
-                day.getItems().stream().map(ItineraryItemResponse::from).toList()
+                day.getItems().stream().map(i -> ItineraryItemResponse.from(i, collectedSpotIds)).toList()
         );
     }
 }

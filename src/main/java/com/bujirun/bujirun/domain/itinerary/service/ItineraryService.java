@@ -1,5 +1,6 @@
 package com.bujirun.bujirun.domain.itinerary.service;
 
+import com.bujirun.bujirun.domain.collection.repository.CollectionEntryRepository;
 import com.bujirun.bujirun.domain.itinerary.dto.request.*;
 import com.bujirun.bujirun.domain.itinerary.dto.response.*;
 import com.bujirun.bujirun.domain.itinerary.entity.Itinerary;
@@ -16,17 +17,20 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
 @Transactional(readOnly = true)
 public class ItineraryService {
 
-    private final ItineraryRepository     itineraryRepository;
-    private final ItineraryDayRepository  itineraryDayRepository;
-    private final ItineraryItemRepository itineraryItemRepository;
-    private final TourSpotRepository      tourSpotRepository;
+    private final ItineraryRepository        itineraryRepository;
+    private final ItineraryDayRepository     itineraryDayRepository;
+    private final ItineraryItemRepository    itineraryItemRepository;
+    private final TourSpotRepository         tourSpotRepository;
+    private final CollectionEntryRepository  collectionEntryRepository;
 
     // ── Itinerary ──────────────────────────────────────────────────
 
@@ -37,14 +41,16 @@ public class ItineraryService {
                 .sessionId(UUID.randomUUID())
                 .planType(req.planType() != null ? req.planType() : "A")
                 .title(req.title())
+                .startAt(req.startAt())
+                .endAt(req.endAt())
                 .build();
-        return ItineraryDetailResponse.from(itineraryRepository.save(itinerary));
+        return ItineraryDetailResponse.from(itineraryRepository.save(itinerary), Set.of());
     }
 
     public ItineraryDetailResponse getById(UUID id, UUID userId) {
         Itinerary itinerary = findWithDetails(id);
         validateOwner(itinerary, userId);
-        return ItineraryDetailResponse.from(itinerary);
+        return ItineraryDetailResponse.from(itinerary, fetchCollectedSpotIds(userId));
     }
 
     public List<ItinerarySummaryResponse> getByUserId(UUID userId) {
@@ -58,8 +64,9 @@ public class ItineraryService {
         Itinerary itinerary = findWithDetails(id);
         validateOwner(itinerary, userId);
         if (req.title() != null)  itinerary.updateTitle(req.title());
+        if (req.startAt() != null || req.endAt() != null) itinerary.updatePeriod(req.startAt(), req.endAt());
         if ("confirmed".equals(req.status())) itinerary.confirm();
-        return ItineraryDetailResponse.from(itinerary);
+        return ItineraryDetailResponse.from(itinerary, fetchCollectedSpotIds(userId));
     }
 
     @Transactional
@@ -87,7 +94,7 @@ public class ItineraryService {
                 .dayNumber(req.dayNumber())
                 .date(req.date())
                 .build();
-        return ItineraryDayResponse.from(itineraryDayRepository.save(day));
+        return ItineraryDayResponse.from(itineraryDayRepository.save(day), fetchCollectedSpotIds(userId));
     }
 
     @Transactional
@@ -121,7 +128,7 @@ public class ItineraryService {
                 .travelTimeMin(req.travelTimeMin())
                 .memo(req.memo())
                 .build();
-        return ItineraryItemResponse.from(itineraryItemRepository.save(item));
+        return ItineraryItemResponse.from(itineraryItemRepository.save(item), fetchCollectedSpotIds(userId));
     }
 
     @Transactional
@@ -130,7 +137,7 @@ public class ItineraryService {
         validateOwner(item.getDay().getItinerary(), userId);
         item.update(req.orderIndex(), req.arrivalTime(), req.durationMin(),
                 req.travelMode(), req.travelTimeMin(), req.memo());
-        return ItineraryItemResponse.from(item);
+        return ItineraryItemResponse.from(item, fetchCollectedSpotIds(userId));
     }
 
     @Transactional
@@ -141,6 +148,12 @@ public class ItineraryService {
     }
 
     // ── 내부 헬퍼 ──────────────────────────────────────────────────
+
+    private Set<UUID> fetchCollectedSpotIds(UUID userId) {
+        return collectionEntryRepository.findByUserIdAndCollectedTrue(userId).stream()
+                .map(e -> e.getSpot().getId())
+                .collect(Collectors.toSet());
+    }
 
     private void validateOwner(Itinerary itinerary, UUID userId) {
         if (!itinerary.getUserId().equals(userId)) {
