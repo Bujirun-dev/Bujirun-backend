@@ -14,21 +14,23 @@ import java.util.Map;
 public class GroqClient {
 
     private final WebClient webClient;
+    private final String model;
 
-    public GroqClient(@Value("${groq.api.key}") String apiKey) {
+    public GroqClient(@Value("${groq.api.key}") String apiKey,
+                      @Value("${groq.api.model:openai/gpt-oss-120b}") String model) {
         this.webClient = WebClient.builder()
                 .baseUrl("https://api.groq.com/openai/v1")
                 .defaultHeader("Authorization", "Bearer " + apiKey)
                 .defaultHeader("Content-Type", "application/json")
                 .build();
+        this.model = model;
     }
-
     /**
      * Groq API 호출 - 프롬프트를 받아 텍스트 응답 반환
      */
     public String chat(String systemPrompt, String userPrompt) {
         Map<String, Object> body = Map.of(
-                "model", "llama-3.3-70b-versatile",
+                "model", model,
                 "messages", List.of(
                         Map.of("role", "system", "content", systemPrompt),
                         Map.of("role", "user", "content", userPrompt)
