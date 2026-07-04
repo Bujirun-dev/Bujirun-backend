@@ -3,6 +3,7 @@ package com.bujirun.bujirun.domain.auth.service;
 import com.bujirun.bujirun.domain.auth.config.KakaoConfig;
 import com.bujirun.bujirun.domain.auth.dto.KakaoTokenResponse;
 import com.bujirun.bujirun.domain.auth.dto.KakaoUserInfoResponse;
+import com.bujirun.bujirun.domain.auth.dto.UserAuthResult;
 import com.bujirun.bujirun.domain.auth.entity.User;
 import com.bujirun.bujirun.domain.auth.repository.UserRepository;
 import com.bujirun.bujirun.global.jwt.JwtProvider;
@@ -63,18 +64,24 @@ public class KakaoService {
     }
 
     // 3단계: 기존 회원이면 조회, 아니면 신규 가입
-    public User findOrCreateUser(KakaoUserInfoResponse userInfo) {
+    // isNewUser 플래그로 프론트가 신규 가입자에게 닉네임/프로필사진 설정 화면을 보여줄지 판단
+    public UserAuthResult findOrCreateUser(KakaoUserInfoResponse userInfo) {
 
         String providerId = String.valueOf(userInfo.getId());
 
         return userRepository.findByProviderIdAndAuthProvider(providerId, "kakao")
-                .orElseGet(() -> userRepository.save(
-                        User.builder()
-                                .nickname(userInfo.getKakaoAccount().getProfile().getNickname())
-                                .email(userInfo.getKakaoAccount().getEmail())
-                                .authProvider("kakao")
-                                .providerId(providerId)
-                                .build()
+                .map(user -> new UserAuthResult(user, false))
+                .orElseGet(() -> new UserAuthResult(
+                        userRepository.save(
+                                User.builder()
+                                        .nickname(userInfo.getKakaoAccount().getProfile().getNickname())
+                                        .profileImageUrl(userInfo.getKakaoAccount().getProfile().getProfileImageUrl())
+                                        .email(userInfo.getKakaoAccount().getEmail())
+                                        .authProvider("kakao")
+                                        .providerId(providerId)
+                                        .build()
+                        ),
+                        true
                 ));
     }
 
