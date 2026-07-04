@@ -2,12 +2,18 @@ package com.bujirun.bujirun.domain.itinerary.generate.dto.request;
 
 import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.NotNull;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
 import lombok.Getter;
+import lombok.NoArgsConstructor;
 
 import java.time.LocalDate;
 import java.util.List;
 
 @Getter
+@NoArgsConstructor
+@AllArgsConstructor
+@Builder
 public class SwipeRequest {
 
     @NotEmpty
@@ -22,6 +28,9 @@ public class SwipeRequest {
     private String optimizationType; // "WALK_MIN" | "COST_SAVE" | "TIME_SHORT" | "TRANSFER_MIN"
 
     @Getter
+    @NoArgsConstructor
+    @AllArgsConstructor
+    @Builder
     public static class SwipeItem {
         private String contentId; // 관광지 content_id
         private boolean liked;    // true = 좋아요(→), false = 싫어요(←)
