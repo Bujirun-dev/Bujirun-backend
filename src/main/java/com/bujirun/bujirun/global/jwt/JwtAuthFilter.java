@@ -46,6 +46,14 @@ public class JwtAuthFilter extends OncePerRequestFilter {
         filterChain.doFilter(request, response);
     }
 
+    // OncePerRequestFilter 기본값(true)이면 async dispatch 시 필터가 재실행되지 않아
+    // Mono를 반환하는 컨트롤러(WebAsyncManager가 별도 스레드에서 async dispatch)에서
+    // SecurityContext가 유실되어 403이 발생한다.
+    @Override
+    protected boolean shouldNotFilterAsyncDispatch() {
+        return false;
+    }
+
     private String resolveToken(HttpServletRequest request) {
         String bearer = request.getHeader("Authorization");
         if (bearer != null && bearer.startsWith("Bearer ")) {
