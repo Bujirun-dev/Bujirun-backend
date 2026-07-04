@@ -9,4 +9,6 @@ import java.util.UUID;
 public interface ItineraryRepository extends JpaRepository<Itinerary, UUID> {
 
     List<Itinerary> findByUserIdOrderByCreatedAtDesc(UUID userId);
+
+    List<Itinerary> findByGroupIdInOrderByCreatedAtDesc(List<UUID> groupIds);
 }

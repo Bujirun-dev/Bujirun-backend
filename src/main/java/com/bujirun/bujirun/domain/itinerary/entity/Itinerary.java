@@ -29,6 +29,10 @@ public class Itinerary {
     @Column(name = "session_id")
     private UUID sessionId;
 
+    // 그룹 일정일 때만 설정됨. 그룹원은 소유자(userId)가 아니어도 이 일정에 접근 가능
+    @Column(name = "group_id")
+    private UUID groupId;
+
     @Column(name = "plan_type", nullable = false, length = 1)
     private String planType;
 

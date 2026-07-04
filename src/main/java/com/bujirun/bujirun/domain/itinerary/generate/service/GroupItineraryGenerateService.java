@@ -1,5 +1,6 @@
 package com.bujirun.bujirun.domain.itinerary.generate.service;
 
+import com.bujirun.bujirun.domain.group.repository.GroupMemberRepository;
 import com.bujirun.bujirun.domain.itinerary.generate.dto.projection.SpotSwipeAggregate;
 import com.bujirun.bujirun.domain.itinerary.generate.dto.request.GroupItineraryRequest;
 import com.bujirun.bujirun.domain.itinerary.generate.dto.request.SwipeRequest;
@@ -27,8 +28,13 @@ public class GroupItineraryGenerateService {
     private final SwipeResultRepository swipeResultRepository;
     private final TourSpotRepository tourSpotRepository;
     private final ItineraryGenerateService itineraryGenerateService;
+    private final GroupMemberRepository groupMemberRepository;
 
     public ItineraryGenerateResponse generateGroupItinerary(UUID groupId, GroupItineraryRequest request, UUID requesterId) {
+
+        if (!groupMemberRepository.existsById_GroupIdAndId_UserId(groupId, requesterId)) {
+            throw new IllegalArgumentException("그룹 멤버만 그룹 일정을 생성할 수 있습니다.");
+        }
 
         List<SpotSwipeAggregate> aggregates = swipeResultRepository.aggregateByGroup(groupId);
 
