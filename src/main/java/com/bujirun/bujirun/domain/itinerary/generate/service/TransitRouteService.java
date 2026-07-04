@@ -21,6 +21,7 @@ import java.util.List;
 public class TransitRouteService {
 
     private final OdsayClient odsayClient;
+    private final List<ArrivalInfoProvider> arrivalProviders;
 
     private static final double WALK_SPEED_MPS = 1.2;       // 도보 속도 1.2m/s
     private static final int TAXI_BASE_FARE = 4800;          // 기본요금
@@ -46,6 +47,17 @@ public class TransitRouteService {
                         to.getLng(), to.getLat()
                 );
                 TransitOption transitOption = parseTransit(result);
+
+                // 추가: null이면 1회 재시도
+                if (transitOption == null) {
+                    log.info("ODsay 경로 없음 — 재시도 {} → {}", from.getName(), to.getName());
+                    result = odsayClient.searchTransitRoute(
+                            from.getLng(), from.getLat(),
+                            to.getLng(), to.getLat()
+                    );
+                    transitOption = parseTransit(result);
+                }
+
                 if (transitOption != null) options.add(transitOption);
             } catch (Exception e) {
                 log.warn("ODsay 경로 조회 실패 {} → {}: {}", from.getName(), to.getName(), e.getMessage());
@@ -82,7 +94,8 @@ public class TransitRouteService {
                     // 도보 구간 — 정류장 정보 없음
                     subPaths.add(new SubPath(
                             "도보", sub.path("sectionTime").asInt(), "", 0,
-                            "", "", 0, 0, 0, 0
+                            "", "", 0, 0, 0, 0,
+                            "", 0, 0, null
                     ));
                 } else if (trafficType == 2) {
                     // 버스 구간
@@ -94,7 +107,9 @@ public class TransitRouteService {
                             sub.path("startX").asDouble(),
                             sub.path("startY").asDouble(),
                             sub.path("endX").asDouble(),
-                            sub.path("endY").asDouble()
+                            sub.path("endY").asDouble(),
+                            sub.path("startArsID").asText(""),
+                            0, 0, null
                     ));
                 } else if (trafficType == 1) {
                     // 지하철 구간
@@ -106,11 +121,33 @@ public class TransitRouteService {
                             sub.path("startX").asDouble(),
                             sub.path("startY").asDouble(),
                             sub.path("endX").asDouble(),
-                            sub.path("endY").asDouble()
+                            sub.path("endY").asDouble(),
+                            "",
+                            sub.path("startID").asInt(),
+                            sub.path("wayCode").asInt(),
+                            null
                     ));
                 }
             }
         }
+
+        // remainMinutes
+        List<SubPath> enriched = subPaths.stream().map(sp -> {
+            if ("도보".equals(sp.type())) return sp;
+            Integer remain = arrivalProviders.stream()
+                    .filter(p -> p.supports(sp.type()))
+                    .findFirst()
+                    .map(p -> p.getNextArrival(sp))
+                    .orElse(null);
+            return new SubPath(
+                    sp.type(), sp.sectionTime(), sp.routeNo(), sp.stationCount(),
+                    sp.startName(), sp.endName(),
+                    sp.startX(), sp.startY(), sp.endX(), sp.endY(),
+                    sp.startArsId(), sp.startId(), sp.wayCode(),
+                    remain
+            );
+        }).toList();
+
 
         log.info("ODsay 경로 조회 성공 — {}분 · {}원 · 환승{}회",
                 info.path("totalTime").asInt(),
@@ -123,7 +160,8 @@ public class TransitRouteService {
                 info.path("payment").asInt(),
                 info.path("busTransitCount").asInt() + info.path("subwayTransitCount").asInt(),
                 false,
-                subPaths
+//                subPaths
+                enriched
         );
     }
 

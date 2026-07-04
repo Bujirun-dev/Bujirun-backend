@@ -1,5 +1,6 @@
 package com.bujirun.bujirun.domain.visit.service;
 
+import com.bujirun.bujirun.domain.collection.service.CollectionService;
 import com.bujirun.bujirun.domain.spot.entity.TourSpot;
 import com.bujirun.bujirun.domain.spot.repository.TourSpotRepository;
 import com.bujirun.bujirun.domain.visit.dto.request.VisitRequest;
@@ -25,6 +26,7 @@ public class VisitService {
 
     private final VisitRepository visitRepository;
     private final TourSpotRepository tourSpotRepository;
+    private final CollectionService collectionService;
 
     @Transactional
     public VisitResponse verify(VisitRequest req, UUID userId) {
@@ -51,6 +53,13 @@ public class VisitService {
                 .verified(verified)
                 .distanceMeters(distance)
                 .build();
+
+        Visit saved = visitRepository.save(visit);
+
+        // 방문 시 도감에 해당 관광지 저장
+        if (verified && spot.isCollection()) {
+            collectionService.markCollected(userId, spot.getId());
+        }
 
         return VisitResponse.from(visitRepository.save(visit));
     }

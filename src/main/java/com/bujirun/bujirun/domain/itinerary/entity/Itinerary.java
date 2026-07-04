@@ -9,6 +9,7 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
+import java.time.LocalDate;
 
 @Entity
 @Table(name = "itineraries")
@@ -28,6 +29,10 @@ public class Itinerary {
     @Column(name = "session_id")
     private UUID sessionId;
 
+    // 그룹 일정일 때만 설정됨. 그룹원은 소유자(userId)가 아니어도 이 일정에 접근 가능
+    @Column(name = "group_id")
+    private UUID groupId;
+
     @Column(name = "plan_type", nullable = false, length = 1)
     private String planType;
 
@@ -36,6 +41,12 @@ public class Itinerary {
     private String status = "draft";
 
     private String title;
+
+    @Column(name = "start_at")
+    private LocalDate startAt;
+
+    @Column(name = "end_at")
+    private LocalDate endAt;
 
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
@@ -62,6 +73,11 @@ public class Itinerary {
 
     public void updateTitle(String title) {
         this.title = title;
+    }
+
+    public void updatePeriod(LocalDate startAt, LocalDate endAt) {
+        this.startAt = startAt;
+        this.endAt = endAt;
     }
 
     public void confirm() {

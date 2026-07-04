@@ -1,7 +1,7 @@
 package com.bujirun.bujirun.domain.spot.service;
 
 import com.bujirun.bujirun.domain.spot.client.TourApiClient;
-import com.bujirun.bujirun.domain.spot.dto.TourApiResponse.*;
+import com.bujirun.bujirun.domain.spot.dto.response.TourApiResponse.*;
 import com.bujirun.bujirun.domain.spot.entity.Sigungu;
 import com.bujirun.bujirun.domain.spot.entity.TourSpot;
 import com.bujirun.bujirun.domain.spot.entity.TourSpotTag;

@@ -1,5 +1,6 @@
 package com.bujirun.bujirun.domain.itinerary.generate.service;
 
+import com.bujirun.bujirun.domain.collection.repository.CollectionEntryRepository;
 import com.bujirun.bujirun.domain.itinerary.generate.client.GroqClient;
 import com.bujirun.bujirun.domain.itinerary.generate.dto.response.ItineraryGenerateResponse;
 import com.bujirun.bujirun.domain.itinerary.generate.dto.response.SpotInfo;
@@ -13,6 +14,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
+import java.time.LocalDate;
 import java.util.*;
 import java.util.stream.Collectors;
 
@@ -25,12 +27,14 @@ public class ItineraryGenerateService {
     private final TourSpotRepository tourSpotRepository;
     private final ObjectMapper objectMapper;
     private final TransitRouteService transitRouteService;
+    private final CollectionEntryRepository collectionEntryRepository;
+
     private static final List<Double> RADIUS_STEPS_M = List.of(15_000.0, 25_000.0, 40_000.0); // 15km → 25km → 40km
     private static final int MIN_CANDIDATES = 20; // 후보 장소 최소 개수
 
-    public ItineraryGenerateResponse generateItinerary(SwipeRequest request) {
+    public ItineraryGenerateResponse generateItinerary(SwipeRequest request, UUID userId) {
 
-        // 1. 스와이프 결과에서 contentId 목록 추출
+        // 스와이프 결과에서 contentId 목록 추출
         List<String> likedIds = request.getSwipes().stream()
                 .filter(SwipeRequest.SwipeItem::isLiked)
                 .map(SwipeRequest.SwipeItem::getContentId)
@@ -41,20 +45,20 @@ public class ItineraryGenerateService {
                 .map(SwipeRequest.SwipeItem::getContentId)
                 .toList();
 
-        // 2. DB에서 좋아요한 관광지 조회 → 성향 벡터(카테고리별 선호도) 생성
+        // DB에서 좋아요한 관광지 조회 → 성향 벡터(카테고리별 선호도) 생성
         List<TourSpot> likedSpots = tourSpotRepository.findByContentIdIn(likedIds);
         Map<String, Long> preferenceVector = likedSpots.stream()
                 .filter(s -> s.getCategory() != null)
                 .collect(Collectors.groupingBy(TourSpot::getCategory, Collectors.counting()));
 
-        // 3. 선호 카테고리 기준으로 후보 관광지 조회 (최대 30개)
+        // 선호 카테고리 기준으로 후보 관광지 조회 (최대 30개)
         List<String> preferredCategories = preferenceVector.entrySet().stream()
                 .sorted(Map.Entry.<String, Long>comparingByValue().reversed())
                 .map(Map.Entry::getKey)
                 .limit(3)
                 .toList();
 
-        // 3-1. 좋아요한 곳들의 중심 좌표 계산 (좋아요 0개면 null → 거리 필터 스킵)
+        // 좋아요한 곳들의 중심 좌표 계산 (좋아요 0개면 null → 거리 필터 스킵)
         Double centerLat = null;
         Double centerLng = null;
         if (!likedSpots.isEmpty()) {
@@ -74,20 +78,31 @@ public class ItineraryGenerateService {
                 .filter(s -> !likedIds.contains(s.getContentId()))
                 .toList();
 
-        // 3-2. 좋아요 중심 좌표 기준 거리 필터링 (반경 단계적으로 확대)
+        // 좋아요 중심 좌표 기준 거리 필터링 (반경 단계적으로 확대)
         List<TourSpot> categorySpots = filterByRadiusWithFallback(filteredByCategory, centerLat, centerLng)
                 .stream()
                 .limit(30 - likedSpots.size())
                 .toList();
 
-        // 3-3. 좋아요한 곳 + 거리 필터링된 카테고리 후보 합치기
+        // 좋아요한 곳 + 거리 필터링된 카테고리 후보 합치기
+        Set<UUID> collectedSpotIds = collectionEntryRepository
+                .findByUserIdAndCollectedTrue(userId)
+                .stream()
+                .map(ce -> ce.getSpot().getId())
+                .collect(Collectors.toSet());
+
         List<TourSpot> allCandidates = new ArrayList<>(likedSpots);
         allCandidates.addAll(categorySpots);
 
-        // 4. 여행 일수 계산
+        // 미수집 먼저, 수집 완료 나중 (둘 다 후보 포함)
+        allCandidates.sort(Comparator.comparing(
+                spot -> collectedSpotIds.contains(spot.getId()) ? 1 : 0
+        ));
+
+        // 여행 일수 계산
         long tripDays = request.getStartDate().until(request.getEndDate()).getDays() + 1;
 
-        // 5. 후보 관광지를 SpotInfo로 변환
+        // 후보 관광지를 SpotInfo로 변환
         List<SpotInfo> candidates = allCandidates.stream()
                 .map(this::toSpotInfo)
                 .toList();
@@ -96,15 +111,15 @@ public class ItineraryGenerateService {
                 .map(this::toSpotInfo)
                 .toList();
 
-        // 6. Groq 호출
+        // Groq 호출
         String systemPrompt = buildSystemPrompt();
-        String userPrompt = buildUserPrompt(likedSpotInfos, preferenceVector, candidates, tripDays, request.getOptimizationType());
+        String userPrompt = buildUserPrompt(likedSpotInfos, preferenceVector, candidates, tripDays, request.getOptimizationType(), request.getStartDate(), request.getEndDate());
 
         log.info("Groq 호출 시작 - 후보 관광지 {}개, 여행 {}일", candidates.size(), tripDays);
         String rawResponse = groqClient.chat(systemPrompt, userPrompt);
         log.info("Groq 응답 수신 완료");
 
-        // 7. JSON 파싱 → ScheduleResponse 변환
+        // JSON 파싱 → ScheduleResponse 변환
         return parseResponse(rawResponse, candidates, request.getOptimizationType());
     }
 
@@ -136,7 +151,9 @@ public class ItineraryGenerateService {
                                    Map<String, Long> preferenceVector,
                                    List<SpotInfo> candidates,
                                    long tripDays,
-                                   String optimizationType) {
+                                   String optimizationType,
+                                   LocalDate startDate,
+                                   LocalDate endDate) {
         StringBuilder sb = new StringBuilder();
 
         sb.append("## 좋아요한 장소 목록\n");
@@ -167,6 +184,9 @@ public class ItineraryGenerateService {
                         .append(", 이름: ").append(spot.getName())
                         .append(", 카테고리: ").append(spot.getCategory())
                         .append(", 지역: ").append(spot.getSigungu())
+                        .append(", 운영시간: ").append(
+                                spot.getOperatingHours() != null && !spot.getOperatingHours().isBlank()
+                                        ? spot.getOperatingHours() : "정보없음")
                         .append(", 위치: (").append(spot.getLat()).append(", ").append(spot.getLng()).append(")\n")
         );
 
@@ -174,6 +194,10 @@ public class ItineraryGenerateService {
         sb.append("\nA안은 선호 카테고리에 집중하고, 위 좋아요한 장소 목록에 있는 장소를 일정에 최대한 포함하세요.");
         sb.append("\nB안은 동선이 꼬이지 않도록 각 후보 관광지의 위도·경도를 기준으로 같은 권역(예: 수영구·해운대구, 중구·영도구 등 인접한 구/군)끼리 묶어서 묶음 단위로 하루 일정을 구성하세요. 서로 먼 권역의 관광지를 같은 날 또는 인접한 순서에 배치하지 마세요.");
 
+        sb.append("\n\n## 운영시간 유의사항");
+        sb.append("\n각 관광지의 '운영시간' 정보를 참고하여, 배정된 날짜(요일)·시간대에 실제로 운영하지 않는 곳(정기 휴무일, 계절 미운영 기간 등)은 해당 날짜의 일정에서 제외하세요.");
+        sb.append("\n'상시 개방'이거나 운영시간 정보가 '정보없음'인 곳은 시간 제약 없이 포함해도 됩니다.");
+        sb.append("\n하루 일정 내 관광지 방문 순서도 가능하면 각 관광지의 운영시간대 안에 들어오도록 배치하세요.");
 
         return sb.toString();
     }

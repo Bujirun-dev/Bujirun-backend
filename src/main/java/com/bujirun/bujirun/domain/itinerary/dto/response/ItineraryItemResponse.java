@@ -5,6 +5,7 @@ import com.bujirun.bujirun.domain.spot.entity.TourSpot;
 
 import java.math.BigDecimal;
 import java.time.LocalTime;
+import java.util.Set;
 import java.util.UUID;
 
 public record ItineraryItemResponse(
@@ -20,18 +21,25 @@ public record ItineraryItemResponse(
     public record SpotSummary(
             UUID id,
             String name,
+            String category,
             String address,
             BigDecimal lat,
             BigDecimal lng,
-            String thumbnailUrl
+            String thumbnailUrl,
+            boolean isCollected
     ) {}
 
-    public static ItineraryItemResponse from(ItineraryItem item) {
+    public static ItineraryItemResponse from(ItineraryItem item, Set<UUID> collectedSpotIds) {
         TourSpot s = item.getSpot();
         return new ItineraryItemResponse(
                 item.getId(),
                 item.getOrderIndex(),
-                new SpotSummary(s.getId(), s.getName(), s.getAddress(), s.getLat(), s.getLng(), s.getThumbnailUrl()),
+                new SpotSummary(
+                        s.getId(), s.getName(), s.getCategory(),
+                        s.getAddress(), s.getLat(), s.getLng(),
+                        s.getThumbnailUrl(),
+                        collectedSpotIds.contains(s.getId())
+                ),
                 item.getArrivalTime(),
                 item.getDurationMin(),
                 item.getTravelMode(),

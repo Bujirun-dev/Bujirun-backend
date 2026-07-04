@@ -51,6 +51,21 @@ public interface TourSpotRepository extends JpaRepository<TourSpot, UUID> {
     List<TourSpot> findByContentIdIn(List<String> contentIds);
 
     List<TourSpot> findByCategoryInOrderByName(List<String> categories);
+
+    @Query("""
+        select ts from TourSpot ts
+        where (:keyword is null or ts.name like %:keyword%)
+        and (:sigunguId is null or ts.sigungu.id = :sigunguId)
+        and (:category is null or ts.category = :category)
+        order by ts.name asc
+        """)
+    List<TourSpot> searchSpots(
+            @Param("keyword") String keyword,
+            @Param("sigunguId") Integer sigunguId,
+            @Param("category") String category
+    );
+
+
 }
 
 
