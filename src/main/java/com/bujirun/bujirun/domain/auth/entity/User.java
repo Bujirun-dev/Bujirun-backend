@@ -23,6 +23,9 @@ public class User {
     @Column(length = 50)
     private String nickname;
 
+    @Column(name = "profile_image_url")
+    private String profileImageUrl;
+
     @Column(length = 255)
     private String email;
 
@@ -41,10 +44,19 @@ public class User {
     // 카카오 로그인 회원가입 시 사용하는 생성자
     // passwordHash는 의도적으로 제외 (카카오 로그인은 비밀번호가 없음)
     @Builder
-    public User(String nickname, String email, String authProvider, String providerId) {
+    public User(String nickname, String profileImageUrl, String email, String authProvider, String providerId) {
         this.nickname = nickname;
+        this.profileImageUrl = profileImageUrl;
         this.email = email;
         this.authProvider = authProvider;
         this.providerId = providerId;
+    }
+
+    public void updateNickname(String nickname) {
+        this.nickname = nickname;
+    }
+
+    public void updateProfileImage(String profileImageUrl) {
+        this.profileImageUrl = profileImageUrl;
     }
 }
