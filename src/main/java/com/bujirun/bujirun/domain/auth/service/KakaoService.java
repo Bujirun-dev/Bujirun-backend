@@ -16,6 +16,7 @@ import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
 import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
+import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestClient;
 
 @Service
@@ -43,12 +44,16 @@ public class KakaoService {
 
         RestClient restClient = RestClient.create();
 
-        return restClient.post()
-                .uri(TOKEN_REQUEST_URL)
-                .contentType(MediaType.APPLICATION_FORM_URLENCODED)
-                .body(formData)
-                .retrieve()
-                .body(KakaoTokenResponse.class);
+        try {
+            return restClient.post()
+                    .uri(TOKEN_REQUEST_URL)
+                    .contentType(MediaType.APPLICATION_FORM_URLENCODED)
+                    .body(formData)
+                    .retrieve()
+                    .body(KakaoTokenResponse.class);
+        } catch (HttpClientErrorException e) {
+            throw new IllegalArgumentException("유효하지 않은 카카오 인가 코드입니다", e);
+        }
     }
 
     // 2단계: 액세스 토큰으로 사용자 정보 받기
