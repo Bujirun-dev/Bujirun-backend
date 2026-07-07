@@ -7,6 +7,8 @@ import com.bujirun.bujirun.domain.log.dto.request.UpdateLogRequest;
 import com.bujirun.bujirun.domain.log.dto.response.*;
 import com.bujirun.bujirun.domain.log.service.TravelLogService;
 import com.bujirun.bujirun.global.response.ApiResponse;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
@@ -18,6 +20,7 @@ import reactor.core.scheduler.Schedulers;
 import java.util.List;
 import java.util.UUID;
 
+@Tag(name = "여행 기록", description = "여행 기록(로그) 및 사진, 해시태그 관리 API")
 @RestController
 @RequestMapping("/api/logs")
 @RequiredArgsConstructor
@@ -27,6 +30,7 @@ public class TravelLogController {
 
     // ── 로그 CRUD ──────────────────────────────────────────────────
 
+    @Operation(summary = "여행 기록 생성", description = "새로운 여행 기록(로그)을 생성합니다.")
     @PostMapping
     public Mono<ResponseEntity<ApiResponse<TravelLogDetailResponse>>> create(
             @RequestBody @Valid CreateLogRequest req,
@@ -35,6 +39,7 @@ public class TravelLogController {
                 .map(r -> ResponseEntity.status(201).body(ApiResponse.ok(r)));
     }
 
+    @Operation(summary = "여행 기록 상세 조회", description = "여행 기록 ID로 사진, 해시태그를 포함한 상세 정보를 조회합니다.")
     @GetMapping("/{id}")
     public Mono<ResponseEntity<ApiResponse<TravelLogDetailResponse>>> getDetail(
             @PathVariable UUID id,
@@ -43,6 +48,7 @@ public class TravelLogController {
                 .map(r -> ResponseEntity.ok(ApiResponse.ok(r)));
     }
 
+    @Operation(summary = "내 여행 기록 목록 조회", description = "로그인한 사용자가 작성한 여행 기록 목록을 조회합니다.")
     @GetMapping("/me")
     public Mono<ResponseEntity<ApiResponse<List<TravelLogSummaryResponse>>>> getMyLogs(
             @AuthenticationPrincipal UUID userId) {
@@ -50,6 +56,7 @@ public class TravelLogController {
                 .map(r -> ResponseEntity.ok(ApiResponse.ok(r)));
     }
 
+    @Operation(summary = "공개 여행 기록 목록 조회", description = "다른 사용자들에게 공개된 여행 기록을 카테고리, 정렬 기준으로 조회합니다.")
     @GetMapping("/public")
     public Mono<ResponseEntity<ApiResponse<List<TravelLogSummaryResponse>>>> getPublicLogs(
             @RequestParam(required = false) String category,
@@ -58,6 +65,7 @@ public class TravelLogController {
                 .map(r -> ResponseEntity.ok(ApiResponse.ok(r)));
     }
 
+    @Operation(summary = "여행지별 기록 조회", description = "특정 여행지(스팟)에 대한 여행 기록 목록을 조회합니다.")
     @GetMapping("/spot/{spotId}")
     public Mono<ResponseEntity<ApiResponse<List<TravelLogSummaryResponse>>>> getLogsBySpot(
             @PathVariable UUID spotId) {
@@ -65,6 +73,7 @@ public class TravelLogController {
                 .map(r -> ResponseEntity.ok(ApiResponse.ok(r)));
     }
 
+    @Operation(summary = "여행 기록 수정", description = "여행 기록의 내용을 수정합니다.")
     @PatchMapping("/{id}")
     public Mono<ResponseEntity<ApiResponse<TravelLogDetailResponse>>> update(
             @PathVariable UUID id,
@@ -74,6 +83,7 @@ public class TravelLogController {
                 .map(r -> ResponseEntity.ok(ApiResponse.ok(r)));
     }
 
+    @Operation(summary = "여행 기록 삭제", description = "여행 기록을 삭제합니다.")
     @DeleteMapping("/{id}")
     public Mono<ResponseEntity<Void>> delete(
             @PathVariable UUID id,
@@ -85,6 +95,7 @@ public class TravelLogController {
 
     // ── 사진 ────────────────────────────────────────────────────────
 
+    @Operation(summary = "사진 추가", description = "여행 기록의 특정 방문 항목에 사진을 추가합니다.")
     @PostMapping("/{logId}/items/{itemId}/photos")
     public Mono<ResponseEntity<ApiResponse<TravelLogPhotoResponse>>> addPhoto(
             @PathVariable UUID logId,
@@ -95,6 +106,7 @@ public class TravelLogController {
                 .map(r -> ResponseEntity.status(201).body(ApiResponse.ok(r)));
     }
 
+    @Operation(summary = "사진 삭제", description = "여행 기록의 방문 항목에서 특정 사진을 삭제합니다.")
     @DeleteMapping("/{logId}/items/{itemId}/photos/{photoId}")
     public Mono<ResponseEntity<Void>> deletePhoto(
             @PathVariable UUID logId,
@@ -106,6 +118,7 @@ public class TravelLogController {
                 .thenReturn(ResponseEntity.noContent().<Void>build());
     }
 
+    @Operation(summary = "대표 사진 설정", description = "방문 항목에 포함된 사진 중 하나를 대표 사진으로 지정합니다.")
     @PatchMapping("/{logId}/items/{itemId}/photos/{photoId}/representative")
     public Mono<ResponseEntity<ApiResponse<TravelLogPhotoResponse>>> setRepresentative(
             @PathVariable UUID logId,
@@ -118,6 +131,7 @@ public class TravelLogController {
 
     // ── 해시태그 ────────────────────────────────────────────────────
 
+    @Operation(summary = "해시태그 추가", description = "여행 기록의 방문 항목에 해시태그를 추가합니다.")
     @PostMapping("/{logId}/items/{itemId}/hashtags")
     public Mono<ResponseEntity<ApiResponse<TravelLogHashtagResponse>>> addHashtag(
             @PathVariable UUID logId,
@@ -128,6 +142,7 @@ public class TravelLogController {
                 .map(r -> ResponseEntity.status(201).body(ApiResponse.ok(r)));
     }
 
+    @Operation(summary = "해시태그 삭제", description = "여행 기록의 방문 항목에서 특정 해시태그를 삭제합니다.")
     @DeleteMapping("/{logId}/items/{itemId}/hashtags/{hashtagId}")
     public Mono<ResponseEntity<Void>> deleteHashtag(
             @PathVariable UUID logId,

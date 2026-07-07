@@ -4,6 +4,8 @@ import com.bujirun.bujirun.global.jwt.JwtProvider;
 import com.bujirun.bujirun.global.jwt.RefreshTokenRepository;
 import com.bujirun.bujirun.global.jwt.dto.TokenResponse;
 import com.bujirun.bujirun.global.response.ApiResponse;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
@@ -15,6 +17,7 @@ import org.springframework.web.bind.annotation.RestController;
 import java.util.Arrays;
 import java.util.UUID;
 
+@Tag(name = "인증", description = "Access Token 재발급 및 로그아웃 API")
 @RestController
 @RequestMapping("/api/auth")
 @RequiredArgsConstructor
@@ -23,8 +26,7 @@ public class AuthController {
     private final JwtProvider jwtProvider;
     private final RefreshTokenRepository refreshTokenRepository;
 
-    // Access Token 재발급 API
-    // 쿠키의 Refresh Token으로 새 Access Token 발급
+    @Operation(summary = "Access Token 재발급", description = "쿠키에 저장된 Refresh Token을 검증하여 새로운 Access Token을 발급합니다.")
     @PostMapping("/reissue")
     public ApiResponse<TokenResponse> reissue(HttpServletRequest request) {
 
@@ -62,6 +64,8 @@ public class AuthController {
 
         return ApiResponse.ok(token);
     }
+
+    @Operation(summary = "로그아웃", description = "Redis에 저장된 Refresh Token을 삭제하고 쿠키를 만료시킵니다.")
     @PostMapping("/logout")
     public ApiResponse<Void> logout(HttpServletRequest request, HttpServletResponse response) {
 
