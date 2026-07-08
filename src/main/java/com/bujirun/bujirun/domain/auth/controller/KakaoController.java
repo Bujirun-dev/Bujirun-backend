@@ -12,6 +12,8 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.ResponseCookie;
 import org.springframework.web.bind.annotation.PostMapping;  // GET → POST로 변경
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -35,12 +37,16 @@ public class KakaoController {
         UserAuthResult authResult = kakaoService.findOrCreateUser(userInfo);
         TokenResponse token = kakaoService.createToken(authResult.user());
 
-        Cookie refreshCookie = new Cookie("refresh_token",
-                kakaoService.createRefreshToken(authResult.user()));
-        refreshCookie.setHttpOnly(true);
-        refreshCookie.setPath("/");
-        refreshCookie.setMaxAge(60 * 60 * 24 * 14);
-        response.addCookie(refreshCookie);
+        ResponseCookie refreshCookie = ResponseCookie.from(
+                        "refresh_token",
+                        kakaoService.createRefreshToken(authResult.user()))
+                .httpOnly(true)
+                .secure(true)        // https 환경 필수 (SameSite=None은 Secure 동반 필수)
+                .sameSite("None")    // 크로스도메인(localhost:3000 ↔ api.bujirun.store) 허용
+                .path("/")
+                .maxAge(60 * 60 * 24 * 14)
+                .build();
+        response.addHeader(HttpHeaders.SET_COOKIE, refreshCookie.toString());
 
         return ApiResponse.ok(KakaoLoginResponse.of(token, authResult.isNewUser()));
     }
