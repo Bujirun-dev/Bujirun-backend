@@ -1,4 +1,4 @@
-package com.bujirun.bujirun.domain.itinerary.generate.entity;
+package com.bujirun.bujirun.domain.swipe.entity;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;

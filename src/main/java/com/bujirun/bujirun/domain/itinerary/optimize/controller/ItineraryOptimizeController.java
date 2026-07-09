@@ -14,13 +14,13 @@ import java.util.UUID;
 @RestController
 @RequestMapping("/api/itineraries/days")
 @RequiredArgsConstructor
-@Tag(name = "Itinerary Optimize", description = "일정 재최적화 API")
+@Tag(name = "일정 최적화", description = "일정 최적화 API")
 public class ItineraryOptimizeController {
 
     private final ItineraryOptimizeService itineraryOptimizeService;
 
     @PatchMapping("/{dayId}/optimize")
-    @Operation(summary = "일정 재최적화", description = "좌표 기반 동선 재정렬 + 운영시간 반영")
+    @Operation(summary = "일정 최적화", description = "좌표 기반 동선 재정렬 + 운영시간 반영")
     public ItineraryOptimizeResponse optimize(
             @PathVariable UUID dayId,
             @RequestBody ItineraryOptimizeRequest request,
