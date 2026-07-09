@@ -27,6 +27,8 @@ public class SwipeRequest {
 
     private String optimizationType; // "WALK_MIN" | "COST_SAVE" | "TIME_SHORT" | "TRANSFER_MIN"
 
+    private int activityHours; // 하루 활동 가능 시간 (2-8)
+
     @Getter
     @NoArgsConstructor
     @AllArgsConstructor
