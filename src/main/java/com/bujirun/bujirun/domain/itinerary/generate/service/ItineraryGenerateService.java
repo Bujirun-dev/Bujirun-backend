@@ -8,6 +8,7 @@ import com.bujirun.bujirun.domain.itinerary.generate.dto.request.SwipeRequest;
 import com.bujirun.bujirun.domain.spot.entity.TourSpot;
 import com.bujirun.bujirun.domain.spot.repository.TourSpotRepository;
 import com.bujirun.bujirun.global.util.GeoUtils;
+import com.bujirun.bujirun.global.util.ScheduleCapacityUtil;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
@@ -113,7 +114,9 @@ public class ItineraryGenerateService {
 
         // Groq 호출
         String systemPrompt = buildSystemPrompt();
-        String userPrompt = buildUserPrompt(likedSpotInfos, preferenceVector, candidates, tripDays, request.getOptimizationType(), request.getStartDate(), request.getEndDate());
+        String userPrompt = buildUserPrompt(likedSpotInfos, preferenceVector, candidates, tripDays,
+                request.getOptimizationType(), request.getStartDate(),
+                request.getEndDate(), request.getActivityHours());
 
         log.info("Groq 호출 시작 - 후보 관광지 {}개, 여행 {}일", candidates.size(), tripDays);
         String rawResponse = groqClient.chat(systemPrompt, userPrompt);
@@ -153,7 +156,8 @@ public class ItineraryGenerateService {
                                    long tripDays,
                                    String optimizationType,
                                    LocalDate startDate,
-                                   LocalDate endDate) {
+                                   LocalDate endDate,
+                                   int activityHours) {
         StringBuilder sb = new StringBuilder();
 
         sb.append("## 좋아요한 장소 목록\n");
@@ -176,7 +180,8 @@ public class ItineraryGenerateService {
         ).append("\n");
 
         sb.append("\n## 여행 일수: ").append(tripDays).append("일\n");
-        sb.append("## 하루 최대 관광지 수: 4곳\n");
+        int maxSpotsPerDay = ScheduleCapacityUtil.calculateMaxSpotsPerDay(activityHours);
+        sb.append("\n## 하루 최대 관광지 수: ").append(maxSpotsPerDay).append("곳\n");
 
         sb.append("\n## 후보 관광지 목록\n");
         candidates.forEach(spot ->
