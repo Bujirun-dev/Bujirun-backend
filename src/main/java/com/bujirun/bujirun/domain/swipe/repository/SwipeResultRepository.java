@@ -1,7 +1,7 @@
-package com.bujirun.bujirun.domain.itinerary.generate.repository;
+package com.bujirun.bujirun.domain.swipe.repository;
 
-import com.bujirun.bujirun.domain.itinerary.generate.dto.projection.SpotSwipeAggregate;
-import com.bujirun.bujirun.domain.itinerary.generate.entity.SwipeResult;
+import com.bujirun.bujirun.domain.swipe.dto.projection.SpotSwipeAggregate;
+import com.bujirun.bujirun.domain.swipe.entity.SwipeResult;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;

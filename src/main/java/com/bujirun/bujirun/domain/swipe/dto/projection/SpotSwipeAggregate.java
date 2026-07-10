@@ -1,4 +1,4 @@
-package com.bujirun.bujirun.domain.itinerary.generate.dto.projection;
+package com.bujirun.bujirun.domain.swipe.dto.projection;
 
 import java.util.UUID;
 
