@@ -56,10 +56,14 @@ public class SpotService {
         TourSpot spot = tourSpotRepository.findById(spotId)
                 .orElseThrow(() -> new EntityNotFoundException("존재하지 않는 관광지입니다. spotId=" + spotId));
 
-        Optional<TourApiResponse.DetailCommonResponse.CommonItem> apiDetail =
-                tourApiClient.fetchDetailCommon(spot.getContentId(), spot.getContentTypeId());
+        Optional<TourApiResponse.DetailCommonResponse.CommonItem> apiDetail = Optional.empty();
+        if (spot.getContentTypeId() != null) {
+            apiDetail = tourApiClient.fetchDetailCommon(spot.getContentId(), spot.getContentTypeId());
+        }
 
-        boolean isCollected = collectedByUser(userId, spotId);       // ← 아래 참고
+        boolean isCollected = collectionEntryRepository.findByUserIdAndSpotId(userId, spotId)
+                .map(CollectionEntry::isCollected)
+                .orElse(false);
 
         return SpotDetailResponse.of(spot, apiDetail.orElse(null), isCollected);
     }
