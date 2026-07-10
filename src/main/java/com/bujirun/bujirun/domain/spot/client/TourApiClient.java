@@ -72,4 +72,37 @@ public class TourApiClient {
             return Optional.empty();
         }
     }
+
+    public Optional<DetailCommonResponse.CommonItem> fetchDetailCommon(String contentId, int contentTypeId) {
+        try {
+            DetailCommonResponse res = webClient.get()
+                    .uri(uri -> uri.path("/detailCommon2")
+                            .queryParam("serviceKey",    serviceKey)
+                            .queryParam("MobileOS",      "ETC")
+                            .queryParam("MobileApp",     "BujiRun")
+                            .queryParam("_type",         "json")
+                            .queryParam("contentId",     contentId)
+                            .queryParam("contentTypeId", contentTypeId)
+                            .queryParam("defaultYN",     "Y")
+                            .queryParam("firstImageYN",  "Y")
+                            .queryParam("addrinfoYN",    "Y")
+                            .queryParam("mapinfoYN",     "Y")
+                            .queryParam("overviewYN",    "Y")
+                            .build())
+                    .retrieve()
+                    .bodyToMono(DetailCommonResponse.class)
+                    .retryWhen(Retry.backoff(3, Duration.ofSeconds(2)))
+                    .block();
+
+            return Optional.ofNullable(res)
+                    .map(r -> r.getResponse().getBody().getItems().getItem())
+                    .filter(list -> !list.isEmpty())
+                    .map(list -> list.get(0));
+
+        } catch (Exception e) {
+            log.warn("[TourAPI] detailCommon 실패 - contentId={}, contentTypeId={}, {}", contentId, contentTypeId, e.getMessage());
+            return Optional.empty();
+        }
+    }
+
 }
