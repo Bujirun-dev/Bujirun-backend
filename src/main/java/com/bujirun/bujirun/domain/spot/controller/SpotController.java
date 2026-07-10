@@ -1,5 +1,6 @@
 package com.bujirun.bujirun.domain.spot.controller;
 
+import com.bujirun.bujirun.domain.spot.dto.response.SpotDetailResponse;
 import com.bujirun.bujirun.domain.spot.dto.response.SpotSearchResponse;
 import com.bujirun.bujirun.domain.spot.service.SpotService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -29,5 +30,13 @@ public class SpotController {
             @RequestParam(required = false) String category,
             @RequestParam(defaultValue = "RECOMMEND") String sort) {
         return ResponseEntity.ok(spotService.search(userId, keyword, sigunguId, category, sort));
+    }
+
+    @Operation(summary = "관광지 상세 조회", description = "spotId로 관광지 상세 정보(DB 기본정보 + TourAPI 개요/이미지)를 조회합니다.")
+    @GetMapping("/{spotId}")
+    public ResponseEntity<SpotDetailResponse> getDetail(
+            @AuthenticationPrincipal UUID userId,
+            @PathVariable UUID spotId) {
+        return ResponseEntity.ok(spotService.getDetail(userId, spotId));
     }
 }

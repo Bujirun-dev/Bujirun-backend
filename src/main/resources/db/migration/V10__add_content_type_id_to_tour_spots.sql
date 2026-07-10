@@ -1,0 +1,1 @@
+ALTER TABLE tour_spots ADD COLUMN IF NOT EXISTS content_type_id INT;

@@ -60,4 +60,32 @@ public class TourApiResponse {
             private String usetime;     // 운영시간 → operating_hours
         }
     }
+
+    // ── detailCommon2 ───────────────────────────────────────
+    @Getter @NoArgsConstructor @JsonIgnoreProperties(ignoreUnknown = true)
+    public static class DetailCommonResponse {
+        private Response response;
+
+        @Getter @NoArgsConstructor @JsonIgnoreProperties(ignoreUnknown = true)
+        public static class Response { private Body body; }
+
+        @Getter @NoArgsConstructor @JsonIgnoreProperties(ignoreUnknown = true)
+        public static class Body { private Items items; }
+
+        @Getter @NoArgsConstructor @JsonIgnoreProperties(ignoreUnknown = true)
+        public static class Items { private List<CommonItem> item; }
+
+        @Getter @NoArgsConstructor @JsonIgnoreProperties(ignoreUnknown = true)
+        public static class CommonItem {
+            private String contentid;
+            private String title;
+            private String overview;    // 개요 설명글
+            private String addr1;       // 주소
+            private String tel;         // 전화번호
+            private String homepage;    // 홈페이지 (HTML 태그 포함될 수 있음)
+            private String firstimage;  // 대표이미지
+            private String mapx;        // 경도 → lng
+            private String mapy;        // 위도 → lat
+        }
+    }
 }
