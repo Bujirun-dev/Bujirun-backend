@@ -6,6 +6,7 @@ import java.util.UUID;
 
 public record SpotSearchResponse(
         UUID spotId,
+        String contentId,
         String name,
         String category,
         Integer sigunguId,
@@ -19,6 +20,7 @@ public record SpotSearchResponse(
     public static SpotSearchResponse from(TourSpot spot, boolean collected, boolean visited) {
         return new SpotSearchResponse(
                 spot.getId(),
+                spot.getContentId(),
                 spot.getName(),
                 spot.getCategory(),
                 spot.getSigungu() != null ? spot.getSigungu().getId() : null,
