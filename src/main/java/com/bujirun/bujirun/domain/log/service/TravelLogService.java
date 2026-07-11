@@ -47,6 +47,8 @@ public class TravelLogService {
                 .itineraryId(req.itineraryId())
                 .userId(userId)
                 .isPublic(req.isPublic())
+                .mood(req.mood())
+                .theme(req.theme())
                 .build();
         travelLogRepository.save(log);
 
@@ -131,6 +133,11 @@ public class TravelLogService {
         validateLogOwner(log, userId);
 
         if (req.isPublic() != null) log.updateVisibility(req.isPublic());
+        if (req.mood() != null || req.theme() != null) {
+            log.updateReview(
+                    req.mood() != null ? req.mood() : log.getMood(),
+                    req.theme() != null ? req.theme() : log.getTheme());
+        }
 
         Itinerary itinerary = findItinerary(log.getItineraryId());
         Map<UUID, TravelLogItem> logItemMap = buildLogItemMap(logId);
