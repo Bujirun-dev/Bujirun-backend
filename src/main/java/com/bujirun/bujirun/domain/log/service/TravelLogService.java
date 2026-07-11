@@ -43,6 +43,10 @@ public class TravelLogService {
         Itinerary itinerary = findItinerary(req.itineraryId());
         validateItineraryOwner(itinerary, userId);
 
+        if (travelLogRepository.existsByItineraryId(req.itineraryId())) {
+            throw new IllegalArgumentException("이미 이 일정에 대한 여행 기록이 존재합니다. itineraryId=" + req.itineraryId());
+        }
+
         TravelLog log = TravelLog.builder()
                 .itineraryId(req.itineraryId())
                 .userId(userId)
