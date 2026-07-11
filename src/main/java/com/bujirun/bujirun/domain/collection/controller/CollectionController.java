@@ -3,6 +3,7 @@ package com.bujirun.bujirun.domain.collection.controller;
 import com.bujirun.bujirun.domain.collection.dto.response.CollectionDetailResponse;
 import com.bujirun.bujirun.domain.collection.dto.response.CollectionListResponse;
 import com.bujirun.bujirun.domain.collection.service.CollectionService;
+import com.bujirun.bujirun.domain.spot.dto.response.SpotSearchResponse;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
@@ -43,5 +44,11 @@ public class CollectionController {
             @PathVariable UUID spotId) {
         collectionService.cancel(userId, spotId);
         return ResponseEntity.noContent().build();
+    }
+
+    @Operation(summary = "도감 스와이프 덱 조회", description = "도감 카테고리(바다/자연/문화/체험)별로 랜덤 관광지 총 10곳을 반환합니다.")
+    @GetMapping("/swipe-deck")
+    public ResponseEntity<List<SpotSearchResponse>> getSwipeDeck(@AuthenticationPrincipal UUID userId) {
+        return ResponseEntity.ok(collectionService.getRandomSwipeDeck(userId));
     }
 }
