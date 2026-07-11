@@ -22,11 +22,13 @@ public class SpotDetailResponse {
     private String tel;
     private String homepage;
     private boolean isCollected;
+    private boolean isVisited;
 
     public static SpotDetailResponse of(
             TourSpot spot,
             TourApiResponse.DetailCommonResponse.CommonItem apiDetail,
-            boolean isCollected) {
+            boolean isCollected,
+            boolean isVisited) {
 
         SpotDetailResponseBuilder builder = SpotDetailResponse.builder()
                 .spotId(spot.getId().toString())
@@ -39,6 +41,7 @@ public class SpotDetailResponse {
                 .thumbnailUrl(spot.getThumbnailUrl())
                 .operatingHours(spot.getOperatingHours())
                 .isCollected(isCollected)
+                .isVisited(isVisited)
                 .overview("등록된 정보 없음")
                 .tel("등록된 정보 없음")
                 .homepage("등록된 정보 없음");
