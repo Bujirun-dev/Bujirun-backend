@@ -8,6 +8,7 @@ import com.bujirun.bujirun.domain.spot.dto.response.SpotSearchResponse;
 import com.bujirun.bujirun.domain.spot.dto.response.TourApiResponse;
 import com.bujirun.bujirun.domain.spot.entity.TourSpot;
 import com.bujirun.bujirun.domain.spot.repository.TourSpotRepository;
+import com.bujirun.bujirun.domain.visit.repository.VisitRepository;
 import jakarta.persistence.EntityNotFoundException;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -23,6 +24,7 @@ public class SpotService {
 
     private final TourSpotRepository tourSpotRepository;
     private final CollectionEntryRepository collectionEntryRepository;
+    private final VisitRepository visitRepository;
     private final TourApiClient tourApiClient;
 
     public List<SpotSearchResponse> search(
@@ -36,6 +38,9 @@ public class SpotService {
                 .map(ce -> ce.getSpot().getId())
                 .collect(Collectors.toSet());
 
+        // 방문 인증에 성공한 spotId 목록
+        Set<UUID> visitedIds = new HashSet<>(visitRepository.findVerifiedSpotIdsByUserId(userId));
+
         List<TourSpot> spots = tourSpotRepository.searchSpots(keyword, sigunguId, category);
 
         if (!"NAME".equalsIgnoreCase(sort)) {
@@ -48,7 +53,8 @@ public class SpotService {
         // NAME이면 쿼리에서 이미 name asc로 나오니까 그대로
 
         return spots.stream()
-                .map(spot -> SpotSearchResponse.from(spot, collectedIds.contains(spot.getId())))
+                .map(spot -> SpotSearchResponse.from(
+                        spot, collectedIds.contains(spot.getId()), visitedIds.contains(spot.getId())))
                 .toList();
     }
 
@@ -65,7 +71,9 @@ public class SpotService {
                 .map(CollectionEntry::isCollected)
                 .orElse(false);
 
-        return SpotDetailResponse.of(spot, apiDetail.orElse(null), isCollected);
+        boolean isVisited = visitRepository.existsByUserIdAndSpotIdAndVerifiedTrue(userId, spotId);
+
+        return SpotDetailResponse.of(spot, apiDetail.orElse(null), isCollected, isVisited);
     }
 
     private boolean collectedByUser(UUID userId, UUID spotId) {

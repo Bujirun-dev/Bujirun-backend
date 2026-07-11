@@ -35,6 +35,13 @@ public class TravelLog {
     @Column(name = "thumbnail_photo_url")
     private String thumbnailPhotoUrl;
 
+    // 영수증 발행 화면의 이모티콘 선택 인덱스 — 매핑표는 프론트에서 관리, 백엔드는 값만 보관
+    @Column(name = "mood")
+    private Integer mood;
+
+    @Column(name = "theme")
+    private String theme;
+
     @Column(name = "added_count", nullable = false)
     @Builder.Default
     private int addedCount = 0;
@@ -67,6 +74,11 @@ public class TravelLog {
 
     public void updateThumbnail(String photoUrl) {
         this.thumbnailPhotoUrl = photoUrl;
+    }
+
+    public void updateReview(Integer mood, String theme) {
+        this.mood = mood;
+        this.theme = theme;
     }
 
     public void incrementAddedCount() {

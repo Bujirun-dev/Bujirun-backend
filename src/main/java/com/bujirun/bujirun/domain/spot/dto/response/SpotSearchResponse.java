@@ -13,9 +13,10 @@ public record SpotSearchResponse(
         String address,
         String thumbnailUrl,
         boolean isCollection,
-        boolean collected
+        boolean collected,
+        boolean visited
 ) {
-    public static SpotSearchResponse from(TourSpot spot, boolean collected) {
+    public static SpotSearchResponse from(TourSpot spot, boolean collected, boolean visited) {
         return new SpotSearchResponse(
                 spot.getId(),
                 spot.getName(),
@@ -25,7 +26,8 @@ public record SpotSearchResponse(
                 spot.getAddress(),
                 spot.getThumbnailUrl(),
                 spot.isCollection(),
-                collected
+                collected,
+                visited
         );
     }
 }
