@@ -26,8 +26,8 @@ public record ItineraryItemResponse(
             BigDecimal lat,
             BigDecimal lng,
             String thumbnailUrl,
-            boolean isCollected,
-            boolean isVisited
+            boolean collected,
+            boolean visited
     ) {}
 
     public static ItineraryItemResponse from(ItineraryItem item, Set<UUID> collectedSpotIds, Set<UUID> visitedSpotIds) {
