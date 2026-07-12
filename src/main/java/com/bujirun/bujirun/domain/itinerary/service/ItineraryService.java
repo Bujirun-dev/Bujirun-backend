@@ -12,6 +12,8 @@ import com.bujirun.bujirun.domain.itinerary.repository.ItineraryItemRepository;
 import com.bujirun.bujirun.domain.itinerary.repository.ItineraryRepository;
 import com.bujirun.bujirun.domain.spot.entity.TourSpot;
 import com.bujirun.bujirun.domain.spot.repository.TourSpotRepository;
+import com.bujirun.bujirun.domain.swipe.entity.SwipeSession;
+import com.bujirun.bujirun.domain.swipe.repository.SwipeSessionRepository;
 import com.bujirun.bujirun.domain.visit.repository.VisitRepository;
 import jakarta.persistence.EntityNotFoundException;
 import lombok.RequiredArgsConstructor;
@@ -37,6 +39,7 @@ public class ItineraryService {
     private final CollectionEntryRepository  collectionEntryRepository;
     private final VisitRepository            visitRepository;
     private final GroupMemberRepository      groupMemberRepository;
+    private final SwipeSessionRepository     swipeSessionRepository;
 
     // ── Itinerary ──────────────────────────────────────────────────
 
@@ -46,9 +49,19 @@ public class ItineraryService {
             throw new IllegalArgumentException("그룹 멤버만 그룹 일정을 만들 수 있습니다.");
         }
 
+        UUID sessionId = null;
+        if (req.sessionId() != null) {
+            SwipeSession session = swipeSessionRepository.findById(req.sessionId())
+                    .orElseThrow(() -> new EntityNotFoundException("스와이프 세션을 찾을 수 없습니다. id=" + req.sessionId()));
+            if (!session.getUserId().equals(userId)) {
+                throw new IllegalArgumentException("본인의 스와이프 세션만 일정 생성에 사용할 수 있습니다.");
+            }
+            sessionId = session.getId();
+        }
+
         Itinerary itinerary = Itinerary.builder()
                 .userId(userId)
-                .sessionId(UUID.randomUUID())
+                .sessionId(sessionId)
                 .groupId(req.groupId())
                 .planType(req.planType() != null ? req.planType() : "A")
                 .title(req.title())
