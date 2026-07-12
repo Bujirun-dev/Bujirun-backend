@@ -55,6 +55,9 @@ public class TourSpot {
     @Builder.Default
     private boolean collection = false;
 
+    @Column(name = "collection_category")
+    private String collectionCategory;
+
     @PrePersist
     public void prePersist() {
         this.syncedAt = LocalDateTime.now();

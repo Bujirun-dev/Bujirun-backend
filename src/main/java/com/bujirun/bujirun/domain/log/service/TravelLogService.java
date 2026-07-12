@@ -43,10 +43,16 @@ public class TravelLogService {
         Itinerary itinerary = findItinerary(req.itineraryId());
         validateItineraryOwner(itinerary, userId);
 
+        if (travelLogRepository.existsByItineraryId(req.itineraryId())) {
+            throw new IllegalArgumentException("이미 이 일정에 대한 여행 기록이 존재합니다. itineraryId=" + req.itineraryId());
+        }
+
         TravelLog log = TravelLog.builder()
                 .itineraryId(req.itineraryId())
                 .userId(userId)
                 .isPublic(req.isPublic())
+                .mood(req.mood())
+                .theme(req.theme())
                 .build();
         travelLogRepository.save(log);
 
@@ -131,6 +137,11 @@ public class TravelLogService {
         validateLogOwner(log, userId);
 
         if (req.isPublic() != null) log.updateVisibility(req.isPublic());
+        if (req.mood() != null || req.theme() != null) {
+            log.updateReview(
+                    req.mood() != null ? req.mood() : log.getMood(),
+                    req.theme() != null ? req.theme() : log.getTheme());
+        }
 
         Itinerary itinerary = findItinerary(log.getItineraryId());
         Map<UUID, TravelLogItem> logItemMap = buildLogItemMap(logId);

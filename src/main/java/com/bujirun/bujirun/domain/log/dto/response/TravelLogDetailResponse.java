@@ -20,6 +20,8 @@ public record TravelLogDetailResponse(
         LocalDate startDate,
         boolean isPublic,
         String thumbnailPhotoUrl,
+        Integer mood,
+        String theme,
         LocalDateTime createdAt,
         List<TravelLogDayResponse> days
 ) {
@@ -53,6 +55,8 @@ public record TravelLogDetailResponse(
                 startDate,
                 log.isPublic(),
                 log.getThumbnailPhotoUrl(),
+                log.getMood(),
+                log.getTheme(),
                 log.getCreatedAt(),
                 days
         );

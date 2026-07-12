@@ -5,6 +5,7 @@ import com.bujirun.bujirun.domain.collection.dto.response.CollectionDetailRespon
 import com.bujirun.bujirun.domain.collection.dto.response.CollectionListResponse;
 import com.bujirun.bujirun.domain.collection.entity.CollectionEntry;
 import com.bujirun.bujirun.domain.collection.repository.CollectionEntryRepository;
+import com.bujirun.bujirun.domain.spot.dto.response.SpotSearchResponse;
 import com.bujirun.bujirun.domain.spot.entity.TourSpot;
 import com.bujirun.bujirun.domain.spot.repository.TourSpotRepository;
 import com.bujirun.bujirun.domain.auth.entity.User;
@@ -13,8 +14,8 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.util.List;
-import java.util.UUID;
+import java.util.*;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -24,6 +25,7 @@ public class CollectionService {
     private final CollectionEntryRepository collectionEntryRepository;
     private final TourSpotRepository tourSpotRepository;
     private final UserRepository userRepository;
+    private static final List<String> DECK_CATEGORIES = List.of("바다", "자연", "문화", "체험");
 
     public List<CollectionListResponse> getCollectionBoard(UUID userId) {
         return collectionEntryRepository.findCollectionBoard(userId).stream()
@@ -63,5 +65,33 @@ public class CollectionService {
         CollectionEntry entry = collectionEntryRepository.findByUserIdAndSpotId(userId, spotId)
                 .orElseThrow(() -> new EntityNotFoundException("도감 기록을 찾을 수 없습니다. spotId=" + spotId));
         entry.cancelCollection();
+    }
+
+    public List<SpotSearchResponse> getRandomSwipeDeck(UUID userId) {
+        Set<UUID> collectedIds = collectionEntryRepository
+                .findByUserIdAndCollectedTrue(userId)
+                .stream()
+                .map(ce -> ce.getSpot().getId())
+                .collect(Collectors.toSet());
+
+        List<TourSpot> deck = new ArrayList<>();
+
+        for (int i = 0; i < DECK_CATEGORIES.size(); i++) {
+            String category = DECK_CATEGORIES.get(i);
+            List<TourSpot> pool = tourSpotRepository
+                    .findByCollectionTrueAndCollectionCategory(category);
+            Collections.shuffle(pool);
+
+            int pickCount = i < 2 ? 3 : 2;
+            pickCount = Math.min(pickCount, pool.size());
+
+            deck.addAll(pool.subList(0, pickCount));
+        }
+
+        Collections.shuffle(deck);
+
+        return deck.stream()
+                .map(spot -> SpotSearchResponse.from(spot, collectedIds.contains(spot.getId()), false))
+                .toList();
     }
 }

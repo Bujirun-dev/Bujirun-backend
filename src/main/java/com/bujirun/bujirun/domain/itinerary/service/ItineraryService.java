@@ -12,6 +12,7 @@ import com.bujirun.bujirun.domain.itinerary.repository.ItineraryItemRepository;
 import com.bujirun.bujirun.domain.itinerary.repository.ItineraryRepository;
 import com.bujirun.bujirun.domain.spot.entity.TourSpot;
 import com.bujirun.bujirun.domain.spot.repository.TourSpotRepository;
+import com.bujirun.bujirun.domain.visit.repository.VisitRepository;
 import jakarta.persistence.EntityNotFoundException;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -34,6 +35,7 @@ public class ItineraryService {
     private final ItineraryItemRepository    itineraryItemRepository;
     private final TourSpotRepository         tourSpotRepository;
     private final CollectionEntryRepository  collectionEntryRepository;
+    private final VisitRepository            visitRepository;
     private final GroupMemberRepository      groupMemberRepository;
 
     // ── Itinerary ──────────────────────────────────────────────────
@@ -53,13 +55,13 @@ public class ItineraryService {
                 .startAt(req.startAt())
                 .endAt(req.endAt())
                 .build();
-        return ItineraryDetailResponse.from(itineraryRepository.save(itinerary), Set.of());
+        return ItineraryDetailResponse.from(itineraryRepository.save(itinerary), Set.of(), Set.of());
     }
 
     public ItineraryDetailResponse getById(UUID id, UUID userId) {
         Itinerary itinerary = findWithDetails(id);
         validateAccess(itinerary, userId);
-        return ItineraryDetailResponse.from(itinerary, fetchCollectedSpotIds(userId));
+        return ItineraryDetailResponse.from(itinerary, fetchCollectedSpotIds(userId), fetchVisitedSpotIds(userId));
     }
 
     // 내 소유 일정 + 내가 속한 그룹의 공유 일정을 함께 반환
@@ -88,7 +90,7 @@ public class ItineraryService {
         if (req.title() != null)  itinerary.updateTitle(req.title());
         if (req.startAt() != null || req.endAt() != null) itinerary.updatePeriod(req.startAt(), req.endAt());
         if ("confirmed".equals(req.status())) itinerary.confirm();
-        return ItineraryDetailResponse.from(itinerary, fetchCollectedSpotIds(userId));
+        return ItineraryDetailResponse.from(itinerary, fetchCollectedSpotIds(userId), fetchVisitedSpotIds(userId));
     }
 
     // 일정 삭제는 그룹원 전체가 아니라 소유자만 가능 (공유 일정을 그룹원이 통째로 지울 수 없도록)
@@ -117,7 +119,7 @@ public class ItineraryService {
                 .dayNumber(req.dayNumber())
                 .date(req.date())
                 .build();
-        return ItineraryDayResponse.from(itineraryDayRepository.save(day), fetchCollectedSpotIds(userId));
+        return ItineraryDayResponse.from(itineraryDayRepository.save(day), fetchCollectedSpotIds(userId), fetchVisitedSpotIds(userId));
     }
 
     @Transactional
@@ -151,7 +153,7 @@ public class ItineraryService {
                 .travelTimeMin(req.travelTimeMin())
                 .memo(req.memo())
                 .build();
-        return ItineraryItemResponse.from(itineraryItemRepository.save(item), fetchCollectedSpotIds(userId));
+        return ItineraryItemResponse.from(itineraryItemRepository.save(item), fetchCollectedSpotIds(userId), fetchVisitedSpotIds(userId));
     }
 
     @Transactional
@@ -160,7 +162,7 @@ public class ItineraryService {
         validateAccess(item.getDay().getItinerary(), userId);
         item.update(req.orderIndex(), req.arrivalTime(), req.durationMin(),
                 req.travelMode(), req.travelTimeMin(), req.memo());
-        return ItineraryItemResponse.from(item, fetchCollectedSpotIds(userId));
+        return ItineraryItemResponse.from(item, fetchCollectedSpotIds(userId), fetchVisitedSpotIds(userId));
     }
 
     @Transactional
@@ -176,6 +178,10 @@ public class ItineraryService {
         return collectionEntryRepository.findByUserIdAndCollectedTrue(userId).stream()
                 .map(e -> e.getSpot().getId())
                 .collect(Collectors.toSet());
+    }
+
+    private Set<UUID> fetchVisitedSpotIds(UUID userId) {
+        return Set.copyOf(visitRepository.findVerifiedSpotIdsByUserId(userId));
     }
 
     // 소유자 또는 그룹원이면 접근 허용 (읽기/수정/Day·Item 편집용)
