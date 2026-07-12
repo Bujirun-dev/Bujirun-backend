@@ -11,5 +11,6 @@ public record CreateItineraryRequest(
         String title,
         LocalDate startAt,
         LocalDate endAt,
-        UUID groupId
+        UUID groupId,
+        UUID sessionId
 ) {}
