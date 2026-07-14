@@ -8,6 +8,7 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 
 import java.time.LocalDate;
+import java.time.LocalTime;
 import java.util.List;
 
 @Getter
@@ -22,8 +23,12 @@ public class SwipeRequest {
     @NotNull
     private LocalDate startDate;
 
+    private LocalTime startTime;
+
     @NotNull
     private LocalDate endDate;
+
+    private LocalTime endTime;
 
     private String optimizationType; // "WALK_MIN" | "COST_SAVE" | "TIME_SHORT" | "TRANSFER_MIN"
 
