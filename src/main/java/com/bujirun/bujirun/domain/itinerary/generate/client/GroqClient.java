@@ -36,7 +36,7 @@ public class GroqClient {
                         Map.of("role", "user", "content", userPrompt)
                 ),
                 "temperature", 0.7,
-                "max_tokens", 4000
+                "max_tokens", 6000
         );
 
         JsonNode response = webClient.post()
