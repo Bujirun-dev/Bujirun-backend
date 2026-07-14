@@ -1,5 +1,6 @@
 package com.bujirun.bujirun.domain.log.dto.response;
 
+import com.bujirun.bujirun.domain.group.dto.response.GroupMemberResponse;
 import com.bujirun.bujirun.domain.itinerary.entity.Itinerary;
 import com.bujirun.bujirun.domain.log.entity.TravelLog;
 import com.bujirun.bujirun.domain.log.entity.TravelLogItem;
@@ -23,9 +24,11 @@ public record TravelLogDetailResponse(
         Integer mood,
         String theme,
         LocalDateTime createdAt,
-        List<TravelLogDayResponse> days
+        List<TravelLogDayResponse> days,
+        List<GroupMemberResponse> groupMembers
 ) {
-    public static TravelLogDetailResponse of(TravelLog log, Itinerary itinerary, Map<UUID, TravelLogItem> logItemMap) {
+    public static TravelLogDetailResponse of(TravelLog log, Itinerary itinerary, Map<UUID, TravelLogItem> logItemMap,
+                                              List<GroupMemberResponse> groupMembers) {
         int totalSpots = itinerary.getDays().stream()
                 .mapToInt(d -> d.getItems().size())
                 .sum();
@@ -58,7 +61,8 @@ public record TravelLogDetailResponse(
                 log.getMood(),
                 log.getTheme(),
                 log.getCreatedAt(),
-                days
+                days,
+                groupMembers
         );
     }
 }
