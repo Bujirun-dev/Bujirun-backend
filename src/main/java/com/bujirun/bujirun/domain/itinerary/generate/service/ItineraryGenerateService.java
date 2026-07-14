@@ -123,6 +123,7 @@ public class ItineraryGenerateService {
         log.info("Groq 호출 시작 - 후보 관광지 {}개, 여행 {}일", candidates.size(), tripDays);
         String rawResponse = groqClient.chat(systemPrompt, userPrompt);
         log.info("Groq 응답 수신 완료");
+        log.info("=== GROQ RAW RESPONSE ===\n{}", rawResponse);
 
         // JSON 파싱 → ScheduleResponse 변환
         return parseResponse(rawResponse, candidates, request.getOptimizationType());
@@ -263,6 +264,8 @@ public class ItineraryGenerateService {
                 if (optimizeOrder && spots.size() > 2) {
                     spots = sortByNearestNeighbor(spots);
                 }
+
+                log.info("day={}, spotIds raw={}, 파싱된 spots={}", day, spotIds, spots.size());
 
                 days.add(ItineraryGenerateResponse.DayPlan.builder()
                         .day(day)

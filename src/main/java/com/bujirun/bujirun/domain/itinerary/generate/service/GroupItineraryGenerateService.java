@@ -35,6 +35,7 @@ public class GroupItineraryGenerateService {
     public ItineraryGenerateResponse generateGroupItinerary(UUID groupId, GroupItineraryRequest request, UUID requesterId) {
 
         if (!groupMemberRepository.existsById_GroupIdAndId_UserId(groupId, requesterId)) {
+            log.warn("멤버십 체크 실패 - groupId={}, requesterId={}", groupId, requesterId);
             throw new IllegalArgumentException("그룹 멤버만 그룹 일정을 생성할 수 있습니다.");
         }
 
