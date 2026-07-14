@@ -6,6 +6,7 @@ import org.hibernate.annotations.Fetch;
 import org.hibernate.annotations.FetchMode;
 
 import java.time.LocalDateTime;
+import java.time.LocalTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
@@ -45,8 +46,14 @@ public class Itinerary {
     @Column(name = "start_at")
     private LocalDate startAt;
 
+    @Column(name = "start_time")
+    private LocalTime startTime;
+
     @Column(name = "end_at")
     private LocalDate endAt;
+
+    @Column(name = "end_time")
+    private LocalTime endTime;
 
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
@@ -75,9 +82,11 @@ public class Itinerary {
         this.title = title;
     }
 
-    public void updatePeriod(LocalDate startAt, LocalDate endAt) {
+    public void updatePeriod(LocalDate startAt, LocalTime startTime, LocalDate endAt, LocalTime endTime) {
         this.startAt = startAt;
+        this.startTime = startTime;
         this.endAt = endAt;
+        this.endTime = endTime;
     }
 
     public void confirm() {

@@ -66,7 +66,9 @@ public class ItineraryService {
                 .planType(req.planType() != null ? req.planType() : "A")
                 .title(req.title())
                 .startAt(req.startAt())
+                .startTime(req.startTime())
                 .endAt(req.endAt())
+                .endTime(req.endTime())
                 .build();
         return ItineraryDetailResponse.from(itineraryRepository.save(itinerary), Set.of(), Set.of());
     }
@@ -101,7 +103,7 @@ public class ItineraryService {
         Itinerary itinerary = findWithDetails(id);
         validateAccess(itinerary, userId);
         if (req.title() != null)  itinerary.updateTitle(req.title());
-        if (req.startAt() != null || req.endAt() != null) itinerary.updatePeriod(req.startAt(), req.endAt());
+        if (req.startAt() != null || req.endAt() != null) itinerary.updatePeriod(req.startAt(), req.startTime(), req.endAt(), req.endTime());
         if ("confirmed".equals(req.status())) itinerary.confirm();
         return ItineraryDetailResponse.from(itinerary, fetchCollectedSpotIds(userId), fetchVisitedSpotIds(userId));
     }

@@ -85,7 +85,9 @@ public class GroupItineraryGenerateService {
         return SwipeRequest.builder()
                 .swipes(swipes)
                 .startDate(request.getStartDate())
+                .startTime(request.getStartTime())   // 추가
                 .endDate(request.getEndDate())
+                .endTime(request.getEndTime())       // 추가
                 .optimizationType(request.getOptimizationType())
                 .build();
     }
