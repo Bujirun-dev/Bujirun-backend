@@ -13,12 +13,12 @@ public record ItineraryDayResponse(
         LocalDate date,
         List<ItineraryItemResponse> items
 ) {
-    public static ItineraryDayResponse from(ItineraryDay day, Set<UUID> collectedSpotIds) {
+    public static ItineraryDayResponse from(ItineraryDay day, Set<UUID> collectedSpotIds, Set<UUID> visitedSpotIds) {
         return new ItineraryDayResponse(
                 day.getId(),
                 day.getDayNumber(),
                 day.getDate(),
-                day.getItems().stream().map(i -> ItineraryItemResponse.from(i, collectedSpotIds)).toList()
+                day.getItems().stream().map(i -> ItineraryItemResponse.from(i, collectedSpotIds, visitedSpotIds)).toList()
         );
     }
 }

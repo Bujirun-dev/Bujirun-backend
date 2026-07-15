@@ -4,7 +4,7 @@ import com.bujirun.bujirun.domain.collection.repository.CollectionEntryRepositor
 import com.bujirun.bujirun.domain.itinerary.generate.client.GroqClient;
 import com.bujirun.bujirun.domain.itinerary.generate.dto.response.ItineraryGenerateResponse;
 import com.bujirun.bujirun.domain.itinerary.generate.dto.response.SpotInfo;
-import com.bujirun.bujirun.domain.itinerary.generate.dto.request.SwipeRequest;
+import com.bujirun.bujirun.domain.swipe.dto.request.SwipeRequest;
 import com.bujirun.bujirun.domain.spot.entity.TourSpot;
 import com.bujirun.bujirun.domain.spot.repository.TourSpotRepository;
 import com.bujirun.bujirun.global.util.GeoUtils;
@@ -14,6 +14,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
 import java.util.*;
@@ -33,6 +34,7 @@ public class ItineraryGenerateService {
     private static final List<Double> RADIUS_STEPS_M = List.of(15_000.0, 25_000.0, 40_000.0); // 15km → 25km → 40km
     private static final int MIN_CANDIDATES = 20; // 후보 장소 최소 개수
 
+    @Transactional(readOnly = true)
     public ItineraryGenerateResponse generateItinerary(SwipeRequest request, UUID userId) {
 
         // 스와이프 결과에서 contentId 목록 추출
@@ -121,6 +123,7 @@ public class ItineraryGenerateService {
         log.info("Groq 호출 시작 - 후보 관광지 {}개, 여행 {}일", candidates.size(), tripDays);
         String rawResponse = groqClient.chat(systemPrompt, userPrompt);
         log.info("Groq 응답 수신 완료");
+        log.info("=== GROQ RAW RESPONSE ===\n{}", rawResponse);
 
         // JSON 파싱 → ScheduleResponse 변환
         return parseResponse(rawResponse, candidates, request.getOptimizationType());
@@ -261,6 +264,8 @@ public class ItineraryGenerateService {
                 if (optimizeOrder && spots.size() > 2) {
                     spots = sortByNearestNeighbor(spots);
                 }
+
+                log.info("day={}, spotIds raw={}, 파싱된 spots={}", day, spotIds, spots.size());
 
                 days.add(ItineraryGenerateResponse.DayPlan.builder()
                         .day(day)

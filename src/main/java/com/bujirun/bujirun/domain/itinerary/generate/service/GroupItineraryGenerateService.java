@@ -1,16 +1,17 @@
 package com.bujirun.bujirun.domain.itinerary.generate.service;
 
 import com.bujirun.bujirun.domain.group.repository.GroupMemberRepository;
-import com.bujirun.bujirun.domain.itinerary.generate.dto.projection.SpotSwipeAggregate;
+import com.bujirun.bujirun.domain.swipe.dto.projection.SpotSwipeAggregate;
 import com.bujirun.bujirun.domain.itinerary.generate.dto.request.GroupItineraryRequest;
-import com.bujirun.bujirun.domain.itinerary.generate.dto.request.SwipeRequest;
+import com.bujirun.bujirun.domain.swipe.dto.request.SwipeRequest;
 import com.bujirun.bujirun.domain.itinerary.generate.dto.response.ItineraryGenerateResponse;
-import com.bujirun.bujirun.domain.itinerary.generate.repository.SwipeResultRepository;
+import com.bujirun.bujirun.domain.swipe.repository.SwipeResultRepository;
 import com.bujirun.bujirun.domain.spot.entity.TourSpot;
 import com.bujirun.bujirun.domain.spot.repository.TourSpotRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 import java.util.Map;
@@ -30,9 +31,11 @@ public class GroupItineraryGenerateService {
     private final ItineraryGenerateService itineraryGenerateService;
     private final GroupMemberRepository groupMemberRepository;
 
+    @Transactional(readOnly = true)
     public ItineraryGenerateResponse generateGroupItinerary(UUID groupId, GroupItineraryRequest request, UUID requesterId) {
 
         if (!groupMemberRepository.existsById_GroupIdAndId_UserId(groupId, requesterId)) {
+            log.warn("멤버십 체크 실패 - groupId={}, requesterId={}", groupId, requesterId);
             throw new IllegalArgumentException("그룹 멤버만 그룹 일정을 생성할 수 있습니다.");
         }
 

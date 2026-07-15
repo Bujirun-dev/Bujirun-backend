@@ -2,6 +2,8 @@ package com.bujirun.bujirun.domain.log.service;
 
 import com.bujirun.bujirun.domain.auth.entity.User;
 import com.bujirun.bujirun.domain.auth.repository.UserRepository;
+import com.bujirun.bujirun.domain.group.dto.response.GroupMemberResponse;
+import com.bujirun.bujirun.domain.group.repository.GroupMemberRepository;
 import com.bujirun.bujirun.domain.itinerary.entity.Itinerary;
 import com.bujirun.bujirun.domain.itinerary.entity.ItineraryItem;
 import com.bujirun.bujirun.domain.itinerary.repository.ItineraryItemRepository;
@@ -35,18 +37,25 @@ public class TravelLogService {
     private final ItineraryRepository        itineraryRepository;
     private final ItineraryItemRepository    itineraryItemRepository;
     private final UserRepository             userRepository;
+    private final GroupMemberRepository      groupMemberRepository;
 
     // ── 로그 CRUD ──────────────────────────────────────────────────
 
     @Transactional
     public TravelLogDetailResponse create(CreateLogRequest req, UUID userId) {
         Itinerary itinerary = findItinerary(req.itineraryId());
-        validateItineraryOwner(itinerary, userId);
+        validateItineraryAccess(itinerary, userId);
+
+        if (travelLogRepository.existsByItineraryIdAndUserId(req.itineraryId(), userId)) {
+            throw new IllegalArgumentException("이미 이 일정에 대한 여행 기록을 작성했습니다. itineraryId=" + req.itineraryId());
+        }
 
         TravelLog log = TravelLog.builder()
                 .itineraryId(req.itineraryId())
                 .userId(userId)
                 .isPublic(req.isPublic())
+                .mood(req.mood())
+                .theme(req.theme())
                 .build();
         travelLogRepository.save(log);
 
@@ -64,7 +73,7 @@ public class TravelLogService {
         Map<UUID, TravelLogItem> logItemMap = travelLogItemRepository.findByTravelLogId(log.getId())
                 .stream().collect(Collectors.toMap(TravelLogItem::getItineraryItemId, i -> i));
 
-        return TravelLogDetailResponse.of(log, itinerary, logItemMap);
+        return TravelLogDetailResponse.of(log, itinerary, logItemMap, fetchGroupMembers(itinerary));
     }
 
     public TravelLogDetailResponse getDetail(UUID logId, UUID userId) {
@@ -76,7 +85,7 @@ public class TravelLogService {
         Itinerary itinerary = findItinerary(log.getItineraryId());
         Map<UUID, TravelLogItem> logItemMap = buildLogItemMap(logId);
 
-        return TravelLogDetailResponse.of(log, itinerary, logItemMap);
+        return TravelLogDetailResponse.of(log, itinerary, logItemMap, fetchGroupMembers(itinerary));
     }
 
     public List<TravelLogSummaryResponse> getMyLogs(UUID userId) {
@@ -131,11 +140,16 @@ public class TravelLogService {
         validateLogOwner(log, userId);
 
         if (req.isPublic() != null) log.updateVisibility(req.isPublic());
+        if (req.mood() != null || req.theme() != null) {
+            log.updateReview(
+                    req.mood() != null ? req.mood() : log.getMood(),
+                    req.theme() != null ? req.theme() : log.getTheme());
+        }
 
         Itinerary itinerary = findItinerary(log.getItineraryId());
         Map<UUID, TravelLogItem> logItemMap = buildLogItemMap(logId);
 
-        return TravelLogDetailResponse.of(log, itinerary, logItemMap);
+        return TravelLogDetailResponse.of(log, itinerary, logItemMap, fetchGroupMembers(itinerary));
     }
 
     @Transactional
@@ -236,14 +250,30 @@ public class TravelLogService {
         }
     }
 
-    private void validateItineraryOwner(Itinerary itinerary, UUID userId) {
-        if (!itinerary.getUserId().equals(userId)) {
-            throw new IllegalArgumentException("해당 일정에 대한 권한이 없습니다.");
+    // 소유자 또는 그룹원이면 자신의 여행 기록을 남길 수 있음
+    private void validateItineraryAccess(Itinerary itinerary, UUID userId) {
+        if (itinerary.getUserId().equals(userId)) return;
+        if (itinerary.getGroupId() != null
+                && groupMemberRepository.existsById_GroupIdAndId_UserId(itinerary.getGroupId(), userId)) {
+            return;
         }
+        throw new IllegalArgumentException("해당 일정에 대한 권한이 없습니다.");
     }
 
     private Map<UUID, TravelLogItem> buildLogItemMap(UUID logId) {
         return travelLogItemRepository.findByTravelLogId(logId)
                 .stream().collect(Collectors.toMap(TravelLogItem::getItineraryItemId, i -> i));
+    }
+
+    private List<GroupMemberResponse> fetchGroupMembers(Itinerary itinerary) {
+        if (itinerary.getGroupId() == null) return List.of();
+
+        return groupMemberRepository.findById_GroupId(itinerary.getGroupId()).stream()
+                .map(gm -> {
+                    UUID memberId = gm.getId().getUserId();
+                    String nickname = userRepository.findById(memberId).map(User::getNickname).orElse(null);
+                    return new GroupMemberResponse(memberId, nickname, gm.getJoinedAt());
+                })
+                .toList();
     }
 }

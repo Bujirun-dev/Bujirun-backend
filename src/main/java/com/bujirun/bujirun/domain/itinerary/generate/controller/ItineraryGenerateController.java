@@ -1,7 +1,7 @@
 package com.bujirun.bujirun.domain.itinerary.generate.controller;
 
 import com.bujirun.bujirun.domain.itinerary.generate.dto.response.ItineraryGenerateResponse;
-import com.bujirun.bujirun.domain.itinerary.generate.dto.request.SwipeRequest;
+import com.bujirun.bujirun.domain.swipe.dto.request.SwipeRequest;
 import com.bujirun.bujirun.domain.itinerary.generate.service.ItineraryGenerateService;
 import com.bujirun.bujirun.global.response.ApiResponse;
 import io.swagger.v3.oas.annotations.Operation;
@@ -21,7 +21,7 @@ public class ItineraryGenerateController {
 
     private final ItineraryGenerateService itineraryGenerateService;
 
-    @Operation(summary = "일정 자동 생성", description = "사용자의 스와이프(좋아요/싫어요) 결과를 기반으로 A/B/C 3가지 일정 후보를 자동 생성합니다.")
+    @Operation(summary = "일정 자동 생성", description = "사용자의 스와이프(좋아요/싫어요) 결과를 기반으로 A/B 2가지 일정 후보를 자동 생성합니다.")
     @PostMapping("/generate")
     public ApiResponse<ItineraryGenerateResponse> generateItinerary(
             @Valid @RequestBody SwipeRequest request,

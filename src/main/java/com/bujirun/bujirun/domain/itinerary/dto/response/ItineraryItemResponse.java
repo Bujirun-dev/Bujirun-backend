@@ -26,10 +26,11 @@ public record ItineraryItemResponse(
             BigDecimal lat,
             BigDecimal lng,
             String thumbnailUrl,
-            boolean isCollected
+            boolean collected,
+            boolean visited
     ) {}
 
-    public static ItineraryItemResponse from(ItineraryItem item, Set<UUID> collectedSpotIds) {
+    public static ItineraryItemResponse from(ItineraryItem item, Set<UUID> collectedSpotIds, Set<UUID> visitedSpotIds) {
         TourSpot s = item.getSpot();
         return new ItineraryItemResponse(
                 item.getId(),
@@ -38,7 +39,8 @@ public record ItineraryItemResponse(
                         s.getId(), s.getName(), s.getCategory(),
                         s.getAddress(), s.getLat(), s.getLng(),
                         s.getThumbnailUrl(),
-                        collectedSpotIds.contains(s.getId())
+                        collectedSpotIds.contains(s.getId()),
+                        visitedSpotIds.contains(s.getId())
                 ),
                 item.getArrivalTime(),
                 item.getDurationMin(),

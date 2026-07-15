@@ -6,5 +6,7 @@ import java.util.UUID;
 
 public record CreateLogRequest(
         @NotNull UUID itineraryId,
-        boolean isPublic
+        boolean isPublic,
+        Integer mood,
+        String theme
 ) {}

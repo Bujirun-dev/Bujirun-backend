@@ -12,6 +12,9 @@ import com.bujirun.bujirun.domain.itinerary.repository.ItineraryItemRepository;
 import com.bujirun.bujirun.domain.itinerary.repository.ItineraryRepository;
 import com.bujirun.bujirun.domain.spot.entity.TourSpot;
 import com.bujirun.bujirun.domain.spot.repository.TourSpotRepository;
+import com.bujirun.bujirun.domain.swipe.entity.SwipeSession;
+import com.bujirun.bujirun.domain.swipe.repository.SwipeSessionRepository;
+import com.bujirun.bujirun.domain.visit.repository.VisitRepository;
 import jakarta.persistence.EntityNotFoundException;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -34,7 +37,9 @@ public class ItineraryService {
     private final ItineraryItemRepository    itineraryItemRepository;
     private final TourSpotRepository         tourSpotRepository;
     private final CollectionEntryRepository  collectionEntryRepository;
+    private final VisitRepository            visitRepository;
     private final GroupMemberRepository      groupMemberRepository;
+    private final SwipeSessionRepository     swipeSessionRepository;
 
     // ── Itinerary ──────────────────────────────────────────────────
 
@@ -44,22 +49,32 @@ public class ItineraryService {
             throw new IllegalArgumentException("그룹 멤버만 그룹 일정을 만들 수 있습니다.");
         }
 
+        UUID sessionId = null;
+        if (req.sessionId() != null) {
+            SwipeSession session = swipeSessionRepository.findById(req.sessionId())
+                    .orElseThrow(() -> new EntityNotFoundException("스와이프 세션을 찾을 수 없습니다. id=" + req.sessionId()));
+            if (!session.getUserId().equals(userId)) {
+                throw new IllegalArgumentException("본인의 스와이프 세션만 일정 생성에 사용할 수 있습니다.");
+            }
+            sessionId = session.getId();
+        }
+
         Itinerary itinerary = Itinerary.builder()
                 .userId(userId)
-                .sessionId(UUID.randomUUID())
+                .sessionId(sessionId)
                 .groupId(req.groupId())
                 .planType(req.planType() != null ? req.planType() : "A")
                 .title(req.title())
                 .startAt(req.startAt())
                 .endAt(req.endAt())
                 .build();
-        return ItineraryDetailResponse.from(itineraryRepository.save(itinerary), Set.of());
+        return ItineraryDetailResponse.from(itineraryRepository.save(itinerary), Set.of(), Set.of());
     }
 
     public ItineraryDetailResponse getById(UUID id, UUID userId) {
         Itinerary itinerary = findWithDetails(id);
         validateAccess(itinerary, userId);
-        return ItineraryDetailResponse.from(itinerary, fetchCollectedSpotIds(userId));
+        return ItineraryDetailResponse.from(itinerary, fetchCollectedSpotIds(userId), fetchVisitedSpotIds(userId));
     }
 
     // 내 소유 일정 + 내가 속한 그룹의 공유 일정을 함께 반환
@@ -88,7 +103,7 @@ public class ItineraryService {
         if (req.title() != null)  itinerary.updateTitle(req.title());
         if (req.startAt() != null || req.endAt() != null) itinerary.updatePeriod(req.startAt(), req.endAt());
         if ("confirmed".equals(req.status())) itinerary.confirm();
-        return ItineraryDetailResponse.from(itinerary, fetchCollectedSpotIds(userId));
+        return ItineraryDetailResponse.from(itinerary, fetchCollectedSpotIds(userId), fetchVisitedSpotIds(userId));
     }
 
     // 일정 삭제는 그룹원 전체가 아니라 소유자만 가능 (공유 일정을 그룹원이 통째로 지울 수 없도록)
@@ -117,7 +132,7 @@ public class ItineraryService {
                 .dayNumber(req.dayNumber())
                 .date(req.date())
                 .build();
-        return ItineraryDayResponse.from(itineraryDayRepository.save(day), fetchCollectedSpotIds(userId));
+        return ItineraryDayResponse.from(itineraryDayRepository.save(day), fetchCollectedSpotIds(userId), fetchVisitedSpotIds(userId));
     }
 
     @Transactional
@@ -151,7 +166,7 @@ public class ItineraryService {
                 .travelTimeMin(req.travelTimeMin())
                 .memo(req.memo())
                 .build();
-        return ItineraryItemResponse.from(itineraryItemRepository.save(item), fetchCollectedSpotIds(userId));
+        return ItineraryItemResponse.from(itineraryItemRepository.save(item), fetchCollectedSpotIds(userId), fetchVisitedSpotIds(userId));
     }
 
     @Transactional
@@ -160,7 +175,7 @@ public class ItineraryService {
         validateAccess(item.getDay().getItinerary(), userId);
         item.update(req.orderIndex(), req.arrivalTime(), req.durationMin(),
                 req.travelMode(), req.travelTimeMin(), req.memo());
-        return ItineraryItemResponse.from(item, fetchCollectedSpotIds(userId));
+        return ItineraryItemResponse.from(item, fetchCollectedSpotIds(userId), fetchVisitedSpotIds(userId));
     }
 
     @Transactional
@@ -176,6 +191,10 @@ public class ItineraryService {
         return collectionEntryRepository.findByUserIdAndCollectedTrue(userId).stream()
                 .map(e -> e.getSpot().getId())
                 .collect(Collectors.toSet());
+    }
+
+    private Set<UUID> fetchVisitedSpotIds(UUID userId) {
+        return Set.copyOf(visitRepository.findVerifiedSpotIdsByUserId(userId));
     }
 
     // 소유자 또는 그룹원이면 접근 허용 (읽기/수정/Day·Item 편집용)
