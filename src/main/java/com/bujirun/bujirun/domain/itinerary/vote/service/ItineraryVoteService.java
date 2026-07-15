@@ -130,6 +130,8 @@ public class ItineraryVoteService {
                 ? request.getDays()
                 : extractDaysFromPlan(session.getPlansJson(), finalPlan);
 
+        validateDays(finalPlan, days);
+
         Itinerary itinerary = Itinerary.builder()
                 .userId(request.getRequesterId())
                 .groupId(groupId)
@@ -162,6 +164,21 @@ public class ItineraryVoteService {
         }
 
         return itineraryRepository.save(itinerary).getId();
+    }
+
+    private void validateDays(String finalPlan, List<FinalizeItineraryRequest.DayInput> days) {
+        if (days == null || days.isEmpty()) {
+            throw new IllegalArgumentException(
+                    "C".equals(finalPlan)
+                            ? "C안(자유 편집형)은 최소 1개 이상의 day 정보가 필요합니다."
+                            : "일정에 최소 1개 이상의 day가 필요합니다.");
+        }
+        for (FinalizeItineraryRequest.DayInput day : days) {
+            if (day.getSpotContentIds() == null || day.getSpotContentIds().isEmpty()) {
+                throw new IllegalArgumentException(
+                        "day " + day.getDay() + "에 최소 1개 이상의 관광지가 필요합니다.");
+            }
+        }
     }
 
     private List<FinalizeItineraryRequest.DayInput> extractDaysFromPlan(String plansJson, String plan) {

@@ -17,6 +17,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
+import java.time.LocalTime;
 import java.util.*;
 import java.util.stream.Collectors;
 
@@ -118,7 +119,8 @@ public class ItineraryGenerateService {
         String systemPrompt = buildSystemPrompt();
         String userPrompt = buildUserPrompt(likedSpotInfos, preferenceVector, candidates, tripDays,
                 request.getOptimizationType(), request.getStartDate(),
-                request.getEndDate(), request.getActivityHours());
+                request.getEndDate(), request.getStartTime(), request.getEndTime(),
+                request.getActivityHours());
 
         log.info("Groq 호출 시작 - 후보 관광지 {}개, 여행 {}일", candidates.size(), tripDays);
         String rawResponse = groqClient.chat(systemPrompt, userPrompt);
@@ -160,6 +162,8 @@ public class ItineraryGenerateService {
                                    String optimizationType,
                                    LocalDate startDate,
                                    LocalDate endDate,
+                                   LocalTime startTime,
+                                   LocalTime endTime,
                                    int activityHours) {
         StringBuilder sb = new StringBuilder();
 
@@ -183,8 +187,22 @@ public class ItineraryGenerateService {
         ).append("\n");
 
         sb.append("\n## 여행 일수: ").append(tripDays).append("일\n");
-        int maxSpotsPerDay = ScheduleCapacityUtil.calculateMaxSpotsPerDay(activityHours);
-        sb.append("\n## 하루 최대 관광지 수: ").append(maxSpotsPerDay).append("곳\n");
+
+        sb.append("\n## 일차별 최대 관광지 수 (반드시 이 개수를 넘기지 마세요)\n");
+        for (int day = 1; day <= tripDays; day++) {
+            int maxSpots = ScheduleCapacityUtil.calculateMaxSpotsForDay(
+                    day, (int) tripDays, startTime, endTime, activityHours);
+            int hours = ScheduleCapacityUtil.calculateActivityHoursForDay(
+                    day, (int) tripDays, startTime, endTime, activityHours);
+
+            String note = "";
+            if (day == 1 && startTime != null && tripDays > 1) {
+                note = " (당일 " + startTime + " 도착이라 활동시간 " + hours + "시간뿐)";
+            } else if (day == tripDays && endTime != null && tripDays > 1) {
+                note = " (당일 " + endTime + "에 일정 종료라 활동시간 " + hours + "시간뿐)";
+            }
+            sb.append("- ").append(day).append("일차: 최대 ").append(maxSpots).append("곳").append(note).append("\n");
+        }
 
         sb.append("\n## 후보 관광지 목록\n");
         candidates.forEach(spot ->
@@ -199,6 +217,7 @@ public class ItineraryGenerateService {
         );
 
         sb.append("\n위 후보 관광지 중에서만 선택하여 A/B 2가지 일정을 생성하세요.");
+        sb.append("\n각 일차별 최대 관광지 수는 위에 명시된 값을 절대 초과하지 마세요. 첫날/마지막날은 활동시간이 짧을 수 있으니 특히 유의하세요.");
         sb.append("\nA안은 선호 카테고리에 집중하고, 위 좋아요한 장소 목록에 있는 장소를 일정에 최대한 포함하세요.");
         sb.append("\nB안은 동선이 꼬이지 않도록 각 후보 관광지의 위도·경도를 기준으로 같은 권역(예: 수영구·해운대구, 중구·영도구 등 인접한 구/군)끼리 묶어서 묶음 단위로 하루 일정을 구성하세요. 서로 먼 권역의 관광지를 같은 날 또는 인접한 순서에 배치하지 마세요.");
 
