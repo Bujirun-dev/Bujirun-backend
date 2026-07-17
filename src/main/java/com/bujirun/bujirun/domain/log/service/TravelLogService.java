@@ -2,6 +2,7 @@ package com.bujirun.bujirun.domain.log.service;
 
 import com.bujirun.bujirun.domain.auth.entity.User;
 import com.bujirun.bujirun.domain.auth.repository.UserRepository;
+import com.bujirun.bujirun.domain.collection.repository.CollectionEntryRepository;
 import com.bujirun.bujirun.domain.group.dto.response.GroupMemberResponse;
 import com.bujirun.bujirun.domain.group.repository.GroupMemberRepository;
 import com.bujirun.bujirun.domain.itinerary.entity.Itinerary;
@@ -38,6 +39,7 @@ public class TravelLogService {
     private final ItineraryItemRepository    itineraryItemRepository;
     private final UserRepository             userRepository;
     private final GroupMemberRepository      groupMemberRepository;
+    private final CollectionEntryRepository  collectionEntryRepository;
 
     // ── 로그 CRUD ──────────────────────────────────────────────────
 
@@ -73,7 +75,8 @@ public class TravelLogService {
         Map<UUID, TravelLogItem> logItemMap = travelLogItemRepository.findByTravelLogId(log.getId())
                 .stream().collect(Collectors.toMap(TravelLogItem::getItineraryItemId, i -> i));
 
-        return TravelLogDetailResponse.of(log, itinerary, logItemMap, fetchGroupMembers(itinerary));
+        return TravelLogDetailResponse.of(log, itinerary, logItemMap, fetchGroupMembers(itinerary),
+                countCollectedSpots(itinerary, log.getUserId()));
     }
 
     public TravelLogDetailResponse getDetail(UUID logId, UUID userId) {
@@ -85,13 +88,18 @@ public class TravelLogService {
         Itinerary itinerary = findItinerary(log.getItineraryId());
         Map<UUID, TravelLogItem> logItemMap = buildLogItemMap(logId);
 
-        return TravelLogDetailResponse.of(log, itinerary, logItemMap, fetchGroupMembers(itinerary));
+        return TravelLogDetailResponse.of(log, itinerary, logItemMap, fetchGroupMembers(itinerary),
+                countCollectedSpots(itinerary, log.getUserId()));
     }
 
     public List<TravelLogSummaryResponse> getMyLogs(UUID userId) {
         String myNickname = userRepository.findById(userId).map(User::getNickname).orElse(null);
         return travelLogRepository.findByUserIdOrderByCreatedAtDesc(userId).stream()
-                .map(log -> TravelLogSummaryResponse.of(log, findItinerary(log.getItineraryId()), myNickname))
+                .map(log -> {
+                    Itinerary itinerary = findItinerary(log.getItineraryId());
+                    return TravelLogSummaryResponse.of(log, itinerary, myNickname,
+                            countCollectedSpots(itinerary, log.getUserId()));
+                })
                 .toList();
     }
 
@@ -115,7 +123,9 @@ public class TravelLogService {
         return logs.stream()
                 .map(log -> {
                     String nickname = userRepository.findById(log.getUserId()).map(User::getNickname).orElse(null);
-                    return TravelLogSummaryResponse.of(log, findItinerary(log.getItineraryId()), nickname);
+                    Itinerary itinerary = findItinerary(log.getItineraryId());
+                    return TravelLogSummaryResponse.of(log, itinerary, nickname,
+                            countCollectedSpots(itinerary, log.getUserId()));
                 })
                 .toList();
     }
@@ -129,7 +139,9 @@ public class TravelLogService {
         return travelLogRepository.findByIdInAndIsPublicTrueOrderByCreatedAtDesc(logIds).stream()
                 .map(log -> {
                     String nickname = userRepository.findById(log.getUserId()).map(User::getNickname).orElse(null);
-                    return TravelLogSummaryResponse.of(log, findItinerary(log.getItineraryId()), nickname);
+                    Itinerary itinerary = findItinerary(log.getItineraryId());
+                    return TravelLogSummaryResponse.of(log, itinerary, nickname,
+                            countCollectedSpots(itinerary, log.getUserId()));
                 })
                 .toList();
     }
@@ -149,7 +161,8 @@ public class TravelLogService {
         Itinerary itinerary = findItinerary(log.getItineraryId());
         Map<UUID, TravelLogItem> logItemMap = buildLogItemMap(logId);
 
-        return TravelLogDetailResponse.of(log, itinerary, logItemMap, fetchGroupMembers(itinerary));
+        return TravelLogDetailResponse.of(log, itinerary, logItemMap, fetchGroupMembers(itinerary),
+                countCollectedSpots(itinerary, log.getUserId()));
     }
 
     @Transactional
@@ -263,6 +276,17 @@ public class TravelLogService {
     private Map<UUID, TravelLogItem> buildLogItemMap(UUID logId) {
         return travelLogItemRepository.findByTravelLogId(logId)
                 .stream().collect(Collectors.toMap(TravelLogItem::getItineraryItemId, i -> i));
+    }
+
+    // 일정에 포함된 관광지 중 로그 작성자가 실제로 수집(방문 인증) 완료한 개수
+    private int countCollectedSpots(Itinerary itinerary, UUID logOwnerId) {
+        List<UUID> spotIds = itinerary.getDays().stream()
+                .flatMap(d -> d.getItems().stream())
+                .map(item -> item.getSpot().getId())
+                .distinct()
+                .toList();
+        if (spotIds.isEmpty()) return 0;
+        return (int) collectionEntryRepository.countCollectedByUserIdAndSpotIdIn(logOwnerId, spotIds);
     }
 
     private List<GroupMemberResponse> fetchGroupMembers(Itinerary itinerary) {
