@@ -17,6 +17,7 @@ public record TravelLogDetailResponse(
         UUID itineraryId,
         String title,
         int totalSpots,
+        int collectedSpots,
         String duration,
         LocalDate startDate,
         boolean isPublic,
@@ -28,7 +29,7 @@ public record TravelLogDetailResponse(
         List<GroupMemberResponse> groupMembers
 ) {
     public static TravelLogDetailResponse of(TravelLog log, Itinerary itinerary, Map<UUID, TravelLogItem> logItemMap,
-                                              List<GroupMemberResponse> groupMembers) {
+                                              List<GroupMemberResponse> groupMembers, int collectedSpots) {
         int totalSpots = itinerary.getDays().stream()
                 .mapToInt(d -> d.getItems().size())
                 .sum();
@@ -54,6 +55,7 @@ public record TravelLogDetailResponse(
                 log.getItineraryId(),
                 itinerary.getTitle(),
                 totalSpots,
+                collectedSpots,
                 duration,
                 startDate,
                 log.isPublic(),
