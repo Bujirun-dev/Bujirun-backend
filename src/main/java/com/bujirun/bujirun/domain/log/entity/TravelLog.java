@@ -46,6 +46,10 @@ public class TravelLog {
     @Builder.Default
     private int addedCount = 0;
 
+    // 작성자 기준 몇 번째 여행 기록인지 — 생성 시점에 확정되어 이후 로그 삭제와 무관하게 유지됨
+    @Column(name = "travel_number", nullable = false)
+    private int travelNumber;
+
     @Builder.Default
     @OneToMany(mappedBy = "travelLog", cascade = CascadeType.ALL, orphanRemoval = true)
     @Fetch(FetchMode.SUBSELECT)
