@@ -58,6 +58,7 @@ public class TravelLogService {
                 .isPublic(req.isPublic())
                 .mood(req.mood())
                 .theme(req.theme())
+                .travelNumber((int) travelLogRepository.countByUserId(userId) + 1)
                 .build();
         travelLogRepository.save(log);
 

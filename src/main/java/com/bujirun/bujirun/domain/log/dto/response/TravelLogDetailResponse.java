@@ -24,6 +24,7 @@ public record TravelLogDetailResponse(
         String thumbnailPhotoUrl,
         Integer mood,
         String theme,
+        int travelNumber,
         LocalDateTime createdAt,
         List<TravelLogDayResponse> days,
         List<GroupMemberResponse> groupMembers
@@ -62,6 +63,7 @@ public record TravelLogDetailResponse(
                 log.getThumbnailPhotoUrl(),
                 log.getMood(),
                 log.getTheme(),
+                log.getTravelNumber(),
                 log.getCreatedAt(),
                 days,
                 groupMembers

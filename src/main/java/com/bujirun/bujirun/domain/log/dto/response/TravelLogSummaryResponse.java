@@ -19,6 +19,7 @@ public record TravelLogSummaryResponse(
         int addedCount,
         Integer mood,
         String theme,
+        int travelNumber,
         LocalDateTime createdAt
 ) {
     public static TravelLogSummaryResponse of(TravelLog log, Itinerary itinerary, String authorNickname, int collectedSpots) {
@@ -41,6 +42,7 @@ public record TravelLogSummaryResponse(
                 log.getAddedCount(),
                 log.getMood(),
                 log.getTheme(),
+                log.getTravelNumber(),
                 log.getCreatedAt()
         );
     }
