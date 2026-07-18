@@ -1,5 +1,7 @@
 package com.bujirun.bujirun.global.exception;
 
+import com.bujirun.bujirun.domain.itinerary.generate.exception.GroqApiException;
+import com.bujirun.bujirun.domain.itinerary.generate.exception.GroqRateLimitException;
 import com.bujirun.bujirun.global.response.ApiResponse;
 import jakarta.persistence.EntityNotFoundException;
 import org.springframework.http.ResponseEntity;
@@ -33,6 +35,18 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(MissingServletRequestParameterException.class)
     public ResponseEntity<ApiResponse<Void>> handleMissingParam(MissingServletRequestParameterException e) {
         return ResponseEntity.badRequest().body(ApiResponse.fail(e.getParameterName() + " 파라미터가 필요합니다"));
+    }
+
+    @ExceptionHandler(GroqRateLimitException.class)
+    public ResponseEntity<ApiResponse<Void>> handleGroqRateLimit(GroqRateLimitException e) {
+        return ResponseEntity.status(429)
+                .body(ApiResponse.fail("AI 일정 생성 요청이 몰려 잠시 후 다시 시도해주세요."));
+    }
+
+    @ExceptionHandler(GroqApiException.class)
+    public ResponseEntity<ApiResponse<Void>> handleGroqApi(GroqApiException e) {
+        return ResponseEntity.status(502)
+                .body(ApiResponse.fail("AI 일정 생성 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요."));
     }
 
     @ExceptionHandler(Exception.class)

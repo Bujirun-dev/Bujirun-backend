@@ -24,4 +24,11 @@ public interface CollectionEntryRepository extends JpaRepository<CollectionEntry
         where ts.collection = true
         """)
     List<CollectionListProjection> findCollectionBoard(@Param("userId") UUID userId);
+
+    @Query("""
+        select count(ce)
+        from CollectionEntry ce
+        where ce.user.id = :userId and ce.spot.id in :spotIds and ce.collected = true
+        """)
+    long countCollectedByUserIdAndSpotIdIn(@Param("userId") UUID userId, @Param("spotIds") List<UUID> spotIds);
 }
