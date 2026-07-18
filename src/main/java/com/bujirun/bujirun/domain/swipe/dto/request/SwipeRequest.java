@@ -1,5 +1,6 @@
 package com.bujirun.bujirun.domain.swipe.dto.request;
 
+import jakarta.validation.constraints.FutureOrPresent;
 import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.NotNull;
 import lombok.AllArgsConstructor;
@@ -21,11 +22,13 @@ public class SwipeRequest {
     private List<SwipeItem> swipes; // 스와이프 결과 목록
 
     @NotNull
+    @FutureOrPresent(message = "지난 날짜로는 일정을 생성할 수 없습니다.")
     private LocalDate startDate;
 
     private LocalTime startTime;
 
     @NotNull
+    @FutureOrPresent(message = "지난 날짜로는 일정을 생성할 수 없습니다.")
     private LocalDate endDate;
 
     private LocalTime endTime;
