@@ -48,10 +48,11 @@ public class User {
 
     // 탈퇴 시 개인식별 정보 익명화 + soft delete
     public void anonymize() {
-        this.nickname = null;
         this.profileImageUrl = null;
         this.email = null;
-        this.providerId = null;  // 카카오 언링크 후에 호출해야 함
+        this.providerId = null;
+        this.passwordHash = null;
+        // this.nickname = null; 제거
         this.deletedAt = LocalDateTime.now();
     }
 
