@@ -1,4 +1,4 @@
--- V18__soft_delete_users.sql
+-- V19__soft_delete_users.sql
 -- 회원탈퇴 Soft Delete
 -- 개인 식별 정보만 null 처리하고 여행 데이터는 유지
 
