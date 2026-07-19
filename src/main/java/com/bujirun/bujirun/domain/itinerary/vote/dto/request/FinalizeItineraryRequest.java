@@ -1,5 +1,6 @@
 package com.bujirun.bujirun.domain.itinerary.vote.dto.request;
 
+import jakarta.validation.constraints.FutureOrPresent;
 import jakarta.validation.constraints.NotNull;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
@@ -21,9 +22,11 @@ public class FinalizeItineraryRequest {
     private String title;
 
     @NotNull
+    @FutureOrPresent(message = "지난 날짜로는 일정을 확정할 수 없습니다.")
     private LocalDate startDate;
 
     @NotNull
+    @FutureOrPresent(message = "지난 날짜로는 일정을 확정할 수 없습니다.")
     private LocalDate endDate;
 
     // C안(직접 편집) 또는 최종 편집 결과. null이면 세션에 저장된 plansJson에서 selectedPlan 그대로 사용
