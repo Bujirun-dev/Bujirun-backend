@@ -65,6 +65,10 @@ public class User {
         return this.deletedAt != null;
     }
 
+    //30일 이후 -> 계정 삭제
+    public void clearProviderId() {
+        this.providerId = null;
+    }
     // 카카오 로그인 회원가입 시 사용하는 생성자
     // passwordHash는 의도적으로 제외 (카카오 로그인은 비밀번호가 없음)
     @Builder
