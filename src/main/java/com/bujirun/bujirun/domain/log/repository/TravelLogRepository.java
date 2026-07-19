@@ -9,6 +9,7 @@ import java.util.UUID;
 
 public interface TravelLogRepository extends JpaRepository<TravelLog, UUID> {
     boolean existsByItineraryIdAndUserId(UUID itineraryId, UUID userId);
+    long countByUserId(UUID userId);
     List<TravelLog> findByUserIdOrderByCreatedAtDesc(UUID userId);
     List<TravelLog> findByIsPublicTrueOrderByCreatedAtDesc();
     List<TravelLog> findByIsPublicTrueOrderByAddedCountDesc();

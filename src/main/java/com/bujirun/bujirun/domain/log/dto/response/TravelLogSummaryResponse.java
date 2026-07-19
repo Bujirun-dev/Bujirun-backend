@@ -14,13 +14,15 @@ public record TravelLogSummaryResponse(
         boolean isPublic,
         LocalDate startDate,
         int totalSpots,
+        int collectedSpots,
         String authorNickname,
         int addedCount,
         Integer mood,
         String theme,
+        int travelNumber,
         LocalDateTime createdAt
 ) {
-    public static TravelLogSummaryResponse of(TravelLog log, Itinerary itinerary, String authorNickname) {
+    public static TravelLogSummaryResponse of(TravelLog log, Itinerary itinerary, String authorNickname, int collectedSpots) {
         int totalSpots = itinerary.getDays().stream()
                 .mapToInt(d -> d.getItems().size())
                 .sum();
@@ -35,10 +37,12 @@ public record TravelLogSummaryResponse(
                 log.isPublic(),
                 startDate,
                 totalSpots,
+                collectedSpots,
                 authorNickname,
                 log.getAddedCount(),
                 log.getMood(),
                 log.getTheme(),
+                log.getTravelNumber(),
                 log.getCreatedAt()
         );
     }
