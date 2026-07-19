@@ -13,6 +13,7 @@ public record SpotSearchResponse(
         String sigunguName,
         String address,
         String thumbnailUrl,
+        String swipeImageUrl,
         boolean isCollection,
         boolean collected,
         boolean visited
@@ -27,6 +28,7 @@ public record SpotSearchResponse(
                 spot.getSigungu() != null ? spot.getSigungu().getName() : null,
                 spot.getAddress(),
                 spot.getThumbnailUrl(),
+                spot.getSwipeImageUrl(),
                 spot.isCollection(),
                 collected,
                 visited

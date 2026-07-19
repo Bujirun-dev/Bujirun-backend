@@ -58,6 +58,10 @@ public class TourSpot {
     @Column(name = "collection_category")
     private String collectionCategory;
 
+    // 스와이프 덱(/api/collections/swipe-deck) 전용 큐레이션 이미지. thumbnail_url(API 동기화 값)과 별개로 관리됨
+    @Column(name = "swipe_image_url", length = 500)
+    private String swipeImageUrl;
+
     @PrePersist
     public void prePersist() {
         this.syncedAt = LocalDateTime.now();
