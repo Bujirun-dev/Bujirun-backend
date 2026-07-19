@@ -41,6 +41,7 @@ kakao:
   client-id: ${KAKAO_CLIENT_ID}
   client-secret: ${KAKAO_CLIENT_SECRET}
   redirect-uri: ${KAKAO_REDIRECT_URI}
+  admin-key: ${KAKAO_ADMIN_KEY}
 
 aws:
   s3:

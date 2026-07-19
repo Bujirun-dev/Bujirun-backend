@@ -18,7 +18,9 @@ import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
 import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestClient;
-
+import org.springframework.transaction.annotation.Transactional;
+import java.time.LocalDateTime;
+import java.util.Optional;
 @Service
 @RequiredArgsConstructor
 public class KakaoService {
@@ -26,8 +28,8 @@ public class KakaoService {
     private final KakaoConfig kakaoConfig;
     private final UserRepository userRepository;
     private final JwtProvider jwtProvider;
-    private final JwtProperties jwtProperties;                    // 만료 시간 가져오려고 추가
-    private final RefreshTokenRepository refreshTokenRepository;  // Redis 저장소 추가
+    private final JwtProperties jwtProperties;
+    private final RefreshTokenRepository refreshTokenRepository;
 
     private static final String TOKEN_REQUEST_URL = "https://kauth.kakao.com/oauth/token";
     private static final String USER_INFO_REQUEST_URL = "https://kapi.kakao.com/v2/user/me";
@@ -69,19 +71,52 @@ public class KakaoService {
     }
 
     // 3단계: 기존 회원이면 조회, 아니면 신규 가입
-    // isNewUser 플래그로 프론트가 신규 가입자에게 닉네임/프로필사진 설정 화면을 보여줄지 판단
+    // isNewUser 플래그로 프론트가 신규 가입자에게 닉네임/프로필사진 설정 화면을 보여줄지 판단.
+    @Transactional
     public UserAuthResult findOrCreateUser(KakaoUserInfoResponse userInfo) {
 
         String providerId = String.valueOf(userInfo.getId());
+        String nickname = userInfo.getKakaoAccount().getProfile().getNickname();
+        String profileImageUrl = userInfo.getKakaoAccount().getProfile().getProfileImageUrl();
+        String email = userInfo.getKakaoAccount().getEmail();
 
-        return userRepository.findByProviderIdAndAuthProvider(providerId, "kakao")
+        // 탈퇴한 유저인지 먼저 확인
+        Optional<User> deletedUser = userRepository.findByProviderIdAndAuthProvider(providerId, "kakao")
+                .filter(User::isDeleted);
+
+        if (deletedUser.isPresent()) {
+            User user = deletedUser.get();
+
+            if (user.getDeletedAt().isAfter(LocalDateTime.now().minusMinutes(1))) {
+                // 30일 이내 재가입 → 계정 복구
+                user.restore();
+                return new UserAuthResult(user, false);
+            } else {
+                // 30일 초과 → 재가입 불가 (새 유저로 가입 허용)
+                return new UserAuthResult(
+                        userRepository.save(
+                                User.builder()
+                                        .nickname(nickname)
+                                        .profileImageUrl(profileImageUrl)
+                                        .email(email)
+                                        .authProvider("kakao")
+                                        .providerId(providerId)
+                                        .build()
+                        ),
+                        true
+                );
+            }
+        }
+
+        // 정상 유저면 조회, 없으면 신규 가입
+        return userRepository.findByProviderIdAndAuthProviderAndDeletedAtIsNull(providerId, "kakao")
                 .map(user -> new UserAuthResult(user, false))
                 .orElseGet(() -> new UserAuthResult(
                         userRepository.save(
                                 User.builder()
-                                        .nickname(userInfo.getKakaoAccount().getProfile().getNickname())
-                                        .profileImageUrl(userInfo.getKakaoAccount().getProfile().getProfileImageUrl())
-                                        .email(userInfo.getKakaoAccount().getEmail())
+                                        .nickname(nickname)
+                                        .profileImageUrl(profileImageUrl)
+                                        .email(email)
                                         .authProvider("kakao")
                                         .providerId(providerId)
                                         .build()
@@ -101,7 +136,7 @@ public class KakaoService {
         refreshTokenRepository.save(
                 user.getId(),
                 refreshToken,
-                jwtProperties.getRefreshTokenExpiration() // 만료 시간(2주) 함께 저장
+                jwtProperties.getRefreshTokenExpiration()
         );
         return refreshToken;
     }
