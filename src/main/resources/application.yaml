@@ -31,7 +31,7 @@ tourapi:
 groq:
   api:
     key: ${GROQ_API_KEY}
-    model: meta-llama/llama-4-scout-17b-16e-instruct
+    model: openai/gpt-oss-120b
 
 odsay:
   api:
@@ -41,6 +41,7 @@ kakao:
   client-id: ${KAKAO_CLIENT_ID}
   client-secret: ${KAKAO_CLIENT_SECRET}
   redirect-uri: ${KAKAO_REDIRECT_URI}
+  admin-key: ${KAKAO_ADMIN_KEY}
 
 aws:
   s3:

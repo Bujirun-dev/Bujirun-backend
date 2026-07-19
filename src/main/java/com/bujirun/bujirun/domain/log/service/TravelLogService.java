@@ -172,6 +172,12 @@ public class TravelLogService {
         validateLogOwner(log, userId);
         travelLogRepository.delete(log);
     }
+    // 회원탈퇴 시 본인의 모든 로그 비공개 처리
+    @Transactional
+    public void setUserLogsPrivate(UUID userId) {
+        travelLogRepository.findByUserIdOrderByCreatedAtDesc(userId)
+                .forEach(log -> log.updateVisibility(false));
+    }
 
     // ── 사진 ────────────────────────────────────────────────────────
 

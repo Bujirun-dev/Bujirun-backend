@@ -5,6 +5,7 @@ import lombok.AccessLevel;
 import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
+import java.time.LocalDateTime;
 
 import java.util.UUID;
 
@@ -40,6 +41,29 @@ public class User {
     // 자체 회원가입(local) 시에만 사용. 카카오 로그인 사용자는 비워둠
     @Column(name = "password_hash", length = 255)
     private String passwordHash;
+
+    // 탈퇴 시각. null이면 정상 유저, 값이 있으면 탈퇴한 유저
+    @Column(name = "deleted_at")
+    private LocalDateTime deletedAt;
+
+    // 탈퇴 시 개인식별 정보 익명화 + soft delete
+    public void anonymize() {
+        this.profileImageUrl = null;
+        this.email = null;
+        // this.providerId = null;  // 30일 유예기간 동안 재가입 방지용으로 유지
+        this.passwordHash = null;
+        // this.nickname = null; 제거
+        this.deletedAt = LocalDateTime.now();
+    }
+    // 30일 이내 재가입 시 계정 복구
+    //닉네임,프로필 이미지 등 유지
+    public void restore() {
+        this.deletedAt = null;
+    }
+    // 탈퇴 여부 확인. deleted_at이 null이 아니면 탈퇴한 유저
+    public boolean isDeleted() {
+        return this.deletedAt != null;
+    }
 
     // 카카오 로그인 회원가입 시 사용하는 생성자
     // passwordHash는 의도적으로 제외 (카카오 로그인은 비밀번호가 없음)

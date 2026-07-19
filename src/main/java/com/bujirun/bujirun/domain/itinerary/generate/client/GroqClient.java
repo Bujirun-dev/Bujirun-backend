@@ -23,7 +23,7 @@ public class GroqClient {
     private final String model;
 
     public GroqClient(@Value("${groq.api.key}") String apiKey,
-                      @Value("${groq.api.model:meta-llama/llama-4-scout-17b-16e-instruct}") String model) {
+                      @Value("${groq.api.model:openai/gpt-oss-120b}") String model) {
         this.webClient = WebClient.builder()
                 .baseUrl("https://api.groq.com/openai/v1")
                 .defaultHeader("Authorization", "Bearer " + apiKey)
@@ -42,7 +42,7 @@ public class GroqClient {
                         Map.of("role", "user", "content", userPrompt)
                 ),
                 "temperature", 0.7,
-                "max_tokens", 6000
+                "max_tokens", 8000
         );
 
         JsonNode response = webClient.post()
