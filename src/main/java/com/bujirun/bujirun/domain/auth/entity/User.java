@@ -50,12 +50,16 @@ public class User {
     public void anonymize() {
         this.profileImageUrl = null;
         this.email = null;
-        this.providerId = null;
+        // this.providerId = null;  // 30일 유예기간 동안 재가입 방지용으로 유지
         this.passwordHash = null;
         // this.nickname = null; 제거
         this.deletedAt = LocalDateTime.now();
     }
-
+    // 30일 이내 재가입 시 계정 복구
+    //닉네임,프로필 이미지 등 유지
+    public void restore() {
+        this.deletedAt = null;
+    }
     // 탈퇴 여부 확인. deleted_at이 null이 아니면 탈퇴한 유저
     public boolean isDeleted() {
         return this.deletedAt != null;
