@@ -4,6 +4,7 @@ import com.bujirun.bujirun.domain.group.repository.GroupMemberRepository;
 import com.bujirun.bujirun.domain.swipe.dto.request.SwipeRequest;
 import com.bujirun.bujirun.domain.swipe.dto.request.SwipeSubmitRequest;
 import com.bujirun.bujirun.domain.swipe.dto.response.SwipeSessionResponse;
+import com.bujirun.bujirun.domain.swipe.dto.response.SwipeStatusResponse;
 import com.bujirun.bujirun.domain.swipe.entity.SwipeResult;
 import com.bujirun.bujirun.domain.swipe.entity.SwipeSession;
 import com.bujirun.bujirun.domain.swipe.repository.SwipeResultRepository;
@@ -77,6 +78,22 @@ public class SwipeService {
                 .status(session.getStatus())
                 .resultCount(results.size())
                 .createdAt(session.getCreatedAt())
+                .build();
+    }
+
+    @Transactional(readOnly = true)
+    public SwipeStatusResponse getSwipeStatus(UUID groupId, UUID requesterId) {
+        if (!groupMemberRepository.existsById_GroupIdAndId_UserId(groupId, requesterId)) {
+            throw new IllegalArgumentException("그룹 멤버만 스와이프 현황을 조회할 수 있습니다.");
+        }
+
+        long doneCount = swipeSessionRepository.countDistinctCompletedUsersByGroupId(groupId);
+        long totalCount = groupMemberRepository.countById_GroupId(groupId); // 실제 메서드명 확인 필요
+
+        return SwipeStatusResponse.builder()
+                .doneCount(doneCount)
+                .totalCount(totalCount)
+                .allDone(doneCount >= totalCount)
                 .build();
     }
 }

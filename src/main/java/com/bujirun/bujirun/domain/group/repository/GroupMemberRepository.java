@@ -14,4 +14,6 @@ public interface GroupMemberRepository extends JpaRepository<GroupMember, GroupM
     List<GroupMember> findById_GroupId(UUID groupId);
 
     List<GroupMember> findById_UserId(UUID userId);
+
+    long countById_GroupId(UUID groupId);
 }
