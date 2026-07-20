@@ -2,6 +2,7 @@ package com.bujirun.bujirun.domain.swipe.controller;
 
 import com.bujirun.bujirun.domain.swipe.dto.request.SwipeSubmitRequest;
 import com.bujirun.bujirun.domain.swipe.dto.response.SwipeSessionResponse;
+import com.bujirun.bujirun.domain.swipe.dto.response.SwipeStatusResponse;
 import com.bujirun.bujirun.domain.swipe.service.SwipeService;
 import com.bujirun.bujirun.global.response.ApiResponse;
 import io.swagger.v3.oas.annotations.Operation;
@@ -31,4 +32,13 @@ public class SwipeController {
         return ApiResponse.ok(swipeService.submitSwipeSession(request, userId));
     }
 
+    @Operation(summary = "그룹 스와이프 완료 현황 조회",
+            description = "그룹원 중 스와이프를 완료한 인원 수와 전체 인원 수를 조회합니다. " +
+                    "대기 화면에서 폴링용으로 사용됩니다.")
+    @GetMapping("/status")
+    public ApiResponse<SwipeStatusResponse> getStatus(
+            @RequestParam UUID groupId,
+            @AuthenticationPrincipal UUID userId) {
+        return ApiResponse.ok(swipeService.getSwipeStatus(groupId, userId));
+    }
 }
