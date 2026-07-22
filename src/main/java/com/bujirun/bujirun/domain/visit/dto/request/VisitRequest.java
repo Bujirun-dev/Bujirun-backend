@@ -8,5 +8,6 @@ import java.util.UUID;
 public record VisitRequest(
         @NotNull UUID tourSpotId,
         @NotNull Double gpsLat,
-        @NotNull Double gpsLng
+        @NotNull Double gpsLng,
+        UUID itineraryItemId
 ) {}
