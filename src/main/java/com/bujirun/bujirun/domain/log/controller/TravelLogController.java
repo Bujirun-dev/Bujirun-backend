@@ -75,7 +75,15 @@ public class TravelLogController {
                 .map(r -> ResponseEntity.ok(ApiResponse.ok(r)));
     }
 
-    @Operation(summary = "여행 기록으로 일정 복사", description = "공개된(또는 본인) 여행 기록의 일정을 복제해 내 소유의 새 일정으로 생성합니다. groupId를 지정하면 그 그룹의 공유 일정으로 생성됩니다.")
+    @Operation(summary = "여행 기록으로 일정 복사", description = """
+            공개된(또는 본인) 여행 기록의 일정을 복제해 내 소유의 새 일정으로 생성합니다.
+            groupId를 지정하면 그 그룹의 공유 일정으로 생성됩니다(요청자가 해당 그룹 멤버일 때만 허용).
+
+            아직 그룹이 없어서 친구들을 새로 초대하고 싶다면:
+            1) POST /api/groups 로 그룹을 먼저 생성 (생성자는 자동으로 멤버 등록됨)
+            2) 그 응답의 groupId를 이 API의 groupId로 그대로 전달
+            → 두 호출을 이어붙이면 "새 그룹 생성 후 그 그룹으로 바로 복사" 흐름이 됩니다. 별도의 결합 API는 없습니다.
+            """)
     @PostMapping("/{id}/copy")
     public Mono<ResponseEntity<ApiResponse<ItineraryDetailResponse>>> copyToItinerary(
             @PathVariable UUID id,
