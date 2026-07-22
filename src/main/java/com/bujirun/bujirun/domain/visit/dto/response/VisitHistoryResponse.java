@@ -14,7 +14,8 @@ public record VisitHistoryResponse(
         boolean verified,
         double distanceMeters,
         LocalDateTime visitedAt,
-        List<String> photoUrls
+        List<String> photoUrls,
+        UUID itineraryItemId
 ) {
     public static VisitHistoryResponse from(Visit visit, List<String> photoUrls) {
         return new VisitHistoryResponse(
@@ -25,7 +26,8 @@ public record VisitHistoryResponse(
                 visit.isVerified(),
                 visit.getDistanceMeters(),
                 visit.getVisitedAt(),
-                photoUrls
+                photoUrls,
+                visit.getItineraryItemId()
         );
     }
 }

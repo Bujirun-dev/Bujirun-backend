@@ -8,9 +8,11 @@ public record VisitResponse(
         UUID visitId,
         boolean verified,
         double distanceMeters,
-        boolean firstVisit
+        boolean firstVisit,
+        UUID itineraryItemId
 ) {
     public static VisitResponse from(Visit visit, boolean firstVisit) {
-        return new VisitResponse(visit.getId(), visit.isVerified(), visit.getDistanceMeters(), firstVisit);
+        return new VisitResponse(visit.getId(), visit.isVerified(), visit.getDistanceMeters(), firstVisit,
+                visit.getItineraryItemId());
     }
 }

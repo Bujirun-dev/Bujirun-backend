@@ -1,6 +1,10 @@
 package com.bujirun.bujirun.domain.visit.service;
 
 import com.bujirun.bujirun.domain.collection.service.CollectionService;
+import com.bujirun.bujirun.domain.group.repository.GroupMemberRepository;
+import com.bujirun.bujirun.domain.itinerary.entity.Itinerary;
+import com.bujirun.bujirun.domain.itinerary.entity.ItineraryItem;
+import com.bujirun.bujirun.domain.itinerary.repository.ItineraryItemRepository;
 import com.bujirun.bujirun.domain.spot.entity.TourSpot;
 import com.bujirun.bujirun.domain.spot.repository.TourSpotRepository;
 import com.bujirun.bujirun.domain.visit.dto.request.AttachVisitPhotoRequest;
@@ -36,6 +40,8 @@ public class VisitService {
     private final VisitPhotoRepository visitPhotoRepository;
     private final TourSpotRepository tourSpotRepository;
     private final CollectionService collectionService;
+    private final ItineraryItemRepository itineraryItemRepository;
+    private final GroupMemberRepository groupMemberRepository;
 
     @Transactional
     public VisitResponse verify(VisitRequest req, UUID userId) {
@@ -57,6 +63,10 @@ public class VisitService {
         // 이전에 이 관광지를 인증에 성공한 적이 있는지 (모달에서 "새 관광지" vs "중복" 구분용)
         boolean alreadyVerified = visitRepository.existsByUserIdAndSpotIdAndVerifiedTrue(userId, spot.getId());
 
+        if (req.itineraryItemId() != null) {
+            validateItineraryItemForSpot(req.itineraryItemId(), spot, userId);
+        }
+
         Visit visit = Visit.builder()
                 .userId(userId)
                 .spot(spot)
@@ -64,6 +74,7 @@ public class VisitService {
                 .gpsLng(BigDecimal.valueOf(req.gpsLng()))
                 .verified(verified)
                 .distanceMeters(distance)
+                .itineraryItemId(req.itineraryItemId())
                 .build();
 
         Visit saved = visitRepository.save(visit);
@@ -111,6 +122,25 @@ public class VisitService {
         return visits.stream()
                 .map(v -> VisitHistoryResponse.from(v, photoUrlsByVisitId.getOrDefault(v.getId(), List.of())))
                 .toList();
+    }
+
+    // itineraryItemId로 인증 시, 그 항목의 스팟이 실제 인증 대상 스팟과 같고
+    // 이 유저가 그 일정에 접근 권한(소유자 또는 그룹원)이 있는지 확인
+    private void validateItineraryItemForSpot(UUID itineraryItemId, TourSpot spot, UUID userId) {
+        ItineraryItem item = itineraryItemRepository.findById(itineraryItemId)
+                .orElseThrow(() -> new EntityNotFoundException("일정 항목을 찾을 수 없습니다. id=" + itineraryItemId));
+
+        if (!item.getSpot().getId().equals(spot.getId())) {
+            throw new IllegalArgumentException("일정 항목의 관광지와 인증하려는 관광지가 다릅니다.");
+        }
+
+        Itinerary itinerary = item.getDay().getItinerary();
+        boolean hasAccess = itinerary.getUserId().equals(userId)
+                || (itinerary.getGroupId() != null
+                    && groupMemberRepository.existsById_GroupIdAndId_UserId(itinerary.getGroupId(), userId));
+        if (!hasAccess) {
+            throw new IllegalArgumentException("해당 일정에 대한 권한이 없습니다.");
+        }
     }
 
     private double radiusFor(String category) {
