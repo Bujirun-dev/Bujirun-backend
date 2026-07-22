@@ -28,7 +28,9 @@ public class VisitController {
 
     private final VisitService visitService;
 
-    @Operation(summary = "방문 인증", description = "위치 정보를 기반으로 사용자가 해당 장소를 실제 방문했는지 인증합니다.")
+    @Operation(summary = "방문 인증", description = "위치 정보를 기반으로 사용자가 해당 장소를 실제 방문했는지 인증합니다. " +
+            "itineraryItemId를 함께 보내면 이 인증이 어느 일정의 어느 방문 항목에 대한 것인지 연결됩니다(선택) — " +
+            "같은 관광지를 여러 일정에서 각각 인증한 경우 특정 일정의 인증만 구분해서 조회하고 싶을 때 사용하세요.")
     @PostMapping
     public Mono<ResponseEntity<ApiResponse<VisitResponse>>> verify(
             @RequestBody @Valid VisitRequest req,

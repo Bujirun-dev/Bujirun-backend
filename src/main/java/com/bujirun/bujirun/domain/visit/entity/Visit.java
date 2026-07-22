@@ -42,6 +42,11 @@ public class Visit {
     @Column(name = "visited_at", nullable = false)
     private LocalDateTime visitedAt;
 
+    // 이 인증이 어느 일정의 어느 방문 항목에 대한 것인지 (선택) — 같은 스팟을 여러 일정에서
+    // 각각 인증했을 때, 특정 일정의 인증만 구분해서 쓰기 위함. 일정 항목이 삭제되면 null이 됨.
+    @Column(name = "itinerary_item_id")
+    private UUID itineraryItemId;
+
     @PrePersist
     void prePersist() {
         if (visitedAt == null) visitedAt = LocalDateTime.now();
