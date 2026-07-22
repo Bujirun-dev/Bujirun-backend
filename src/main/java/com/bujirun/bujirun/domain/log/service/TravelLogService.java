@@ -5,7 +5,9 @@ import com.bujirun.bujirun.domain.auth.repository.UserRepository;
 import com.bujirun.bujirun.domain.collection.repository.CollectionEntryRepository;
 import com.bujirun.bujirun.domain.group.dto.response.GroupMemberResponse;
 import com.bujirun.bujirun.domain.group.repository.GroupMemberRepository;
+import com.bujirun.bujirun.domain.itinerary.dto.response.ItineraryDetailResponse;
 import com.bujirun.bujirun.domain.itinerary.entity.Itinerary;
+import com.bujirun.bujirun.domain.itinerary.entity.ItineraryDay;
 import com.bujirun.bujirun.domain.itinerary.entity.ItineraryItem;
 import com.bujirun.bujirun.domain.itinerary.repository.ItineraryItemRepository;
 import com.bujirun.bujirun.domain.itinerary.repository.ItineraryRepository;
@@ -23,6 +25,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -91,6 +94,52 @@ public class TravelLogService {
 
         return TravelLogDetailResponse.of(log, itinerary, logItemMap, fetchGroupMembers(itinerary),
                 countCollectedSpots(itinerary, log.getUserId()));
+    }
+
+    // 공개된(또는 본인) 여행 기록의 일정을 그대로 복제해 요청자 소유의 새 일정으로 생성
+    @Transactional
+    public ItineraryDetailResponse copyToItinerary(UUID logId, UUID userId) {
+        TravelLog log = findLog(logId);
+        if (!log.isPublic() && !log.getUserId().equals(userId)) {
+            throw new IllegalArgumentException("접근 권한이 없습니다.");
+        }
+
+        Itinerary original = findItinerary(log.getItineraryId());
+
+        Itinerary copy = Itinerary.builder()
+                .userId(userId)
+                .planType(original.getPlanType())
+                .title(original.getTitle() + " (복사본)")
+                .startAt(original.getStartAt())
+                .startTime(original.getStartTime())
+                .endAt(original.getEndAt())
+                .endTime(original.getEndTime())
+                .build();
+
+        for (ItineraryDay day : original.getDays()) {
+            ItineraryDay newDay = ItineraryDay.builder()
+                    .itinerary(copy)
+                    .dayNumber(day.getDayNumber())
+                    .date(day.getDate())
+                    .build();
+            copy.getDays().add(newDay);
+
+            for (ItineraryItem item : day.getItems()) {
+                ItineraryItem newItem = ItineraryItem.builder()
+                        .day(newDay)
+                        .spot(item.getSpot())
+                        .orderIndex(item.getOrderIndex())
+                        .arrivalTime(item.getArrivalTime())
+                        .durationMin(item.getDurationMin())
+                        .travelMode(item.getTravelMode())
+                        .travelTimeMin(item.getTravelTimeMin())
+                        .memo(item.getMemo())
+                        .build();
+                newDay.getItems().add(newItem);
+            }
+        }
+
+        return ItineraryDetailResponse.from(itineraryRepository.save(copy), Set.of(), Set.of());
     }
 
     public List<TravelLogSummaryResponse> getMyLogs(UUID userId) {
