@@ -3,6 +3,7 @@ package com.bujirun.bujirun.domain.log.controller;
 import com.bujirun.bujirun.domain.itinerary.dto.response.ItineraryDetailResponse;
 import com.bujirun.bujirun.domain.log.dto.request.AddHashtagRequest;
 import com.bujirun.bujirun.domain.log.dto.request.AddPhotoRequest;
+import com.bujirun.bujirun.domain.log.dto.request.CopyLogRequest;
 import com.bujirun.bujirun.domain.log.dto.request.CreateLogRequest;
 import com.bujirun.bujirun.domain.log.dto.request.UpdateLogRequest;
 import com.bujirun.bujirun.domain.log.dto.response.*;
@@ -74,12 +75,14 @@ public class TravelLogController {
                 .map(r -> ResponseEntity.ok(ApiResponse.ok(r)));
     }
 
-    @Operation(summary = "여행 기록으로 일정 복사", description = "공개된(또는 본인) 여행 기록의 일정을 복제해 내 소유의 새 일정으로 생성합니다.")
+    @Operation(summary = "여행 기록으로 일정 복사", description = "공개된(또는 본인) 여행 기록의 일정을 복제해 내 소유의 새 일정으로 생성합니다. groupId를 지정하면 그 그룹의 공유 일정으로 생성됩니다.")
     @PostMapping("/{id}/copy")
     public Mono<ResponseEntity<ApiResponse<ItineraryDetailResponse>>> copyToItinerary(
             @PathVariable UUID id,
+            @RequestBody(required = false) CopyLogRequest req,
             @AuthenticationPrincipal UUID userId) {
-        return blocking(() -> travelLogService.copyToItinerary(id, userId))
+        UUID groupId = req != null ? req.groupId() : null;
+        return blocking(() -> travelLogService.copyToItinerary(id, userId, groupId))
                 .map(r -> ResponseEntity.status(201).body(ApiResponse.ok(r)));
     }
 

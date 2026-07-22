@@ -97,17 +97,22 @@ public class TravelLogService {
     }
 
     // 공개된(또는 본인) 여행 기록의 일정을 그대로 복제해 요청자 소유의 새 일정으로 생성
+    // groupId를 지정하면 그 그룹의 공유 일정으로 생성됨(요청자가 그룹 멤버일 때만 허용)
     @Transactional
-    public ItineraryDetailResponse copyToItinerary(UUID logId, UUID userId) {
+    public ItineraryDetailResponse copyToItinerary(UUID logId, UUID userId, UUID groupId) {
         TravelLog log = findLog(logId);
         if (!log.isPublic() && !log.getUserId().equals(userId)) {
             throw new IllegalArgumentException("접근 권한이 없습니다.");
+        }
+        if (groupId != null && !groupMemberRepository.existsById_GroupIdAndId_UserId(groupId, userId)) {
+            throw new IllegalArgumentException("그룹 멤버만 그룹 일정으로 복사할 수 있습니다.");
         }
 
         Itinerary original = findItinerary(log.getItineraryId());
 
         Itinerary copy = Itinerary.builder()
                 .userId(userId)
+                .groupId(groupId)
                 .planType(original.getPlanType())
                 .title(original.getTitle() + " (복사본)")
                 .startAt(original.getStartAt())
