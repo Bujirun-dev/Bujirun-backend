@@ -1,5 +1,6 @@
 package com.bujirun.bujirun.domain.log.controller;
 
+import com.bujirun.bujirun.domain.itinerary.dto.response.ItineraryDetailResponse;
 import com.bujirun.bujirun.domain.log.dto.request.AddHashtagRequest;
 import com.bujirun.bujirun.domain.log.dto.request.AddPhotoRequest;
 import com.bujirun.bujirun.domain.log.dto.request.CreateLogRequest;
@@ -71,6 +72,15 @@ public class TravelLogController {
             @PathVariable UUID spotId) {
         return blocking(() -> travelLogService.getLogsBySpotId(spotId))
                 .map(r -> ResponseEntity.ok(ApiResponse.ok(r)));
+    }
+
+    @Operation(summary = "여행 기록으로 일정 복사", description = "공개된(또는 본인) 여행 기록의 일정을 복제해 내 소유의 새 일정으로 생성합니다.")
+    @PostMapping("/{id}/copy")
+    public Mono<ResponseEntity<ApiResponse<ItineraryDetailResponse>>> copyToItinerary(
+            @PathVariable UUID id,
+            @AuthenticationPrincipal UUID userId) {
+        return blocking(() -> travelLogService.copyToItinerary(id, userId))
+                .map(r -> ResponseEntity.status(201).body(ApiResponse.ok(r)));
     }
 
     @Operation(summary = "여행 기록 수정", description = "여행 기록의 내용을 수정합니다.")
