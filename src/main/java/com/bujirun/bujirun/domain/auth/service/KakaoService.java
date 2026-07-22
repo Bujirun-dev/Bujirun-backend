@@ -87,12 +87,14 @@ public class KakaoService {
         if (deletedUser.isPresent()) {
             User user = deletedUser.get();
 
-            if (user.getDeletedAt().isAfter(LocalDateTime.now().minusMinutes(1))) {
-                // 30일 이내 재가입 → 계정 복구
+            // 30일 이내 재가입 → 계정 복구
+            if (user.getDeletedAt().isAfter(LocalDateTime.now().minusDays(30))) {
                 user.restore();
                 return new UserAuthResult(user, false);
             } else {
-                // 30일 초과 → 재가입 불가 (새 유저로 가입 허용)
+                // 30일 초과 → 기존 탈퇴 계정 provider_id 초기화 후 새 유저 생성
+                user.clearProviderId();
+                userRepository.saveAndFlush(user);
                 return new UserAuthResult(
                         userRepository.save(
                                 User.builder()
