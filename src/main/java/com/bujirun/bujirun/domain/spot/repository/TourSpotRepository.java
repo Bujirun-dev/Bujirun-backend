@@ -17,17 +17,19 @@ public interface TourSpotRepository extends JpaRepository<TourSpot, UUID> {
 
     List<TourSpot> findByCategory(String category);
 
-    // 반경 N km 이내 관광지
+    // 반경 N km 이내 관광지. HAVING은 SELECT절 별칭을 못 봐서(PostgreSQL) 서브쿼리로 감싸 WHERE에서 필터링
     @Query(value = """
-            SELECT *, (
-                6371 * acos(
-                    cos(radians(:lat)) * cos(radians(lat))
-                    * cos(radians(lng) - radians(:lng))
-                    + sin(radians(:lat)) * sin(radians(lat))
-                )
-            ) AS distance
-            FROM tour_spots
-            HAVING distance < :radiusKm
+            SELECT * FROM (
+                SELECT *, (
+                    6371 * acos(
+                        cos(radians(:lat)) * cos(radians(lat))
+                        * cos(radians(lng) - radians(:lng))
+                        + sin(radians(:lat)) * sin(radians(lat))
+                    )
+                ) AS distance
+                FROM tour_spots
+            ) sub
+            WHERE distance < :radiusKm
             ORDER BY distance
             """, nativeQuery = true)
     List<TourSpot> findNearby(@Param("lat") double lat,
