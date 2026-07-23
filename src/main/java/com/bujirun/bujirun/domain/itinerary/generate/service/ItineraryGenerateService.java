@@ -1,7 +1,7 @@
 package com.bujirun.bujirun.domain.itinerary.generate.service;
 
 import com.bujirun.bujirun.domain.collection.repository.CollectionEntryRepository;
-import com.bujirun.bujirun.domain.itinerary.generate.client.GroqClient;
+import com.bujirun.bujirun.domain.itinerary.generate.client.OpenAiClient;
 import com.bujirun.bujirun.domain.itinerary.generate.dto.response.ItineraryGenerateResponse;
 import com.bujirun.bujirun.domain.itinerary.generate.dto.response.SpotInfo;
 import com.bujirun.bujirun.domain.swipe.dto.request.SwipeRequest;
@@ -26,7 +26,7 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class ItineraryGenerateService {
 
-    private final GroqClient groqClient;
+    private final OpenAiClient openAiClient;
     private final TourSpotRepository tourSpotRepository;
     private final ObjectMapper objectMapper;
     private final TransitRouteService transitRouteService;
@@ -115,17 +115,17 @@ public class ItineraryGenerateService {
                 .map(this::toSpotInfo)
                 .toList();
 
-        // Groq 호출
+        // OpenAI 호출
         String systemPrompt = buildSystemPrompt();
         String userPrompt = buildUserPrompt(likedSpotInfos, preferenceVector, candidates, tripDays,
                 request.getOptimizationType(), request.getStartDate(),
                 request.getEndDate(), request.getStartTime(), request.getEndTime(),
                 request.getActivityHours());
 
-        log.info("Groq 호출 시작 - 후보 관광지 {}개, 여행 {}일", candidates.size(), tripDays);
-        String rawResponse = groqClient.chat(systemPrompt, userPrompt);
-        log.info("Groq 응답 수신 완료");
-        log.info("=== GROQ RAW RESPONSE ===\n{}", rawResponse);
+        log.info("OpenAI 호출 시작 - 후보 관광지 {}개, 여행 {}일", candidates.size(), tripDays);
+        String rawResponse = openAiClient.chat(systemPrompt, userPrompt);
+        log.info("OpenAI 응답 수신 완료");
+        log.info("=== OPENAI RAW RESPONSE ===\n{}", rawResponse);
 
         // JSON 파싱 → ScheduleResponse 변환
         return parseResponse(rawResponse, candidates, request.getOptimizationType());
@@ -244,13 +244,13 @@ public class ItineraryGenerateService {
                     .collect(Collectors.toMap(SpotInfo::getContentId, s -> s));
 
             return ItineraryGenerateResponse.builder()
-                    .planA(parsePlan(root.get("planA"), spotMap, optimizationType, false)) // A안: 취향 집중 → Groq 추천 순서 그대로 유지
+                    .planA(parsePlan(root.get("planA"), spotMap, optimizationType, false)) // A안: 취향 집중 → OpenAI 추천 순서 그대로 유지
                     .planB(parsePlan(root.get("planB"), spotMap, optimizationType, true)) // B안: 뚜벅이 최적 → 좌표 기반 최근접 이웃으로 동선 재정렬
                     .planC(null)  // C안은 프론트에서 처리
                     .build();
 
         } catch (Exception e) {
-            log.error("Groq 응답 파싱 실패: {}", rawResponse, e);
+            log.error("OpenAI 응답 파싱 실패: {}", rawResponse, e);
             throw new RuntimeException("일정 생성 중 오류가 발생했습니다.");
         }
     }
