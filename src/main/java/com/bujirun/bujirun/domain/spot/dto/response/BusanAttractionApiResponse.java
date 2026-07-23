@@ -6,10 +6,9 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 
 // 부산광역시_부산명소정보 API(data.go.kr 15063481, getAttractionKr) 응답 항목.
-// 포털 페이지에 실제 요청/응답 예시(원문 JSON)가 공개돼 있지 않아 최상위 응답 구조(header/body 중첩 방식)는
-// 확정하지 못했음 - 필드명 자체는 "출력결과" 명세 표에서 확인함. 그래서 이 항목만 정의해두고, 실제 파싱은
-// BusanAttractionApiClient에서 중첩 구조와 무관하게 이 필드를 가진 노드를 재귀 탐색해서 매핑함.
-// 서비스키 발급 후 첫 실제 호출 결과를 보고 구조가 다르면 클라이언트만 손보면 됨.
+// 포털 Swagger 예시가 resultCode/totalCount 같은 페이징 메타필드와 항목필드를 한 객체에 같이 나열해서
+// 보여주는 형태라 실제 응답이 이 객체들의 배열인지, 단건 객체인지, header/body로 감싸져 오는지는 실제
+// 호출 전까지 확정하지 못함 - BusanAttractionApiClient가 세 경우 모두 처리하도록 되어있음.
 @Getter
 @NoArgsConstructor
 @JsonIgnoreProperties(ignoreUnknown = true)
@@ -29,6 +28,9 @@ public class BusanAttractionApiResponse {
 
     @JsonProperty("LNG")
     private String lng;
+
+    @JsonProperty("PLACE")
+    private String place;              // 여행지
 
     @JsonProperty("TITLE")
     private String title;

@@ -92,7 +92,8 @@ public class MigrationService {
     }
 
     // 부산광역시_부산명소정보 API(data.go.kr 15063481)로 소개정보(부제목·상세내용·교통정보·휴무일·이용요금) 보완.
-    // TourAPI는 contentId가 있어 정확히 매칭되지만 이 API는 contentId 체계가 달라서 좌표 기반으로 매칭함.
+    // TourAPI는 contentId가 있어 정확히 매칭되지만 이 API는 contentId 체계가 달라서, 좌표 100m 반경 후보 중
+    // 관광지명까지 일치하는 것만 최종 매칭함 (좌표만으로는 반경 내 다른 관광지와 오매칭될 수 있어서 정확도를 위해 이중 체크).
     @Transactional
     public BusanEnrichResult enrichWithBusanAttractionApi() {
         log.info("========== 부산명소정보 API 연동 시작 ==========");
@@ -112,12 +113,17 @@ public class MigrationService {
                 }
 
                 List<TourSpot> nearby = tourSpotRepository.findNearby(lat, lng, BUSAN_ATTRACTION_MATCH_RADIUS_KM);
-                if (nearby.isEmpty()) {
+                TourSpot spot = nearby.stream()
+                        .filter(candidate -> namesMatch(candidate.getName(),
+                                item.getMainTitle(), item.getTitle(), item.getPlace()))
+                        .findFirst()
+                        .orElse(null);
+
+                if (spot == null) {
                     unmatched++;
                     continue;
                 }
 
-                TourSpot spot = nearby.get(0);
                 spot.enrichFromBusanAttraction(
                         item.getUcSeq(),
                         item.getSubtitle(),
@@ -140,6 +146,28 @@ public class MigrationService {
         BusanEnrichResult result = new BusanEnrichResult(items.size(), matched, unmatched, failed);
         log.info("========== 부산명소정보 API 연동 완료: {} ==========", result);
         return result;
+    }
+
+    // 공백·괄호·특수문자 표기 차이를 무시하고 한쪽이 다른 쪽 이름을 포함하면 같은 관광지로 판단
+    private boolean namesMatch(String existingName, String... busanNames) {
+        String normalizedExisting = normalizeSpotName(existingName);
+        if (normalizedExisting.isEmpty()) return false;
+
+        for (String candidate : busanNames) {
+            String normalizedCandidate = normalizeSpotName(candidate);
+            if (normalizedCandidate.isEmpty()) continue;
+            if (normalizedExisting.equals(normalizedCandidate)
+                    || normalizedExisting.contains(normalizedCandidate)
+                    || normalizedCandidate.contains(normalizedExisting)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private String normalizeSpotName(String name) {
+        if (name == null) return "";
+        return name.replaceAll("[^0-9가-힣a-zA-Z]", "").toLowerCase();
     }
 
     private String buildBusanOperatingHours(BusanAttractionApiResponse item) {

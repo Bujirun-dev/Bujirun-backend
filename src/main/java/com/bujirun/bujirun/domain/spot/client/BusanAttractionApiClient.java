@@ -9,6 +9,9 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.reactive.function.client.WebClient;
 import reactor.util.retry.Retry;
 
+import java.net.URI;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Iterator;
@@ -19,7 +22,7 @@ import java.util.Map;
 @Component
 public class BusanAttractionApiClient {
 
-    private static final String BASE_URL   = "http://apis.data.go.kr/6260000/AttractionService";
+    private static final String BASE_URL   = "https://apis.data.go.kr/6260000/AttractionService";
     private static final int    NUM_OF_ROWS = 100;
 
     private final WebClient    webClient;
@@ -28,7 +31,10 @@ public class BusanAttractionApiClient {
 
     public BusanAttractionApiClient(WebClient.Builder builder, ObjectMapper objectMapper,
                                      @Value("${busan-attraction-api.service-key}") String serviceKey) {
-        this.webClient    = builder.baseUrl(BASE_URL).build();
+        // 상세내용(ITEMCNTNTS)이 항목당 수 KB라 100건씩 받으면 WebClient 기본 버퍼(256KB)를 넘어서 늘림
+        this.webClient    = builder.baseUrl(BASE_URL)
+                .codecs(configurer -> configurer.defaultCodecs().maxInMemorySize(5 * 1024 * 1024))
+                .build();
         this.objectMapper = objectMapper;
         this.serviceKey   = serviceKey;
     }
@@ -55,32 +61,57 @@ public class BusanAttractionApiClient {
         return result;
     }
 
+    // 이 API 서버(VISITBUSAN)에서 확인된 특이사항 세 가지 때문에 표준 WebClient 빌더 대신 수동으로 처리한다.
+    // 1) 기본 User-Agent(curl 기본값, Reactor Netty 기본값)는 403/401로 차단됨 - 브라우저 User-Agent/Referer 필요
+    // 2) 서비스키에 '+' 문자가 있는데, UriComponentsBuilder.queryParam()이 이걸 그대로 통과시켜서 서버가
+    //    폼 인코딩 규칙으로 '+' → 공백으로 잘못 디코딩해 401이 남. URLEncoder로 직접 인코딩해서 완성된
+    //    URI 문자열을 그대로 넘겨야 함.
+    // 3) 실제 JSON을 내려주면서도 Content-Type을 text/plain으로 잘못 표기해서, WebClient의 Jackson 디코더가
+    //    미디어타입 불일치로 거부함 - String으로 받아서 직접 objectMapper.readTree()로 파싱해야 함.
     private JsonNode fetchPage(int pageNo) {
         try {
-            return webClient.get()
-                    .uri(uri -> uri.path("/getAttractionKr")
-                            .queryParam("ServiceKey", serviceKey)
-                            .queryParam("pageNo", pageNo)
-                            .queryParam("numOfRows", NUM_OF_ROWS)
-                            .queryParam("resultType", "json")
-                            .build())
+            String encodedKey = URLEncoder.encode(serviceKey, StandardCharsets.UTF_8);
+            String url = BASE_URL + "/getAttractionKr?ServiceKey=" + encodedKey
+                    + "&pageNo=" + pageNo
+                    + "&numOfRows=" + NUM_OF_ROWS
+                    + "&resultType=json";
+
+            String rawBody = webClient.get()
+                    .uri(URI.create(url))
+                    .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+                    .header("Referer", "https://www.data.go.kr/")
                     .retrieve()
-                    .bodyToMono(JsonNode.class)
+                    .bodyToMono(String.class)
                     .retryWhen(Retry.backoff(3, Duration.ofSeconds(2)))
                     .block();
+
+            return rawBody == null ? null : objectMapper.readTree(rawBody);
         } catch (Exception e) {
             log.warn("[BusanAttractionApi] page={} 조회 실패, {}", pageNo, e.getMessage());
             return null;
         }
     }
 
-    // 최상위 응답 구조(header/body 중첩 여부, 연산명으로 감싸는지 등)가 실제 샘플로 확인되지 않아
-    // "item" 필드를 가진 노드를 재귀 탐색해서 찾는다. 구조가 확인되면 이 부분만 단순화하면 됨.
+    // 포털 명세 예시가 resultCode/totalCount 같은 메타필드와 UC_SEQ 등 항목필드를 한 객체에 같이 나열해서
+    // 보여줘서, 실제 응답이 (a) 그런 평평한 객체의 배열인지 (b) 단건 객체 하나인지 (c) header/body처럼
+    // "item" 필드 아래 감싸져 오는지 확정할 수 없었음. 세 가지 모두 처리하도록 방어적으로 짬 - 실제 첫 응답을
+    // 로그로 보고 필요하면 이 메서드만 단순화하면 됨.
     private List<BusanAttractionApiResponse> extractItems(JsonNode root) {
-        JsonNode itemNode = findFieldRecursive(root, "item");
-        if (itemNode == null || itemNode.isMissingNode() || itemNode.isNull()) return List.of();
+        if (root == null || root.isNull() || root.isMissingNode()) return List.of();
 
         try {
+            if (root.isArray()) {
+                return objectMapper.convertValue(root,
+                        objectMapper.getTypeFactory().constructCollectionType(List.class, BusanAttractionApiResponse.class));
+            }
+
+            if (root.isObject() && root.has("UC_SEQ")) {
+                return List.of(objectMapper.convertValue(root, BusanAttractionApiResponse.class));
+            }
+
+            JsonNode itemNode = findFieldRecursive(root, "item");
+            if (itemNode == null || itemNode.isMissingNode() || itemNode.isNull()) return List.of();
+
             if (itemNode.isArray()) {
                 return objectMapper.convertValue(itemNode,
                         objectMapper.getTypeFactory().constructCollectionType(List.class, BusanAttractionApiResponse.class));
@@ -92,9 +123,19 @@ public class BusanAttractionApiClient {
         }
     }
 
+    // totalCount/pageNo 등이 숫자가 아니라 문자열("107")로 내려올 수 있어 asInt()로 통일해서 파싱
     private Integer findIntField(JsonNode root, String fieldName) {
+        if (root == null) return null;
+
+        if (root.isArray()) {
+            for (JsonNode el : root) {
+                if (el.isObject() && el.has(fieldName)) return el.get(fieldName).asInt();
+            }
+            return null;
+        }
+
         JsonNode node = findFieldRecursive(root, fieldName);
-        return (node != null && node.isNumber()) ? node.asInt() : null;
+        return node != null ? node.asInt() : null;
     }
 
     private JsonNode findFieldRecursive(JsonNode node, String fieldName) {
