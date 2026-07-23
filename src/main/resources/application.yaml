@@ -55,3 +55,8 @@ jwt:
   secret: ${JWT_SECRET}
   access-token-expiration: 1800000
   refresh-token-expiration: 1209600000
+
+openai:
+  api:
+    key: ${OPENAI_API_KEY}
+    model: gpt-4.1-mini

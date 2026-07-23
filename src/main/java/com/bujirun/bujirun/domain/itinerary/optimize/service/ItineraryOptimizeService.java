@@ -4,7 +4,7 @@ import com.bujirun.bujirun.domain.group.repository.GroupMemberRepository;
 import com.bujirun.bujirun.domain.itinerary.entity.Itinerary;
 import com.bujirun.bujirun.domain.itinerary.entity.ItineraryDay;
 import com.bujirun.bujirun.domain.itinerary.entity.ItineraryItem;
-import com.bujirun.bujirun.domain.itinerary.generate.client.GroqClient;
+import com.bujirun.bujirun.domain.itinerary.generate.client.OpenAiClient;
 import com.bujirun.bujirun.domain.itinerary.generate.dto.response.SpotInfo;
 import com.bujirun.bujirun.domain.itinerary.generate.dto.response.TransitRouteResponse;
 import com.bujirun.bujirun.domain.itinerary.generate.service.SpotOrderOptimizer;
@@ -32,7 +32,7 @@ public class ItineraryOptimizeService {
     private final ItineraryDayRepository itineraryDayRepository;
     private final GroupMemberRepository groupMemberRepository;
     private final TransitRouteService transitRouteService;
-    private final GroqClient groqClient;
+    private final OpenAiClient openAiClient;
     private final ObjectMapper objectMapper;
 
     @Value("${itinerary.default-visit-duration-minutes:60}")
@@ -173,7 +173,7 @@ public class ItineraryOptimizeService {
         sb.append("그 관광지만 마감 전에 방문할 수 있도록 순서를 앞당기세요. 그 외에는 순서를 바꾸지 마세요.");
         sb.append("\n운영시간 정보가 '정보없음'이거나 '상시 개방'인 곳은 순서 조정 대상이 아닙니다.");
 
-        String rawResponse = groqClient.chat(systemPrompt, sb.toString());
+        String rawResponse = openAiClient.chat(systemPrompt, sb.toString());
         return parseGroqAdjustResult(rawResponse, order);
     }
 
