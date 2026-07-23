@@ -1,6 +1,8 @@
 package com.bujirun.bujirun.domain.spot.service;
 
+import com.bujirun.bujirun.domain.spot.client.BusanAttractionApiClient;
 import com.bujirun.bujirun.domain.spot.client.TourApiClient;
+import com.bujirun.bujirun.domain.spot.dto.response.BusanAttractionApiResponse;
 import com.bujirun.bujirun.domain.spot.dto.response.TourApiResponse.*;
 import com.bujirun.bujirun.domain.spot.entity.Sigungu;
 import com.bujirun.bujirun.domain.spot.entity.TourSpot;
@@ -24,11 +26,13 @@ import java.util.Optional;
 @RequiredArgsConstructor
 public class MigrationService {
 
-    private final TourApiClient         tourApiClient;
-    private final TourSpotRepository    tourSpotRepository;
-    private final TourSpotTagRepository tourSpotTagRepository;
-    private final SigunguRepository     sigunguRepository;
+    private final TourApiClient             tourApiClient;
+    private final BusanAttractionApiClient  busanAttractionApiClient;
+    private final TourSpotRepository        tourSpotRepository;
+    private final TourSpotTagRepository     tourSpotTagRepository;
+    private final SigunguRepository         sigunguRepository;
     private static final List<Integer> TARGET_CONTENT_TYPES = List.of(12, 14, 28,38); // 관광지, 문화시설, 레포츠, 시장
+    private static final double BUSAN_ATTRACTION_MATCH_RADIUS_KM = 0.1; // 100m 이내면 같은 관광지로 판단
 
     private static final Map<Integer, String> CATEGORY_MAP = Map.of(
             12, "관광지",
@@ -85,6 +89,77 @@ public class MigrationService {
         MigrationResult result = new MigrationResult(allItems.size(), saved, updated, failed);
         log.info("========== 마이그레이션 완료: {} ==========", result);
         return result;
+    }
+
+    // 부산광역시_부산명소정보 API(data.go.kr 15063481)로 소개정보(부제목·상세내용·교통정보·휴무일·이용요금) 보완.
+    // TourAPI는 contentId가 있어 정확히 매칭되지만 이 API는 contentId 체계가 달라서 좌표 기반으로 매칭함.
+    @Transactional
+    public BusanEnrichResult enrichWithBusanAttractionApi() {
+        log.info("========== 부산명소정보 API 연동 시작 ==========");
+
+        List<BusanAttractionApiResponse> items = busanAttractionApiClient.fetchAll();
+        log.info("총 수집: {}건", items.size());
+
+        int matched = 0, unmatched = 0, failed = 0;
+
+        for (BusanAttractionApiResponse item : items) {
+            try {
+                Double lat = parseDouble(item.getLat());
+                Double lng = parseDouble(item.getLng());
+                if (lat == null || lng == null) {
+                    unmatched++;
+                    continue;
+                }
+
+                List<TourSpot> nearby = tourSpotRepository.findNearby(lat, lng, BUSAN_ATTRACTION_MATCH_RADIUS_KM);
+                if (nearby.isEmpty()) {
+                    unmatched++;
+                    continue;
+                }
+
+                TourSpot spot = nearby.get(0);
+                spot.enrichFromBusanAttraction(
+                        item.getUcSeq(),
+                        item.getSubtitle(),
+                        item.getItemCntnts(),
+                        item.getCntctTel(),
+                        item.getHomepageUrl(),
+                        item.getTrfcInfo(),
+                        buildBusanOperatingHours(item),
+                        item.getHldyInfo(),
+                        item.getUsageAmount()
+                );
+                tourSpotRepository.save(spot);
+                matched++;
+            } catch (Exception e) {
+                log.error("[BusanEnrich] 실패 - UC_SEQ={}, {}", item.getUcSeq(), e.getMessage());
+                failed++;
+            }
+        }
+
+        BusanEnrichResult result = new BusanEnrichResult(items.size(), matched, unmatched, failed);
+        log.info("========== 부산명소정보 API 연동 완료: {} ==========", result);
+        return result;
+    }
+
+    private String buildBusanOperatingHours(BusanAttractionApiResponse item) {
+        String day = item.getUsageDay();
+        String time = item.getUsageDayWeekAndTime();
+        if (day == null || day.isBlank())  return time;
+        if (time == null || time.isBlank()) return day;
+        return day + " " + time;
+    }
+
+    private Double parseDouble(String value) {
+        if (value == null || value.isBlank()) return null;
+        try { return Double.parseDouble(value); }
+        catch (NumberFormatException e) { return null; }
+    }
+
+    public record BusanEnrichResult(int total, int matched, int unmatched, int failed) {
+        @Override public String toString() {
+            return String.format("전체=%d, 매칭=%d, 미매칭=%d, 실패=%d", total, matched, unmatched, failed);
+        }
     }
 
     private void initSigungu() {
