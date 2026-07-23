@@ -21,6 +21,10 @@ public class SpotDetailResponse {
     private String overview;
     private String tel;
     private String homepage;
+    private String subtitle;
+    private String transportation;
+    private String closedDays;
+    private String feeInfo;
     private boolean isCollected;
     private boolean isVisited;
 
@@ -42,14 +46,31 @@ public class SpotDetailResponse {
                 .operatingHours(spot.getOperatingHours())
                 .isCollected(isCollected)
                 .isVisited(isVisited)
+                .subtitle(spot.getSubtitle())
+                .transportation(defaultIfBlank(spot.getTransportation(), "등록된 정보 없음"))
+                .closedDays(defaultIfBlank(spot.getClosedDays(), "등록된 정보 없음"))
+                .feeInfo(defaultIfBlank(spot.getFeeInfo(), "등록된 정보 없음"))
                 .overview("등록된 정보 없음")
                 .tel("등록된 정보 없음")
                 .homepage("등록된 정보 없음");
 
-        if (apiDetail != null) {
-            builder.overview(defaultIfBlank(apiDetail.getOverview(), "등록된 정보 없음"))
-                    .tel(defaultIfBlank(apiDetail.getTel(), "등록된 정보 없음"))
-                    .homepage(defaultIfBlank(apiDetail.getHomepage(), "등록된 정보 없음"));
+        // 부산명소정보 API로 보완된 상세내용이 TourAPI 개요보다 풍부하므로 우선 사용
+        if (spot.getDescription() != null && !spot.getDescription().isBlank()) {
+            builder.overview(spot.getDescription());
+        } else if (apiDetail != null) {
+            builder.overview(defaultIfBlank(apiDetail.getOverview(), "등록된 정보 없음"));
+        }
+
+        if (spot.getContact() != null && !spot.getContact().isBlank()) {
+            builder.tel(spot.getContact());
+        } else if (apiDetail != null) {
+            builder.tel(defaultIfBlank(apiDetail.getTel(), "등록된 정보 없음"));
+        }
+
+        if (spot.getHomepageUrl() != null && !spot.getHomepageUrl().isBlank()) {
+            builder.homepage(spot.getHomepageUrl());
+        } else if (apiDetail != null) {
+            builder.homepage(defaultIfBlank(apiDetail.getHomepage(), "등록된 정보 없음"));
         }
 
         return builder.build();

@@ -28,6 +28,9 @@ server:
 tourapi:
   service-key: ${TOURAPI_SERVICE_KEY}
 
+busan-attraction-api:
+  service-key: ${BUSAN_ATTRACTION_API_SERVICE_KEY}
+
 groq:
   api:
     key: ${GROQ_API_KEY}
