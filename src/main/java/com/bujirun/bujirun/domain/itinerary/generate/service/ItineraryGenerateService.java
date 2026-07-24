@@ -63,6 +63,12 @@ public class ItineraryGenerateService {
 
         // DB에서 좋아요한 관광지 조회 → 성향 벡터(카테고리별 선호도) 생성
         List<TourSpot> likedSpots = tourSpotRepository.findByContentIdIn(likedIds);
+        if (likedSpots.size() < likedIds.size()) {
+            Set<String> foundIds = likedSpots.stream().map(TourSpot::getContentId).collect(Collectors.toSet());
+            List<String> missingIds = likedIds.stream().filter(id -> !foundIds.contains(id)).toList();
+            log.warn("요청된 likedIds 중 DB에 없는 contentId 존재: {}", missingIds);
+        }
+
         Map<String, Long> preferenceVector = likedSpots.stream()
                 .filter(s -> s.getCategory() != null)
                 .collect(Collectors.groupingBy(TourSpot::getCategory, Collectors.counting()));
