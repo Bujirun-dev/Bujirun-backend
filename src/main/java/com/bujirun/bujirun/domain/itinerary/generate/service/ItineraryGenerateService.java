@@ -327,7 +327,11 @@ public class ItineraryGenerateService {
                             continue;
                         }
                         SpotInfo spot = spotMap.get(contentId);
-                        if (spot != null) spots.add(spot);
+                        if (spot != null) {
+                            spots.add(spot);
+                        } else {
+                            log.warn("day={}, contentId={}가 candidates 목록에 없음 (OpenAI 응답 오류 가능성)", day, contentId);
+                        }
                     }
                 }
 
