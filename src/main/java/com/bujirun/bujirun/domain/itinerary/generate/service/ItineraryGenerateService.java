@@ -128,7 +128,14 @@ public class ItineraryGenerateService {
         log.info("=== OPENAI RAW RESPONSE ===\n{}", rawResponse);
 
         // JSON 파싱 → ScheduleResponse 변환
-        return parseResponse(rawResponse, candidates, request.getOptimizationType());
+        ItineraryGenerateResponse response = parseResponse(rawResponse, candidates, request.getOptimizationType());
+
+        // OpenAI가 capacity보다 적게 채운 날짜 자동 백필
+        backfillUnderfilledDays(response, allCandidates, likedSpots, preferenceVector,
+                (int) tripDays, request.getStartTime(), request.getEndTime(),
+                request.getActivityHours(), request.getOptimizationType());
+
+        return response;
     }
 
     private String buildSystemPrompt() {
@@ -218,6 +225,8 @@ public class ItineraryGenerateService {
 
         sb.append("\n위 후보 관광지 중에서만 선택하여 A/B 2가지 일정을 생성하세요.");
         sb.append("\n각 일차별 최대 관광지 수는 위에 명시된 값을 절대 초과하지 마세요. 첫날/마지막날은 활동시간이 짧을 수 있으니 특히 유의하세요.");
+        sb.append("\n중요: 각 일차는 운영시간상 불가능한 곳을 제외하면 반드시 명시된 최대 관광지 수만큼 채워야 합니다. 후보가 충분히 있는데도 임의로 1~2곳만 배정하지 마세요. 특정 날짜에 선호 카테고리 후보가 부족하면 다른 후보 관광지로 채워서라도 최대한 개수를 채우세요.");
+
         sb.append("\nA안은 선호 카테고리에 집중하고, 위 좋아요한 장소 목록에 있는 장소를 일정에 최대한 포함하세요.");
         sb.append("\nB안은 동선이 꼬이지 않도록 각 후보 관광지의 위도·경도를 기준으로 같은 권역(예: 수영구·해운대구, 중구·영도구 등 인접한 구/군)끼리 묶어서 묶음 단위로 하루 일정을 구성하세요. 서로 먼 권역의 관광지를 같은 날 또는 인접한 순서에 배치하지 마세요.");
 
@@ -367,5 +376,112 @@ public class ItineraryGenerateService {
         double dist = GeoUtils.haversineDistance(centerLat, centerLng,
                 spot.getLat().doubleValue(), spot.getLng().doubleValue());
         return dist <= radiusM;
+    }
+
+    /**
+     * OpenAI가 특정 날짜에 capacity보다 적은 spot만 배정했을 경우,
+     * 좋아요한 장소와 유사(카테고리 매칭 + 거리 근접)한 후보로 자동 백필한다.
+     */
+    private ItineraryGenerateResponse backfillUnderfilledDays(ItineraryGenerateResponse response,
+                                                              List<TourSpot> allCandidates,
+                                                              List<TourSpot> likedSpots,
+                                                              Map<String, Long> preferenceVector,
+                                                              int tripDays,
+                                                              LocalTime startTime,
+                                                              LocalTime endTime,
+                                                              int activityHours,
+                                                              String optimizationType) {
+        ItineraryGenerateResponse.PlanOption newPlanA = backfillPlan(
+                response.getPlanA(), allCandidates, likedSpots, preferenceVector,
+                tripDays, startTime, endTime, activityHours, optimizationType);
+        ItineraryGenerateResponse.PlanOption newPlanB = backfillPlan(
+                response.getPlanB(), allCandidates, likedSpots, preferenceVector,
+                tripDays, startTime, endTime, activityHours, optimizationType);
+
+        return response.toBuilder()
+                .planA(newPlanA)
+                .planB(newPlanB)
+                .build();
+    }
+
+    private ItineraryGenerateResponse.PlanOption backfillPlan(ItineraryGenerateResponse.PlanOption plan,
+                                                              List<TourSpot> allCandidates,
+                                                              List<TourSpot> likedSpots,
+                                                              Map<String, Long> preferenceVector,
+                                                              int tripDays,
+                                                              LocalTime startTime,
+                                                              LocalTime endTime,
+                                                              int activityHours,
+                                                              String optimizationType) {
+        if (plan == null || plan.getDays() == null) return plan;
+
+        // 이 플랜 전체에서 이미 사용된 contentId (같은 관광지 중복 배정 방지)
+        Set<String> usedInPlan = plan.getDays().stream()
+                .flatMap(d -> d.getSpots().stream())
+                .map(SpotInfo::getContentId)
+                .collect(Collectors.toCollection(HashSet::new));
+
+        List<ItineraryGenerateResponse.DayPlan> newDays = new ArrayList<>();
+
+        for (ItineraryGenerateResponse.DayPlan dayPlan : plan.getDays()) {
+            int capacity = ScheduleCapacityUtil.calculateMaxSpotsForDay(
+                    dayPlan.getDay(), tripDays, startTime, endTime, activityHours);
+
+            List<SpotInfo> spots = new ArrayList<>(dayPlan.getSpots());
+
+            if (spots.size() < capacity) {
+                // 이 날짜의 기준 좌표: 이미 배정된 spot들의 중심, 없으면 좋아요 장소 중심
+                double refLat, refLng;
+                if (!spots.isEmpty()) {
+                    refLat = spots.stream().mapToDouble(SpotInfo::getLat).average().orElse(0);
+                    refLng = spots.stream().mapToDouble(SpotInfo::getLng).average().orElse(0);
+                } else if (!likedSpots.isEmpty()) {
+                    refLat = likedSpots.stream()
+                            .filter(s -> s.getLat() != null).mapToDouble(s -> s.getLat().doubleValue()).average().orElse(0);
+                    refLng = likedSpots.stream()
+                            .filter(s -> s.getLng() != null).mapToDouble(s -> s.getLng().doubleValue()).average().orElse(0);
+                } else {
+                    refLat = 0;
+                    refLng = 0;
+                }
+
+                final double fRefLat = refLat;
+                final double fRefLng = refLng;
+
+                List<TourSpot> fillCandidates = allCandidates.stream()
+                        .filter(s -> !usedInPlan.contains(s.getContentId()))
+                        .filter(s -> s.getLat() != null && s.getLng() != null)
+                        .sorted(Comparator
+                                // 선호 카테고리 점수 높은 순
+                                .comparingLong((TourSpot s) -> -preferenceVector.getOrDefault(s.getCategory(), 0L))
+                                // 그 다음 기준 좌표와 가까운 순
+                                .thenComparingDouble(s -> GeoUtils.haversineDistance(
+                                        fRefLat, fRefLng, s.getLat().doubleValue(), s.getLng().doubleValue())))
+                        .toList();
+
+                for (TourSpot candidate : fillCandidates) {
+                    if (spots.size() >= capacity) break;
+                    spots.add(toSpotInfo(candidate));
+                    usedInPlan.add(candidate.getContentId());
+                }
+
+                if (spots.size() < dayPlan.getSpots().size() + 1) {
+                    log.info("day={} 백필 시도했으나 후보 부족 (기존 {}개 → {}개, capacity {}개)",
+                            dayPlan.getDay(), dayPlan.getSpots().size(), spots.size(), capacity);
+                } else {
+                    log.info("day={} 백필 완료: {}개 → {}개 (capacity {}개)",
+                            dayPlan.getDay(), dayPlan.getSpots().size(), spots.size(), capacity);
+                }
+            }
+
+            newDays.add(dayPlan.toBuilder()
+                    .spots(spots)
+                    .routes(transitRouteService.getRoutesForDay(spots, optimizationType))
+                    .build());
+        }
+
+        return plan.toBuilder()
+                .days(newDays)
+                .build();
     }
 }
