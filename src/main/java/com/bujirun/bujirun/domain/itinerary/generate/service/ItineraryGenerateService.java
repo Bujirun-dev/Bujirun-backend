@@ -4,6 +4,7 @@ import com.bujirun.bujirun.domain.collection.repository.CollectionEntryRepositor
 import com.bujirun.bujirun.domain.itinerary.generate.client.OpenAiClient;
 import com.bujirun.bujirun.domain.itinerary.generate.dto.response.ItineraryGenerateResponse;
 import com.bujirun.bujirun.domain.itinerary.generate.dto.response.SpotInfo;
+import com.bujirun.bujirun.domain.itinerary.generate.exception.InvalidTripDurationException;
 import com.bujirun.bujirun.domain.swipe.dto.request.SwipeRequest;
 import com.bujirun.bujirun.domain.spot.entity.TourSpot;
 import com.bujirun.bujirun.domain.spot.repository.TourSpotRepository;
@@ -34,9 +35,14 @@ public class ItineraryGenerateService {
 
     private static final List<Double> RADIUS_STEPS_M = List.of(15_000.0, 25_000.0, 40_000.0); // 15km → 25km → 40km
     private static final int MIN_CANDIDATES = 20; // 후보 장소 최소 개수
+    private static final int MAX_TRIP_DAYS = 4; // 최대 3박 4일
 
     @Transactional(readOnly = true)
     public ItineraryGenerateResponse generateItinerary(SwipeRequest request, UUID userId) {
+
+        // 여행 일수 계산 및 상한 검증 (최대 3박 4일)
+        long tripDays = request.getStartDate().until(request.getEndDate()).getDays() + 1;
+        validateTripDuration(tripDays, request.getStartDate(), request.getEndDate());
 
         // 스와이프 결과에서 contentId 목록 추출
         List<String> likedIds = request.getSwipes().stream()
@@ -103,9 +109,6 @@ public class ItineraryGenerateService {
                 spot -> collectedSpotIds.contains(spot.getId()) ? 1 : 0
         ));
 
-        // 여행 일수 계산
-        long tripDays = request.getStartDate().until(request.getEndDate()).getDays() + 1;
-
         // 후보 관광지를 SpotInfo로 변환
         List<SpotInfo> candidates = allCandidates.stream()
                 .map(this::toSpotInfo)
@@ -136,6 +139,22 @@ public class ItineraryGenerateService {
                 request.getActivityHours(), request.getOptimizationType());
 
         return response;
+    }
+
+    // 여행기간 검증
+    private void validateTripDuration(long tripDays, LocalDate startDate, LocalDate endDate) {
+        if (endDate.isBefore(startDate)) {
+            throw new InvalidTripDurationException(
+                    "종료일이 시작일보다 빠를 수 없습니다. startDate=" + startDate + ", endDate=" + endDate);
+        }
+        if (tripDays > MAX_TRIP_DAYS) {
+            throw new InvalidTripDurationException(
+                    "여행 기간은 최대 " + MAX_TRIP_DAYS + "일(3박4일)까지 지원합니다. 요청된 기간: " + tripDays + "일");
+        }
+        if (tripDays < 1) {
+            throw new InvalidTripDurationException(
+                    "여행 기간은 최소 1일 이상이어야 합니다. 요청된 기간: " + tripDays + "일");
+        }
     }
 
     private String buildSystemPrompt() {
@@ -269,6 +288,7 @@ public class ItineraryGenerateService {
 
         List<ItineraryGenerateResponse.DayPlan> days = new ArrayList<>();
         JsonNode daysNode = planNode.get("days");
+        Set<String> seenInPlan = new HashSet<>();  // 플랜 전체 중복 방지
 
         if (daysNode != null && daysNode.isArray()) {
             for (JsonNode dayNode : daysNode) {
@@ -284,6 +304,10 @@ public class ItineraryGenerateService {
                 if (spotIds != null && spotIds.isArray()) {
                     for (JsonNode idNode : spotIds) {
                         String contentId = idNode.isTextual() ? idNode.asText() : String.valueOf(idNode.asLong());
+                        if (!seenInPlan.add(contentId)) {
+                            log.warn("day={}에서 이미 다른 날에 배정된 contentId={} 중복 스킵", day, contentId);
+                            continue;
+                        }
                         SpotInfo spot = spotMap.get(contentId);
                         if (spot != null) spots.add(spot);
                     }
