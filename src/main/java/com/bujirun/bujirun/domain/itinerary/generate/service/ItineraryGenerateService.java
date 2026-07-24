@@ -4,7 +4,7 @@ import com.bujirun.bujirun.domain.collection.repository.CollectionEntryRepositor
 import com.bujirun.bujirun.domain.itinerary.generate.client.OpenAiClient;
 import com.bujirun.bujirun.domain.itinerary.generate.dto.response.ItineraryGenerateResponse;
 import com.bujirun.bujirun.domain.itinerary.generate.dto.response.SpotInfo;
-import com.bujirun.bujirun.domain.itinerary.generate.exception.InvalidTripDurationException;
+import com.bujirun.bujirun.domain.itinerary.generate.exception.InvalidItineraryRequestException;
 import com.bujirun.bujirun.domain.swipe.dto.request.SwipeRequest;
 import com.bujirun.bujirun.domain.spot.entity.TourSpot;
 import com.bujirun.bujirun.domain.spot.repository.TourSpotRepository;
@@ -36,6 +36,8 @@ public class ItineraryGenerateService {
     private static final List<Double> RADIUS_STEPS_M = List.of(15_000.0, 25_000.0, 40_000.0); // 15km → 25km → 40km
     private static final int MIN_CANDIDATES = 20; // 후보 장소 최소 개수
     private static final int MAX_TRIP_DAYS = 4; // 최대 3박 4일
+    private static final int MIN_ACTIVITY_HOURS = 1; // 하루 최소 활동시간
+    private static final int MAX_ACTIVITY_HOURS = 16; // 하루 최대 활동시간 상한
 
     @Transactional(readOnly = true)
     public ItineraryGenerateResponse generateItinerary(SwipeRequest request, UUID userId) {
@@ -43,6 +45,10 @@ public class ItineraryGenerateService {
         // 여행 일수 계산 및 상한 검증 (최대 3박 4일)
         long tripDays = request.getStartDate().until(request.getEndDate()).getDays() + 1;
         validateTripDuration(tripDays, request.getStartDate(), request.getEndDate());
+
+        // 여행 시간 검증 (1 ~ 16시간)
+        validateActivityTime(request.getStartTime(), request.getEndTime(), request.getActivityHours());
+
 
         // 스와이프 결과에서 contentId 목록 추출
         List<String> likedIds = request.getSwipes().stream()
@@ -144,16 +150,28 @@ public class ItineraryGenerateService {
     // 여행기간 검증
     private void validateTripDuration(long tripDays, LocalDate startDate, LocalDate endDate) {
         if (endDate.isBefore(startDate)) {
-            throw new InvalidTripDurationException(
+            throw new InvalidItineraryRequestException(
                     "종료일이 시작일보다 빠를 수 없습니다. startDate=" + startDate + ", endDate=" + endDate);
         }
         if (tripDays > MAX_TRIP_DAYS) {
-            throw new InvalidTripDurationException(
+            throw new InvalidItineraryRequestException(
                     "여행 기간은 최대 " + MAX_TRIP_DAYS + "일(3박4일)까지 지원합니다. 요청된 기간: " + tripDays + "일");
         }
         if (tripDays < 1) {
-            throw new InvalidTripDurationException(
+            throw new InvalidItineraryRequestException(
                     "여행 기간은 최소 1일 이상이어야 합니다. 요청된 기간: " + tripDays + "일");
+        }
+    }
+
+    // 여행시간 검증
+    private void validateActivityTime(LocalTime startTime, LocalTime endTime, int activityHours) {
+        if (activityHours < MIN_ACTIVITY_HOURS || activityHours > MAX_ACTIVITY_HOURS) {
+            throw new InvalidItineraryRequestException(
+                    "activityHours는 " + MIN_ACTIVITY_HOURS + "~" + MAX_ACTIVITY_HOURS + " 사이여야 합니다. 요청값: " + activityHours);
+        }
+        if (startTime != null && endTime != null && !endTime.isAfter(startTime)) {
+            throw new InvalidItineraryRequestException(
+                    "종료 시간은 시작 시간보다 늦어야 합니다. startTime=" + startTime + ", endTime=" + endTime);
         }
     }
 
