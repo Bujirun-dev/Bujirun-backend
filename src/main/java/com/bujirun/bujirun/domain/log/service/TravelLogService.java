@@ -18,11 +18,16 @@ import com.bujirun.bujirun.domain.log.dto.request.UpdateLogRequest;
 import com.bujirun.bujirun.domain.log.dto.response.*;
 import com.bujirun.bujirun.domain.log.entity.*;
 import com.bujirun.bujirun.domain.log.repository.*;
+import com.bujirun.bujirun.domain.visit.entity.Visit;
+import com.bujirun.bujirun.domain.visit.entity.VisitPhoto;
+import com.bujirun.bujirun.domain.visit.repository.VisitPhotoRepository;
+import com.bujirun.bujirun.domain.visit.repository.VisitRepository;
 import jakarta.persistence.EntityNotFoundException;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -43,6 +48,8 @@ public class TravelLogService {
     private final UserRepository             userRepository;
     private final GroupMemberRepository      groupMemberRepository;
     private final CollectionEntryRepository  collectionEntryRepository;
+    private final VisitRepository            visitRepository;
+    private final VisitPhotoRepository       visitPhotoRepository;
 
     // ── 로그 CRUD ──────────────────────────────────────────────────
 
@@ -79,7 +86,11 @@ public class TravelLogService {
         Map<UUID, TravelLogItem> logItemMap = travelLogItemRepository.findByTravelLogId(log.getId())
                 .stream().collect(Collectors.toMap(TravelLogItem::getItineraryItemId, i -> i));
 
-        return TravelLogDetailResponse.of(log, itinerary, logItemMap, fetchGroupMembers(itinerary),
+        // 일정 항목별로 연결된 인증(Visit) 기록을 찾아 인증 사진을 로그 사진으로 그대로 옮겨온다
+        Map<UUID, Visit> visitedItemMap = buildVisitedItemMap(allItineraryItems(itinerary), userId);
+        copyVisitPhotos(logItemMap, visitedItemMap);
+
+        return TravelLogDetailResponse.of(log, itinerary, logItemMap, visitedItemMap.keySet(), fetchGroupMembers(itinerary),
                 countCollectedSpots(itinerary, log.getUserId()));
     }
 
@@ -91,8 +102,9 @@ public class TravelLogService {
 
         Itinerary itinerary = findItinerary(log.getItineraryId());
         Map<UUID, TravelLogItem> logItemMap = buildLogItemMap(logId);
+        Set<UUID> visitedItemIds = buildVisitedItemMap(allItineraryItems(itinerary), log.getUserId()).keySet();
 
-        return TravelLogDetailResponse.of(log, itinerary, logItemMap, fetchGroupMembers(itinerary),
+        return TravelLogDetailResponse.of(log, itinerary, logItemMap, visitedItemIds, fetchGroupMembers(itinerary),
                 countCollectedSpots(itinerary, log.getUserId()));
     }
 
@@ -215,8 +227,9 @@ public class TravelLogService {
 
         Itinerary itinerary = findItinerary(log.getItineraryId());
         Map<UUID, TravelLogItem> logItemMap = buildLogItemMap(logId);
+        Set<UUID> visitedItemIds = buildVisitedItemMap(allItineraryItems(itinerary), log.getUserId()).keySet();
 
-        return TravelLogDetailResponse.of(log, itinerary, logItemMap, fetchGroupMembers(itinerary),
+        return TravelLogDetailResponse.of(log, itinerary, logItemMap, visitedItemIds, fetchGroupMembers(itinerary),
                 countCollectedSpots(itinerary, log.getUserId()));
     }
 
@@ -337,6 +350,65 @@ public class TravelLogService {
     private Map<UUID, TravelLogItem> buildLogItemMap(UUID logId) {
         return travelLogItemRepository.findByTravelLogId(logId)
                 .stream().collect(Collectors.toMap(TravelLogItem::getItineraryItemId, i -> i));
+    }
+
+    private List<ItineraryItem> allItineraryItems(Itinerary itinerary) {
+        return itinerary.getDays().stream()
+                .flatMap(d -> d.getItems().stream())
+                .toList();
+    }
+
+    // 일정 항목별 인증(Visit) 매핑 — 인증 시 itineraryItemId를 넘긴 경우 그 연결을 우선 쓰고,
+    // 넘기지 않은 경우엔 같은 스팟에 대한 인증 기록으로 대체 매칭한다.
+    // 동일 항목/스팟에 인증이 여러 건이면(재인증 등) 최신 방문 건을 사용한다.
+    private Map<UUID, Visit> buildVisitedItemMap(List<ItineraryItem> items, UUID userId) {
+        List<UUID> itemIds = items.stream().map(ItineraryItem::getId).toList();
+        Map<UUID, Visit> byItemId = visitRepository.findByUserIdAndItineraryItemIdInAndVerifiedTrueOrderByVisitedAtDesc(userId, itemIds)
+                .stream().collect(Collectors.toMap(Visit::getItineraryItemId, v -> v, (a, b) -> a));
+
+        List<UUID> unmatchedSpotIds = items.stream()
+                .filter(i -> !byItemId.containsKey(i.getId()))
+                .map(i -> i.getSpot().getId())
+                .distinct()
+                .toList();
+        Map<UUID, Visit> bySpotId = unmatchedSpotIds.isEmpty() ? Map.of()
+                : visitRepository.findByUserIdAndSpotIdInAndVerifiedTrueOrderByVisitedAtDesc(userId, unmatchedSpotIds).stream()
+                        .collect(Collectors.toMap(v -> v.getSpot().getId(), v -> v, (a, b) -> a));
+
+        Map<UUID, Visit> result = new HashMap<>();
+        for (ItineraryItem item : items) {
+            Visit visit = byItemId.get(item.getId());
+            if (visit == null) visit = bySpotId.get(item.getSpot().getId());
+            if (visit != null) result.put(item.getId(), visit);
+        }
+        return result;
+    }
+
+    // 인증 사진(VisitPhoto)을 로그 사진(TravelLogPhoto)으로 그대로 복사
+    private void copyVisitPhotos(Map<UUID, TravelLogItem> logItemMap, Map<UUID, Visit> visitedItemMap) {
+        if (visitedItemMap.isEmpty()) return;
+
+        List<UUID> visitIds = visitedItemMap.values().stream().map(Visit::getId).distinct().toList();
+        Map<UUID, List<VisitPhoto>> photosByVisitId = visitPhotoRepository.findByVisitIdIn(visitIds).stream()
+                .collect(Collectors.groupingBy(p -> p.getVisit().getId()));
+
+        visitedItemMap.forEach((itineraryItemId, visit) -> {
+            TravelLogItem logItem = logItemMap.get(itineraryItemId);
+            List<VisitPhoto> visitPhotos = photosByVisitId.get(visit.getId());
+            if (logItem == null || visitPhotos == null || visitPhotos.isEmpty()) return;
+
+            int nextOrder = logItem.getPhotos().size();
+            for (VisitPhoto visitPhoto : visitPhotos) {
+                TravelLogPhoto saved = travelLogPhotoRepository.save(TravelLogPhoto.builder()
+                        .travelLogItem(logItem)
+                        .photoUrl(visitPhoto.getPhotoUrl())
+                        .orderIndex(nextOrder++)
+                        .build());
+                // logItem.getPhotos()는 이미 초기화되어 캐시된 컬렉션이라 save()만으로는 반영되지 않음 —
+                // 같은 트랜잭션 내에서 바로 응답을 만들 때(create()) 새 사진이 보이도록 직접 추가
+                logItem.getPhotos().add(saved);
+            }
+        });
     }
 
     // 일정에 포함된 관광지 중 로그 작성자가 실제로 수집(방문 인증) 완료한 개수

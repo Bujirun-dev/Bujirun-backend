@@ -6,7 +6,6 @@ import com.bujirun.bujirun.domain.itinerary.generate.dto.response.SubPath;
 import com.bujirun.bujirun.domain.itinerary.generate.dto.response.TransitOption;
 import com.bujirun.bujirun.domain.itinerary.generate.dto.response.TransitRouteResponse;
 import com.bujirun.bujirun.global.util.GeoUtils;
-import com.fasterxml.jackson.databind.JsonNode;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -40,25 +39,24 @@ public class TransitRouteService {
             SpotInfo to = spots.get(i + 1);
             List<TransitOption> options = new ArrayList<>();
 
-            // 대중교통
+            // 대중교통 — 구조적 정보는 캐시에서, 도착정보는 매번 새로 enrich
             try {
-                JsonNode result = odsayClient.searchTransitRoute(
+                TransitOption transitOption = odsayClient.searchTransitRoute(
                         from.getLng(), from.getLat(),
                         to.getLng(), to.getLat()
                 );
-                TransitOption transitOption = parseTransit(result);
 
-                // 추가: null이면 1회 재시도
                 if (transitOption == null) {
                     log.info("ODsay 경로 없음 — 재시도 {} → {}", from.getName(), to.getName());
-                    result = odsayClient.searchTransitRoute(
+                    transitOption = odsayClient.searchTransitRoute(
                             from.getLng(), from.getLat(),
                             to.getLng(), to.getLat()
                     );
-                    transitOption = parseTransit(result);
                 }
 
-                if (transitOption != null) options.add(transitOption);
+                if (transitOption != null) {
+                    options.add(enrichWithArrival(transitOption));
+                }
             } catch (Exception e) {
                 log.warn("ODsay 경로 조회 실패 {} → {}: {}", from.getName(), to.getName(), e.getMessage());
             }
@@ -76,63 +74,12 @@ public class TransitRouteService {
         return routes;
     }
 
-    private TransitOption parseTransit(JsonNode root) {
-        JsonNode path = root.path("result").path("path").get(0);
-        if (path == null) {
-            log.warn("ODsay 경로 없음 (결과 path null)");
-            return null;
-        }
-
-        JsonNode info = path.path("info");
-        List<SubPath> subPaths = new ArrayList<>();
-
-        JsonNode subPathNodes = path.path("subPath");
-        if (subPathNodes.isArray()) {
-            for (JsonNode sub : subPathNodes) {
-                int trafficType = sub.path("trafficType").asInt();
-                if (trafficType == 3) {
-                    // 도보 구간 — 정류장 정보 없음
-                    subPaths.add(new SubPath(
-                            "도보", sub.path("sectionTime").asInt(), "", 0,
-                            "", "", 0, 0, 0, 0,
-                            "", 0, 0, null
-                    ));
-                } else if (trafficType == 2) {
-                    // 버스 구간
-                    String busNo = sub.path("lane").get(0).path("busNo").asText();
-                    subPaths.add(new SubPath(
-                            "버스", sub.path("sectionTime").asInt(), busNo, sub.path("stationCount").asInt(),
-                            sub.path("startName").asText(),
-                            sub.path("endName").asText(),
-                            sub.path("startX").asDouble(),
-                            sub.path("startY").asDouble(),
-                            sub.path("endX").asDouble(),
-                            sub.path("endY").asDouble(),
-                            sub.path("startArsID").asText(""),
-                            0, 0, null
-                    ));
-                } else if (trafficType == 1) {
-                    // 지하철 구간
-                    String lineName = sub.path("lane").get(0).path("name").asText();
-                    subPaths.add(new SubPath(
-                            "지하철", sub.path("sectionTime").asInt(), lineName, sub.path("stationCount").asInt(),
-                            sub.path("startName").asText(),
-                            sub.path("endName").asText(),
-                            sub.path("startX").asDouble(),
-                            sub.path("startY").asDouble(),
-                            sub.path("endX").asDouble(),
-                            sub.path("endY").asDouble(),
-                            "",
-                            sub.path("startID").asInt(),
-                            sub.path("wayCode").asInt(),
-                            null
-                    ));
-                }
-            }
-        }
-
-        // remainMinutes
-        List<SubPath> enriched = subPaths.stream().map(sp -> {
+    /**
+     * 캐시된(혹은 방금 조회한) TransitOption의 subPath들에 실시간 도착정보(remainMinutes)를 채운다.
+     * 캐시 히트 여부와 무관하게 항상 새로 조회 — 도착정보는 절대 캐싱 대상이 아님.
+     */
+    private TransitOption enrichWithArrival(TransitOption option) {
+        List<SubPath> enriched = option.subPaths().stream().map(sp -> {
             if ("도보".equals(sp.type())) return sp;
             Integer remain = arrivalProviders.stream()
                     .filter(p -> p.supports(sp.type()))
@@ -148,19 +95,9 @@ public class TransitRouteService {
             );
         }).toList();
 
-
-        log.info("ODsay 경로 조회 성공 — {}분 · {}원 · 환승{}회",
-                info.path("totalTime").asInt(),
-                info.path("payment").asInt(),
-                info.path("busTransitCount").asInt() + info.path("subwayTransitCount").asInt());
-
         return new TransitOption(
-                "대중교통",
-                info.path("totalTime").asInt(),
-                info.path("payment").asInt(),
-                info.path("busTransitCount").asInt() + info.path("subwayTransitCount").asInt(),
-                false,
-//                subPaths
+                option.type(), option.totalTime(), option.totalFare(),
+                option.transferCount(), option.estimated(),
                 enriched
         );
     }

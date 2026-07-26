@@ -21,10 +21,11 @@ public record TravelLogItemResponse(
         String spotThumbnailUrl,
         LocalTime arrivalTime,
         int orderIndex,
+        boolean visited,
         List<TravelLogPhotoResponse> photos,
         List<TravelLogHashtagResponse> hashtags
 ) {
-    public static TravelLogItemResponse of(TravelLogItem logItem, ItineraryItem itineraryItem) {
+    public static TravelLogItemResponse of(TravelLogItem logItem, ItineraryItem itineraryItem, boolean visited) {
         TourSpot spot = itineraryItem.getSpot();
         return new TravelLogItemResponse(
                 logItem.getId(),
@@ -38,6 +39,7 @@ public record TravelLogItemResponse(
                 spot.getThumbnailUrl(),
                 itineraryItem.getArrivalTime(),
                 itineraryItem.getOrderIndex(),
+                visited,
                 logItem.getPhotos().stream().map(TravelLogPhotoResponse::from).toList(),
                 logItem.getHashtags().stream().map(TravelLogHashtagResponse::from).toList()
         );

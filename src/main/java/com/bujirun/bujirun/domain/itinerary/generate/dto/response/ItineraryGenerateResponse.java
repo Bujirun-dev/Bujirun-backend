@@ -6,7 +6,7 @@ import lombok.Getter;
 import java.util.List;
 
 @Getter
-@Builder
+@Builder(toBuilder = true)
 public class ItineraryGenerateResponse {
 
     private PlanOption planA; // 취향 집중형
@@ -14,7 +14,7 @@ public class ItineraryGenerateResponse {
     private PlanOption planC; // 자유 편집형
 
     @Getter
-    @Builder
+    @Builder(toBuilder = true)
     public static class PlanOption {
         private String type;        // "A" | "B" | "C"
         private String label;       // "취향 집중형" 등
@@ -23,7 +23,7 @@ public class ItineraryGenerateResponse {
     }
 
     @Getter
-    @Builder
+    @Builder(toBuilder = true)
     public static class DayPlan {
         private int day;
         private List<SpotInfo> spots;
