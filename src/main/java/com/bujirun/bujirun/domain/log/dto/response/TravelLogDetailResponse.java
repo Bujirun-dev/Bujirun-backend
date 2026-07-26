@@ -10,6 +10,7 @@ import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 public record TravelLogDetailResponse(
@@ -30,7 +31,7 @@ public record TravelLogDetailResponse(
         List<GroupMemberResponse> groupMembers
 ) {
     public static TravelLogDetailResponse of(TravelLog log, Itinerary itinerary, Map<UUID, TravelLogItem> logItemMap,
-                                              List<GroupMemberResponse> groupMembers, int collectedSpots) {
+                                              Set<UUID> visitedItemIds, List<GroupMemberResponse> groupMembers, int collectedSpots) {
         int totalSpots = itinerary.getDays().stream()
                 .mapToInt(d -> d.getItems().size())
                 .sum();
@@ -48,7 +49,7 @@ public record TravelLogDetailResponse(
                 : (itinerary.getDays().isEmpty() ? null : itinerary.getDays().get(0).getDate());
 
         List<TravelLogDayResponse> days = itinerary.getDays().stream()
-                .map(d -> TravelLogDayResponse.of(d, logItemMap))
+                .map(d -> TravelLogDayResponse.of(d, logItemMap, visitedItemIds))
                 .toList();
 
         return new TravelLogDetailResponse(
