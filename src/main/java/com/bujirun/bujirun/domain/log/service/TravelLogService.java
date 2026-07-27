@@ -170,6 +170,19 @@ public class TravelLogService {
                 .toList();
     }
 
+    // 여러 일정에 대해 로그인한 사용자의 여행 기록(영수증) 존재 여부를 배치로 확인
+    public List<LogExistenceResponse> checkLogExists(List<UUID> itineraryIds, UUID userId) {
+        Map<UUID, UUID> logIdByItineraryId = travelLogRepository.findByItineraryIdInAndUserId(itineraryIds, userId)
+                .stream().collect(Collectors.toMap(TravelLog::getItineraryId, TravelLog::getId));
+
+        return itineraryIds.stream()
+                .map(itineraryId -> {
+                    UUID logId = logIdByItineraryId.get(itineraryId);
+                    return new LogExistenceResponse(itineraryId, logId != null, logId);
+                })
+                .toList();
+    }
+
     public List<TravelLogSummaryResponse> getPublicLogs(String category, String sort) {
         List<TravelLog> logs;
 
