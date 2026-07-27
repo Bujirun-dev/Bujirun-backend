@@ -38,6 +38,7 @@ public class ItineraryGenerateService {
     private static final int MAX_TRIP_DAYS = 4; // 최대 3박 4일
     private static final int MIN_ACTIVITY_HOURS = 1; // 하루 최소 활동시간
     private static final int MAX_ACTIVITY_HOURS = 16; // 하루 최대 활동시간 상한
+    private static final int DEFAULT_ACTIVITY_HOURS = 12; // 추가: activityHours 미입력 시 기본값 (09:00~21:00 기준)
 
     @Transactional(readOnly = true)
     public ItineraryGenerateResponse generateItinerary(SwipeRequest request, UUID userId) {
@@ -46,9 +47,10 @@ public class ItineraryGenerateService {
         long tripDays = request.getStartDate().until(request.getEndDate()).getDays() + 1;
         validateTripDuration(tripDays, request.getStartDate(), request.getEndDate());
 
-        // 여행 시간 검증 (1 ~ 16시간)
-        validateActivityTime(request.getStartTime(), request.getEndTime(), request.getActivityHours());
-
+        // activityHours 없으면 기본값/계산값으로 대체
+        int activityHours = resolveActivityHours(request);
+        validateActivityTime(request.getStartDate(), request.getEndDate(),
+                request.getStartTime(), request.getEndTime(), activityHours);
 
         // 스와이프 결과에서 contentId 목록 추출
         List<String> likedIds = request.getSwipes().stream()
@@ -134,8 +136,7 @@ public class ItineraryGenerateService {
         String systemPrompt = buildSystemPrompt();
         String userPrompt = buildUserPrompt(likedSpotInfos, preferenceVector, candidates, tripDays,
                 request.getOptimizationType(), request.getStartDate(),
-                request.getEndDate(), request.getStartTime(), request.getEndTime(),
-                request.getActivityHours());
+                request.getEndDate(), request.getStartTime(), request.getEndTime(), activityHours);
 
         log.info("OpenAI 호출 시작 - 후보 관광지 {}개, 여행 {}일", candidates.size(), tripDays);
         String rawResponse = openAiClient.chat(systemPrompt, userPrompt);
@@ -148,9 +149,22 @@ public class ItineraryGenerateService {
         // OpenAI가 capacity보다 적게 채운 날짜 자동 백필
         backfillUnderfilledDays(response, allCandidates, likedSpots, preferenceVector,
                 (int) tripDays, request.getStartTime(), request.getEndTime(),
-                request.getActivityHours(), request.getOptimizationType());
+                activityHours, request.getOptimizationType());
 
         return response;
+    }
+
+    // 활동시간 계산
+    private int resolveActivityHours(SwipeRequest request) {
+        if (request.getActivityHours() != null && request.getActivityHours() > 0) {
+            return request.getActivityHours();
+        }
+        if (request.getStartTime() != null && request.getEndTime() != null
+                && request.getStartDate().equals(request.getEndDate())) {
+            long minutes = java.time.Duration.between(request.getStartTime(), request.getEndTime()).toMinutes();
+            return (int) Math.max(MIN_ACTIVITY_HOURS, minutes / 60);
+        }
+        return DEFAULT_ACTIVITY_HOURS;
     }
 
     // 여행기간 검증
@@ -170,12 +184,14 @@ public class ItineraryGenerateService {
     }
 
     // 여행시간 검증
-    private void validateActivityTime(LocalTime startTime, LocalTime endTime, int activityHours) {
+    private void validateActivityTime(LocalDate startDate, LocalDate endDate, LocalTime startTime, LocalTime endTime, int activityHours) {
         if (activityHours < MIN_ACTIVITY_HOURS || activityHours > MAX_ACTIVITY_HOURS) {
             throw new InvalidItineraryRequestException(
                     "activityHours는 " + MIN_ACTIVITY_HOURS + "~" + MAX_ACTIVITY_HOURS + " 사이여야 합니다. 요청값: " + activityHours);
         }
-        if (startTime != null && endTime != null && !endTime.isAfter(startTime)) {
+
+        // 같은 날짜일 때만 시각 순서 검증
+        if (startDate.equals(endDate) && startTime != null && endTime != null && !endTime.isAfter(startTime)) {
             throw new InvalidItineraryRequestException(
                     "종료 시간은 시작 시간보다 늦어야 합니다. startTime=" + startTime + ", endTime=" + endTime);
         }
