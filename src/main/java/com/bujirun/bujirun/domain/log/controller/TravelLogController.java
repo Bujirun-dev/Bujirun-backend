@@ -58,6 +58,18 @@ public class TravelLogController {
                 .map(r -> ResponseEntity.ok(ApiResponse.ok(r)));
     }
 
+    @Operation(summary = "일정별 여행 기록 존재 여부 확인", description = """
+            주어진 itineraryId 목록에 대해 로그인한 사용자가 이미 여행 기록(영수증)을 작성했는지 배치로 확인합니다.
+            아직 기록이 없는 일정(예: 다음 날 일정)을 찾아 영수증 발행 화면을 노출하는 용도로 사용합니다.
+            """)
+    @GetMapping("/exists")
+    public Mono<ResponseEntity<ApiResponse<List<LogExistenceResponse>>>> checkLogExists(
+            @RequestParam List<UUID> itineraryIds,
+            @AuthenticationPrincipal UUID userId) {
+        return blocking(() -> travelLogService.checkLogExists(itineraryIds, userId))
+                .map(r -> ResponseEntity.ok(ApiResponse.ok(r)));
+    }
+
     @Operation(summary = "공개 여행 기록 목록 조회", description = "다른 사용자들에게 공개된 여행 기록을 카테고리, 정렬 기준으로 조회합니다.")
     @GetMapping("/public")
     public Mono<ResponseEntity<ApiResponse<List<TravelLogSummaryResponse>>>> getPublicLogs(
