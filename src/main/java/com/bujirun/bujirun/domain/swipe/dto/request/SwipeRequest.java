@@ -35,7 +35,7 @@ public class SwipeRequest {
 
     private String optimizationType; // "WALK_MIN" | "COST_SAVE" | "TIME_SHORT" | "TRANSFER_MIN"
 
-    private int activityHours; // 하루 활동 가능 시간 (2-8)
+    private Integer activityHours; // int -> Integer: 미입력(null)과 0을 구분하기 위함
 
     @Getter
     @NoArgsConstructor
