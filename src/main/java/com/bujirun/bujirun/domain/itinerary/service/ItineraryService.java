@@ -20,6 +20,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDate;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Set;
@@ -129,10 +130,15 @@ public class ItineraryService {
             throw new IllegalArgumentException("이미 존재하는 Day 번호입니다. dayNumber=" + req.dayNumber());
         }
 
+        LocalDate date = req.date();
+        if (date == null && itinerary.getStartAt() != null) {
+            date = itinerary.getStartAt().plusDays(req.dayNumber() - 1);
+        }
+
         ItineraryDay day = ItineraryDay.builder()
                 .itinerary(itinerary)
                 .dayNumber(req.dayNumber())
-                .date(req.date())
+                .date(date)
                 .build();
         return ItineraryDayResponse.from(itineraryDayRepository.save(day), fetchCollectedSpotIds(userId), fetchVisitedSpotIds(userId));
     }
