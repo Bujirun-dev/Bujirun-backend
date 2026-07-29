@@ -33,6 +33,11 @@ public class CollectionService {
                 .toList();
     }
 
+    public Map<String, List<CollectionListResponse>> getCollectionGroupedByCategory(UUID userId) {
+        return getCollectionBoard(userId).stream()
+                .collect(Collectors.groupingBy(CollectionListResponse::collectionCategory));
+    }
+
     public CollectionDetailResponse getDetail(UUID userId, UUID spotId) {
         CollectionEntry entry = collectionEntryRepository.findByUserIdAndSpotId(userId, spotId)
                 .orElseThrow(() -> new EntityNotFoundException("도감 기록을 찾을 수 없습니다. spotId=" + spotId));
