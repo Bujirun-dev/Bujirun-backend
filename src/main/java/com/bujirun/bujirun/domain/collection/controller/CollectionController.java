@@ -12,6 +12,7 @@ import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 @Tag(name = "도감(컬렉션)", description = "도감에 담긴 여행지 목록 및 상세 조회, 도감 삭제 API")
@@ -37,6 +38,13 @@ public class CollectionController {
         return ResponseEntity.ok(collectionService.getDetail(userId, spotId));
     }
 
+    @Operation(summary = "도감 카테고리별 조회", description = "바다/자연/문화/체험 카테고리별로 그룹핑된 도감 목록을 조회합니다.")
+    @GetMapping("/category")
+    public ResponseEntity<Map<String, List<CollectionListResponse>>> getByCategory(
+            @AuthenticationPrincipal UUID userId) {
+        return ResponseEntity.ok(collectionService.getCollectionGroupedByCategory(userId));
+    }
+
     @Operation(summary = "도감 삭제", description = "도감에 담긴 여행지를 삭제합니다.")
     @DeleteMapping("/{spotId}")
     public ResponseEntity<Void> cancel(
@@ -51,4 +59,6 @@ public class CollectionController {
     public ResponseEntity<List<SpotSearchResponse>> getSwipeDeck(@AuthenticationPrincipal UUID userId) {
         return ResponseEntity.ok(collectionService.getRandomSwipeDeck(userId));
     }
+
+
 }
