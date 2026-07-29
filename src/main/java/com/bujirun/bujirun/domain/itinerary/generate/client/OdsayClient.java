@@ -12,8 +12,6 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.reactive.function.client.WebClient;
 import reactor.netty.http.client.HttpClient;
 
-import java.net.URLEncoder;
-import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -49,14 +47,15 @@ public class OdsayClient {
             unless = "#result == null"
     )
     public TransitOption searchTransitRoute(double startX, double startY, double endX, double endY) { // 반환 타입 JsonNode → TransitOption
-        String uri = String.format(
-                "/searchPubTransPathT?SX=%s&SY=%s&EX=%s&EY=%s&apiKey=%s",
-                startX, startY, endX, endY,
-                URLEncoder.encode(apiKey, StandardCharsets.UTF_8)
-        );
-
         JsonNode root = webClient.get() // 변수명 result → root (아래 parseTransit 호출용)
-                .uri(uri)
+                .uri(uriBuilder -> uriBuilder
+                        .path("/searchPubTransPathT")
+                        .queryParam("SX", startX)
+                        .queryParam("SY", startY)
+                        .queryParam("EX", endX)
+                        .queryParam("EY", endY)
+                        .queryParam("apiKey", apiKey) // uriBuilder가 한 번만 인코딩하므로 여기서 직접 URLEncoder를 쓰면 이중 인코딩됨
+                        .build())
                 .header("Referer", "http://localhost:8080")
                 .retrieve()
                 .bodyToMono(JsonNode.class)
