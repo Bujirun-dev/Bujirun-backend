@@ -10,6 +10,7 @@ public record CollectionListResponse(
         String name,
         Integer sigunguId,
         String thumbnailUrl,
+        String collectionCategory,
         boolean collected,
         LocalDateTime collectedAt
 ) {
@@ -17,6 +18,7 @@ public record CollectionListResponse(
         return new CollectionListResponse(
                 p.getSpotId(), p.getName(), p.getSigunguId(),
                 p.getThumbnailUrl(),
+                p.getCollectionCategory(),
                 Boolean.TRUE.equals(p.getCollected()), // null이면 false로 처리
                 p.getCollectedAt()
         );

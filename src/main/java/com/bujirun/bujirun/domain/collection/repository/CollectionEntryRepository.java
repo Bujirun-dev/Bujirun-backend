@@ -18,7 +18,7 @@ public interface CollectionEntryRepository extends JpaRepository<CollectionEntry
 
     @Query("""
         select ts.id as spotId, ts.name as name, ts.sigungu.id as sigunguId,
-               ts.thumbnailUrl as thumbnailUrl, ce.collected as collected, ce.collectedAt as collectedAt
+               ts.thumbnailUrl as thumbnailUrl, ts.collectionCategory as collectionCategory, ce.collected as collected, ce.collectedAt as collectedAt
         from TourSpot ts
         left join CollectionEntry ce on ce.spot = ts and ce.user.id = :userId
         where ts.collection = true

@@ -8,6 +8,7 @@ public interface CollectionListProjection {
     String getName();
     Integer getSigunguId();
     String getThumbnailUrl();
-    Boolean getCollected();      // boolean → Boolean
+    String getCollectionCategory();
+    Boolean getCollected();
     LocalDateTime getCollectedAt();
 }
