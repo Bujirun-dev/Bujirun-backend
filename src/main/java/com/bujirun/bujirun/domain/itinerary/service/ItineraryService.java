@@ -261,24 +261,67 @@ public class ItineraryService {
         return ItineraryItemResponse.from(item, fetchCollectedSpotIds(userId), fetchVisitedSpotIds(userId));
     }
 
+    @Transactional
+    public ItineraryItemResponse updateTravelMode(UUID itineraryId, UUID dayId, UUID itemId,
+                                                  UpdateTravelModeRequest req, UUID userId) {
+        ItineraryItem item = findItem(itineraryId, dayId, itemId);
+        validateAccess(item.getDay().getItinerary(), userId);
+        applyPreferredTravelModeStrict(item, req.travelMode());
+        return ItineraryItemResponse.from(item, fetchCollectedSpotIds(userId), fetchVisitedSpotIds(userId));
+    }
+
     // 사용자가 이동수단(walk/transit/taxi)만 선택했을 때, 직전 스팟과의 구간을 해당 수단 기준으로 재계산
+    // 관대한 버전: updateItem()에서 호출. 재계산에 실패해도 예외를 던지지 않고 조용히 무시해서
+    // orderIndex/arrivalTime/durationMin/memo 등 나머지 필드는 계속 저장되도록 한다.
     private void applyPreferredTravelMode(ItineraryItem item, String preferredMode) {
         List<ItineraryItem> dayItems = item.getDay().getItems(); // orderIndex ASC 정렬됨
 
         int idx = dayItems.indexOf(item);
         if (idx <= 0) return; // 첫 스팟은 이동정보 없음, 변경 대상 아님
 
-        ItineraryItem prevItem = dayItems.get(idx - 1);
-        List<SpotInfo> pair = List.of(toSpotInfo(prevItem.getSpot()), toSpotInfo(item.getSpot()));
-        List<TransitRouteResponse> routes = transitRouteService.getRoutesForDay(pair, null);
+        List<TransitOption> options = fetchLegOptions(dayItems.get(idx - 1), item);
+        if (options.isEmpty()) return;
 
-        if (routes.isEmpty() || routes.get(0).options().isEmpty()) return;
-
-        TransitOption matched = routes.get(0).options().stream()
+        TransitOption matched = options.stream()
                 .filter(opt -> preferredMode.equals(toTravelMode(opt.type())))
                 .findFirst()
-                .orElse(routes.get(0).options().get(0)); // 요청한 수단이 없으면 기본값(첫 옵션)으로 폴백
+                .orElse(options.get(0)); // 요청한 수단이 없으면 기본값(첫 옵션)으로 폴백
 
+        applyMatchedOption(item, preferredMode, matched);
+    }
+
+    // 엄격한 버전: updateTravelMode()에서 호출. 사용자의 명시적 요청이므로 실패 시 명확한 예외를 던진다.
+    private void applyPreferredTravelModeStrict(ItineraryItem item, String preferredMode) {
+        List<ItineraryItem> dayItems = item.getDay().getItems(); // orderIndex ASC 정렬됨
+
+        int idx = dayItems.indexOf(item);
+        if (idx <= 0) {
+            throw new IllegalArgumentException("첫 번째 방문 항목은 이동수단을 설정할 수 없습니다.");
+        }
+
+        List<TransitOption> options = fetchLegOptions(dayItems.get(idx - 1), item);
+        if (options.isEmpty()) {
+            throw new IllegalArgumentException("요청한 이동수단(" + preferredMode + ")의 경로를 찾을 수 없습니다.");
+        }
+
+        TransitOption matched = options.stream()
+                .filter(opt -> preferredMode.equals(toTravelMode(opt.type())))
+                .findFirst()
+                .orElseThrow(() -> new IllegalArgumentException(
+                        "요청한 이동수단(" + preferredMode + ")의 경로를 찾을 수 없습니다."));
+
+        applyMatchedOption(item, preferredMode, matched);
+    }
+
+    // 직전 항목과의 구간에 대한 이동수단 옵션 목록을 조회한다 (없으면 빈 리스트)
+    private List<TransitOption> fetchLegOptions(ItineraryItem prevItem, ItineraryItem item) {
+        List<SpotInfo> pair = List.of(toSpotInfo(prevItem.getSpot()), toSpotInfo(item.getSpot()));
+        List<TransitRouteResponse> routes = transitRouteService.getRoutesForDay(pair, null);
+        return routes.isEmpty() ? List.of() : routes.get(0).options();
+    }
+
+    // 선택된 옵션의 경로 상세(노선번호·정류장명 등)를 항목에 반영한다
+    private void applyMatchedOption(ItineraryItem item, String preferredMode, TransitOption matched) {
         SubPath firstSubPath = !matched.subPaths().isEmpty() ? matched.subPaths().get(0) : null;
 
         item.updateRoute(
