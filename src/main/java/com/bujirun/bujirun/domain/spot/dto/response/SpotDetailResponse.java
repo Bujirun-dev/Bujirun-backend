@@ -13,6 +13,7 @@ public class SpotDetailResponse {
     private String contentId;
     private String name;
     private String category;
+    private String collectionCategory; // (바다/자연/문화/체험)
     private String address;
     private BigDecimal lat;
     private BigDecimal lng;
@@ -39,6 +40,7 @@ public class SpotDetailResponse {
                 .contentId(spot.getContentId())
                 .name(spot.getName())
                 .category(spot.getCategory())
+                .collectionCategory(spot.getCollectionCategory())
                 .address(spot.getAddress())
                 .lat(spot.getLat())
                 .lng(spot.getLng())
