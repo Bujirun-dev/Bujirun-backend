@@ -121,6 +121,20 @@ public class ItineraryController {
                 .map(r -> ResponseEntity.ok(ApiResponse.ok(r)));
     }
 
+    @Operation(summary = "방문 항목 이동수단 변경",
+            description = "사용자가 도보/대중교통/택시 중 원하는 이동수단을 선택하면, " +
+                    "직전 방문 항목과의 구간을 해당 수단 기준으로 재계산해 저장합니다.")
+    @PatchMapping("/{itineraryId}/days/{dayId}/items/{itemId}/travel-mode")
+    public Mono<ResponseEntity<ApiResponse<ItineraryItemResponse>>> updateTravelMode(
+            @PathVariable UUID itineraryId,
+            @PathVariable UUID dayId,
+            @PathVariable UUID itemId,
+            @RequestBody @Valid UpdateTravelModeRequest req,
+            @AuthenticationPrincipal UUID userId) {
+        return blocking(() -> itineraryService.updateTravelMode(itineraryId, dayId, itemId, req, userId))
+                .map(r -> ResponseEntity.ok(ApiResponse.ok(r)));
+    }
+
     @Operation(summary = "방문 항목 삭제", description = "일차에서 특정 방문 항목을 삭제합니다.")
     @DeleteMapping("/{itineraryId}/days/{dayId}/items/{itemId}")
     public Mono<ResponseEntity<Void>> deleteItem(
