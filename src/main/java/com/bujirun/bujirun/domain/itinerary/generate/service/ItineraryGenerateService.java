@@ -52,13 +52,17 @@ public class ItineraryGenerateService {
         validateActivityTime(request.getStartDate(), request.getEndDate(),
                 request.getStartTime(), request.getEndTime(), activityHours);
 
-        // 스와이프 결과에서 contentId 목록 추출
-        List<String> likedIds = request.getSwipes().stream()
+        // 스와이프 결과에서 contentId 목록 추출 (swipes가 null이면 빈 리스트로 대체)
+        List<SwipeRequest.SwipeItem> swipes = request.getSwipes() != null
+                ? request.getSwipes()
+                : List.of();
+
+        List<String> likedIds = swipes.stream()
                 .filter(SwipeRequest.SwipeItem::isLiked)
                 .map(SwipeRequest.SwipeItem::getContentId)
                 .toList();
 
-        List<String> dislikedIds = request.getSwipes().stream()
+        List<String> dislikedIds = swipes.stream()
                 .filter(s -> !s.isLiked())
                 .map(SwipeRequest.SwipeItem::getContentId)
                 .toList();
@@ -95,12 +99,18 @@ public class ItineraryGenerateService {
             }
         }
 
-        List<TourSpot> filteredByCategory = tourSpotRepository
-                .findByCategoryInOrderByName(preferredCategories)
-                .stream()
-                .filter(s -> !dislikedIds.contains(s.getContentId()))
-                .filter(s -> !likedIds.contains(s.getContentId()))
-                .toList();
+        List<TourSpot> filteredByCategory;
+        if (preferredCategories.isEmpty()) {
+            filteredByCategory = getBalancedColdStartCandidates(dislikedIds, likedIds);
+            log.info("콜드스타트(취향 데이터 없음) - 구군 분산 후보 {}개", filteredByCategory.size());
+        } else {
+            filteredByCategory = tourSpotRepository
+                    .findByCategoryInOrderByName(preferredCategories)
+                    .stream()
+                    .filter(s -> !dislikedIds.contains(s.getContentId()))
+                    .filter(s -> !likedIds.contains(s.getContentId()))
+                    .toList();
+        }
 
         // 좋아요 중심 좌표 기준 거리 필터링 (반경 단계적으로 확대)
         List<TourSpot> categorySpots = filterByRadiusWithFallback(filteredByCategory, centerLat, centerLng)
@@ -551,5 +561,36 @@ public class ItineraryGenerateService {
         return plan.toBuilder()
                 .days(newDays)
                 .build();
+    }
+
+    /**
+     * 콜드스타트(좋아요 데이터 없음) 시 구군별로 고르게 분산된 후보를 뽑는다.
+     * 특정 구군 편중을 막기 위해 구군 단위 라운드로빈으로 채운다.
+     */
+    private List<TourSpot> getBalancedColdStartCandidates(List<String> dislikedIds, List<String> likedIds) {
+        List<TourSpot> all = tourSpotRepository.findAll().stream()
+                .filter(s -> !dislikedIds.contains(s.getContentId()))
+                .filter(s -> !likedIds.contains(s.getContentId()))
+                .filter(s -> s.getSigungu() != null)
+                .toList();
+
+        Map<Integer, List<TourSpot>> bySigungu = all.stream()
+                .collect(Collectors.groupingBy(s -> s.getSigungu().getId()));
+
+        bySigungu.values().forEach(Collections::shuffle);
+
+        List<TourSpot> balanced = new ArrayList<>();
+        boolean added;
+        do {
+            added = false;
+            for (List<TourSpot> spots : bySigungu.values()) {
+                if (!spots.isEmpty()) {
+                    balanced.add(spots.remove(0));
+                    added = true;
+                }
+            }
+        } while (added && balanced.size() < 30);
+
+        return balanced;
     }
 }

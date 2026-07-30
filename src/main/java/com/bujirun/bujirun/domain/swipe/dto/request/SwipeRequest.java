@@ -18,7 +18,6 @@ import java.util.List;
 @Builder
 public class SwipeRequest {
 
-    @NotEmpty
     private List<SwipeItem> swipes; // 스와이프 결과 목록
 
     @NotNull
