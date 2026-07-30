@@ -15,7 +15,6 @@ import java.util.UUID;
 @Builder
 public class SwipeSubmitRequest {
 
-    @NotEmpty
     private List<SwipeRequest.SwipeItem> swipes;
 
     private UUID groupId; // null이면 개인 스와이프

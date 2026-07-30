@@ -39,7 +39,11 @@ public class SwipeService {
             throw new IllegalArgumentException("그룹 멤버만 그룹 스와이프 결과를 제출할 수 있습니다.");
         }
 
-        List<String> contentIds = request.getSwipes().stream()
+        List<SwipeRequest.SwipeItem> swipes = request.getSwipes() != null
+                ? request.getSwipes()
+                : List.of();
+
+        List<String> contentIds = swipes.stream()
                 .map(SwipeRequest.SwipeItem::getContentId)
                 .distinct()
                 .toList();
@@ -60,13 +64,14 @@ public class SwipeService {
                 .status("completed")
                 .build());
 
-        List<SwipeResult> results = request.getSwipes().stream()
+        List<SwipeResult> results = swipes.stream()
                 .map(item -> SwipeResult.builder()
                         .session(session)
                         .spot(spotsByContentId.get(item.getContentId()))
                         .liked(item.isLiked())
                         .build())
                 .toList();
+
         swipeResultRepository.saveAll(results);
 
         log.info("[스와이프 결과 저장] userId={}, groupId={}, sessionId={}, count={}",
@@ -88,7 +93,7 @@ public class SwipeService {
         }
 
         long doneCount = swipeSessionRepository.countDistinctCompletedUsersByGroupId(groupId);
-        long totalCount = groupMemberRepository.countById_GroupId(groupId); // 실제 메서드명 확인 필요
+        long totalCount = groupMemberRepository.countById_GroupId(groupId);
 
         return SwipeStatusResponse.builder()
                 .doneCount(doneCount)
