@@ -5,10 +5,7 @@ import com.bujirun.bujirun.domain.group.repository.GroupRepository;
 import com.bujirun.bujirun.domain.itinerary.entity.Itinerary;
 import com.bujirun.bujirun.domain.itinerary.entity.ItineraryDay;
 import com.bujirun.bujirun.domain.itinerary.entity.ItineraryItem;
-import com.bujirun.bujirun.domain.itinerary.generate.dto.response.ItineraryGenerateResponse;
-import com.bujirun.bujirun.domain.itinerary.generate.dto.response.SpotInfo;
-import com.bujirun.bujirun.domain.itinerary.generate.dto.response.TransitOption;
-import com.bujirun.bujirun.domain.itinerary.generate.dto.response.TransitRouteResponse;
+import com.bujirun.bujirun.domain.itinerary.generate.dto.response.*;
 import com.bujirun.bujirun.domain.itinerary.generate.service.TransitRouteService;
 import com.bujirun.bujirun.domain.itinerary.repository.ItineraryRepository;
 import com.bujirun.bujirun.domain.itinerary.vote.dto.request.CastVoteRequest;
@@ -162,10 +159,13 @@ public class ItineraryVoteService {
 
             int order = 1;
             for (int i = 0; i < spots.size(); i++) {
-                // routes[i-1]이 (i-1)번째 -> i번째 스팟 구간이므로 첫 스팟은 이동 정보 없음
                 TransitOption leg = (i == 0 || routes.get(i - 1).options().isEmpty())
                         ? null
                         : routes.get(i - 1).options().get(0);
+
+                SubPath firstSubPath = (leg != null && !leg.subPaths().isEmpty())
+                        ? leg.subPaths().get(0)
+                        : null;
 
                 ItineraryItem item = ItineraryItem.builder()
                         .day(day)
@@ -174,6 +174,11 @@ public class ItineraryVoteService {
                         .durationMin(DEFAULT_VISIT_DURATION_MINUTES)
                         .travelMode(leg != null ? toTravelMode(leg.type()) : null)
                         .travelTimeMin(leg != null ? leg.totalTime() : null)
+                        .routeType(leg != null ? leg.type() : null)
+                        .routeNo(firstSubPath != null ? firstSubPath.routeNo() : null)
+                        .startStationName(firstSubPath != null ? firstSubPath.startName() : null)
+                        .endStationName(firstSubPath != null ? firstSubPath.endName() : null)
+                        .startArsId(firstSubPath != null ? firstSubPath.startArsId() : null)
                         .build();
                 day.getItems().add(item);
             }
