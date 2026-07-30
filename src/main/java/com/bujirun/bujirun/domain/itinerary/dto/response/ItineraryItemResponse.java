@@ -16,6 +16,11 @@ public record ItineraryItemResponse(
         Integer durationMin,
         String travelMode,
         Integer travelTimeMin,
+        String routeType,
+        String routeNo,
+        String startStationName,
+        String endStationName,
+        String startArsId,
         String memo
 ) {
     public record SpotSummary(
@@ -46,6 +51,11 @@ public record ItineraryItemResponse(
                 item.getDurationMin(),
                 item.getTravelMode(),
                 item.getTravelTimeMin(),
+                item.getRouteType(),
+                item.getRouteNo(),
+                item.getStartStationName(),
+                item.getEndStationName(),
+                item.getStartArsId(),
                 item.getMemo()
         );
     }
