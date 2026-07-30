@@ -6,6 +6,7 @@ import com.bujirun.bujirun.domain.itinerary.entity.ItineraryDay;
 import com.bujirun.bujirun.domain.itinerary.entity.ItineraryItem;
 import com.bujirun.bujirun.domain.itinerary.generate.client.OpenAiClient;
 import com.bujirun.bujirun.domain.itinerary.generate.dto.response.SpotInfo;
+import com.bujirun.bujirun.domain.itinerary.generate.dto.response.TransitOption;
 import com.bujirun.bujirun.domain.itinerary.generate.dto.response.TransitRouteResponse;
 import com.bujirun.bujirun.domain.itinerary.generate.service.SpotOrderOptimizer;
 import com.bujirun.bujirun.domain.itinerary.generate.service.TransitRouteService;
@@ -19,6 +20,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalTime;
 import java.util.*;
@@ -27,6 +29,7 @@ import java.util.stream.Collectors;
 @Slf4j
 @Service
 @RequiredArgsConstructor
+@Transactional
 public class ItineraryOptimizeService {
 
     private final ItineraryDayRepository itineraryDayRepository;
@@ -90,7 +93,7 @@ public class ItineraryOptimizeService {
         List<LocalTime> finalArrivalTimes = calculateArrivalTimes(startTime, finalTravelTimes);
 
         // 결과를 ItineraryItem에 반영
-        applyToEntities(items, finalOrder, finalArrivalTimes);
+        applyToEntities(items, finalOrder, finalArrivalTimes, routes);
 
         List<ItineraryOptimizeResponse.OptimizedSpot> optimizedSpots = new ArrayList<>();
         for (int i = 0; i < finalOrder.size(); i++) {
@@ -215,7 +218,8 @@ public class ItineraryOptimizeService {
         }
     }
 
-    private void applyToEntities(List<ItineraryItem> items, List<SpotInfo> finalOrder, List<LocalTime> arrivalTimes) {
+    private void applyToEntities(List<ItineraryItem> items, List<SpotInfo> finalOrder, List<LocalTime> arrivalTimes,
+                                  List<TransitRouteResponse> routes) {
         Map<String, ItineraryItem> itemMap = items.stream()
                 .collect(Collectors.toMap(item -> item.getSpot().getContentId(), item -> item));
 
@@ -223,9 +227,26 @@ public class ItineraryOptimizeService {
             SpotInfo spot = finalOrder.get(i);
             ItineraryItem item = itemMap.get(spot.getContentId());
             if (item == null) continue;
+
+            // routes[i-1]이 (i-1)번째 -> i번째 스팟으로 오는 구간이므로 첫 스팟(i=0)은 이동 정보 없음
+            TransitOption leg = (i == 0 || routes.get(i - 1).options().isEmpty())
+                    ? null
+                    : routes.get(i - 1).options().get(0);
+
             item.update(i + 1, arrivalTimes.get(i), item.getDurationMin(),
-                    item.getTravelMode(), item.getTravelTimeMin(), item.getMemo());
+                    leg != null ? toTravelMode(leg.type()) : null,
+                    leg != null ? leg.totalTime() : null,
+                    item.getMemo());
         }
+    }
+
+    // ODsay/자체계산 TransitOption.type()의 한글 값을 DB travel_mode 허용값(walk/transit/taxi)으로 변환
+    private String toTravelMode(String type) {
+        return switch (type) {
+            case "도보" -> "walk";
+            case "택시" -> "taxi";
+            default -> "transit"; // "대중교통" 등
+        };
     }
 
     private SpotInfo toSpotInfo(ItineraryItem item) {
