@@ -7,6 +7,9 @@ import com.bujirun.bujirun.domain.itinerary.entity.ItineraryDay;
 import com.bujirun.bujirun.domain.itinerary.entity.ItineraryItem;
 import com.bujirun.bujirun.domain.itinerary.generate.dto.response.ItineraryGenerateResponse;
 import com.bujirun.bujirun.domain.itinerary.generate.dto.response.SpotInfo;
+import com.bujirun.bujirun.domain.itinerary.generate.dto.response.TransitOption;
+import com.bujirun.bujirun.domain.itinerary.generate.dto.response.TransitRouteResponse;
+import com.bujirun.bujirun.domain.itinerary.generate.service.TransitRouteService;
 import com.bujirun.bujirun.domain.itinerary.repository.ItineraryRepository;
 import com.bujirun.bujirun.domain.itinerary.vote.dto.request.CastVoteRequest;
 import com.bujirun.bujirun.domain.itinerary.vote.dto.request.FinalizeItineraryRequest;
@@ -38,6 +41,7 @@ public class ItineraryVoteService {
     private final GroupRepository groupRepository;
     private final ItineraryRepository itineraryRepository;
     private final TourSpotRepository tourSpotRepository;
+    private final TransitRouteService transitRouteService;
     private final ObjectMapper objectMapper;
 
     private static final int DEFAULT_VISIT_DURATION_MINUTES = 60;
@@ -148,15 +152,28 @@ public class ItineraryVoteService {
                     .dayNumber(dayInput.getDay())
                     .build();
 
+            List<TourSpot> spots = dayInput.getSpotContentIds().stream()
+                    .map(contentId -> tourSpotRepository.findByContentId(contentId)
+                            .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 관광지: " + contentId)))
+                    .toList();
+
+            List<TransitRouteResponse> routes = transitRouteService.getRoutesForDay(
+                    spots.stream().map(this::toSpotInfo).toList(), null);
+
             int order = 1;
-            for (String contentId : dayInput.getSpotContentIds()) {
-                TourSpot spot = tourSpotRepository.findByContentId(contentId)
-                        .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 관광지: " + contentId));
+            for (int i = 0; i < spots.size(); i++) {
+                // routes[i-1]이 (i-1)번째 -> i번째 스팟 구간이므로 첫 스팟은 이동 정보 없음
+                TransitOption leg = (i == 0 || routes.get(i - 1).options().isEmpty())
+                        ? null
+                        : routes.get(i - 1).options().get(0);
+
                 ItineraryItem item = ItineraryItem.builder()
                         .day(day)
-                        .spot(spot)
+                        .spot(spots.get(i))
                         .orderIndex(order++)
                         .durationMin(DEFAULT_VISIT_DURATION_MINUTES)
+                        .travelMode(leg != null ? toTravelMode(leg.type()) : null)
+                        .travelTimeMin(leg != null ? leg.totalTime() : null)
                         .build();
                 day.getItems().add(item);
             }
@@ -164,6 +181,28 @@ public class ItineraryVoteService {
         }
 
         return itineraryRepository.save(itinerary).getId();
+    }
+
+    // ODsay/자체계산 TransitOption.type()의 한글 값을 DB travel_mode 허용값(walk/transit/taxi)으로 변환
+    private String toTravelMode(String type) {
+        return switch (type) {
+            case "도보" -> "walk";
+            case "택시" -> "taxi";
+            default -> "transit"; // "대중교통" 등
+        };
+    }
+
+    private SpotInfo toSpotInfo(TourSpot spot) {
+        return SpotInfo.builder()
+                .contentId(spot.getContentId())
+                .name(spot.getName())
+                .category(spot.getCategory())
+                .lat(spot.getLat() != null ? spot.getLat().doubleValue() : 0)
+                .lng(spot.getLng() != null ? spot.getLng().doubleValue() : 0)
+                .address(spot.getAddress())
+                .thumbnailUrl(spot.getThumbnailUrl())
+                .operatingHours(spot.getOperatingHours())
+                .build();
     }
 
     private void validateDays(String finalPlan, List<FinalizeItineraryRequest.DayInput> days) {
