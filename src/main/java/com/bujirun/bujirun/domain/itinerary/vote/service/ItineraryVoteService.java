@@ -217,6 +217,13 @@ public class ItineraryVoteService {
                             ? "C안(자유 편집형)은 최소 1개 이상의 day 정보가 필요합니다."
                             : "일정에 최소 1개 이상의 day가 필요합니다.");
         }
+
+        // C안(자유 편집형)은 프론트에서 빈 day 배열을 만들어 보내는 게 정상 플로우이므로
+        // day당 관광지 개수 검증은 건너뜀
+        if ("C".equals(finalPlan)) {
+            return;
+        }
+        
         for (FinalizeItineraryRequest.DayInput day : days) {
             if (day.getSpotContentIds() == null || day.getSpotContentIds().isEmpty()) {
                 throw new IllegalArgumentException(
