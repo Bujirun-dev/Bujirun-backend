@@ -14,6 +14,7 @@ public class SpotDetailResponse {
     private String name;
     private String category;
     private String collectionCategory; // (바다/자연/문화/체험)
+    private boolean isCollection;
     private String address;
     private BigDecimal lat;
     private BigDecimal lng;
@@ -41,6 +42,7 @@ public class SpotDetailResponse {
                 .name(spot.getName())
                 .category(spot.getCategory())
                 .collectionCategory(spot.getCollectionCategory())
+                .isCollection(spot.isCollection())
                 .address(spot.getAddress())
                 .lat(spot.getLat())
                 .lng(spot.getLng())
