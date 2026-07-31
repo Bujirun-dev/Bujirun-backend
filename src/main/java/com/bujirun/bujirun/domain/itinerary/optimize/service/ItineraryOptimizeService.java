@@ -6,6 +6,7 @@ import com.bujirun.bujirun.domain.itinerary.entity.ItineraryDay;
 import com.bujirun.bujirun.domain.itinerary.entity.ItineraryItem;
 import com.bujirun.bujirun.domain.itinerary.generate.client.OpenAiClient;
 import com.bujirun.bujirun.domain.itinerary.generate.dto.response.SpotInfo;
+import com.bujirun.bujirun.domain.itinerary.generate.dto.response.SubPath;
 import com.bujirun.bujirun.domain.itinerary.generate.dto.response.TransitOption;
 import com.bujirun.bujirun.domain.itinerary.generate.dto.response.TransitRouteResponse;
 import com.bujirun.bujirun.domain.itinerary.generate.service.SpotOrderOptimizer;
@@ -219,7 +220,7 @@ public class ItineraryOptimizeService {
     }
 
     private void applyToEntities(List<ItineraryItem> items, List<SpotInfo> finalOrder, List<LocalTime> arrivalTimes,
-                                  List<TransitRouteResponse> routes) {
+                                 List<TransitRouteResponse> routes) {
         Map<String, ItineraryItem> itemMap = items.stream()
                 .collect(Collectors.toMap(item -> item.getSpot().getContentId(), item -> item));
 
@@ -228,15 +229,30 @@ public class ItineraryOptimizeService {
             ItineraryItem item = itemMap.get(spot.getContentId());
             if (item == null) continue;
 
-            // routes[i-1]이 (i-1)번째 -> i번째 스팟으로 오는 구간이므로 첫 스팟(i=0)은 이동 정보 없음
             TransitOption leg = (i == 0 || routes.get(i - 1).options().isEmpty())
                     ? null
                     : routes.get(i - 1).options().get(0);
 
+            SubPath firstSubPath = (leg != null && !leg.subPaths().isEmpty())
+                    ? leg.subPaths().get(0)
+                    : null;
+
+            // 순서/도착시각/체류시간/메모 갱신
             item.update(i + 1, arrivalTimes.get(i), item.getDurationMin(),
                     leg != null ? toTravelMode(leg.type()) : null,
                     leg != null ? leg.totalTime() : null,
                     item.getMemo());
+
+            // 경로 상세(노선번호·정류장명 등) 갱신
+            item.updateRoute(
+                    leg != null ? toTravelMode(leg.type()) : null,
+                    leg != null ? leg.totalTime() : null,
+                    leg != null ? leg.type() : null,
+                    firstSubPath != null ? firstSubPath.routeNo() : null,
+                    firstSubPath != null ? firstSubPath.startName() : null,
+                    firstSubPath != null ? firstSubPath.endName() : null,
+                    firstSubPath != null ? firstSubPath.startArsId() : null
+            );
         }
     }
 
