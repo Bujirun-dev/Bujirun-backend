@@ -43,6 +43,22 @@ public class ItineraryVoteService {
 
     private static final int DEFAULT_VISIT_DURATION_MINUTES = 60;
 
+    public Optional<GroupItineraryGenerateResponse> findActiveSession(UUID groupId) {
+        return sessionRepository.findFirstByGroupIdAndStatusOrderByCreatedAtDesc(groupId, "voting")
+                .map(session -> {
+                    try {
+                        ItineraryGenerateResponse plans =
+                                objectMapper.readValue(session.getPlansJson(), ItineraryGenerateResponse.class);
+                        return GroupItineraryGenerateResponse.builder()
+                                .voteSessionId(session.getId())
+                                .plans(plans)
+                                .build();
+                    } catch (Exception e) {
+                        throw new RuntimeException("일정 데이터 파싱 실패", e);
+                    }
+                });
+    }
+
     public UUID startVoteSession(UUID groupId, ItineraryGenerateResponse generated) {
         try {
             String plansJson = objectMapper.writeValueAsString(generated);
