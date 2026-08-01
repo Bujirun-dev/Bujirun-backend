@@ -16,4 +16,7 @@ public interface UserRepository extends JpaRepository<User, java.util.UUID> {
     // 카카오 재로그인 시 탈퇴하지 않은 유저만 조회 (soft delete 적용)
     // 탈퇴한 유저(deleted_at IS NOT NULL)는 제외하여 30일 유예기간 동안 재가입 방지
     Optional<User> findByProviderIdAndAuthProviderAndDeletedAtIsNull(String providerId, String authProvider);
+
+    // 닉네임 중복 검사용 (탈퇴하지 않은 유저 기준)
+    boolean existsByNicknameAndDeletedAtIsNull(String nickname);
 }
