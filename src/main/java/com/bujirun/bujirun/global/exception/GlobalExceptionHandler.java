@@ -1,5 +1,6 @@
 package com.bujirun.bujirun.global.exception;
 
+import com.bujirun.bujirun.domain.auth.exception.DuplicateNicknameException;
 import com.bujirun.bujirun.domain.itinerary.generate.exception.OpenAiApiException;
 import com.bujirun.bujirun.domain.itinerary.generate.exception.OpenAiRateLimitException;
 import com.bujirun.bujirun.global.response.ApiResponse;
@@ -47,5 +48,10 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ApiResponse<Void>> handleOpenAiApi(OpenAiApiException e) {
         return ResponseEntity.status(502)
                 .body(ApiResponse.fail("AI 일정 생성 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요."));
+    }
+
+    @ExceptionHandler(DuplicateNicknameException.class)
+    public ResponseEntity<ApiResponse<Void>> handleDuplicateNickname(DuplicateNicknameException e) {
+        return ResponseEntity.status(409).body(ApiResponse.fail(e.getMessage()));
     }
 }
