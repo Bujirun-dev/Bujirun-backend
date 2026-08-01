@@ -29,6 +29,7 @@ public class MigrationController {
     private final MigrationService migrationService;
     private final MigrationStatusHolder statusHolder;
     private final BusanAttractionStatusHolder busanAttractionStatusHolder;
+    private final SummarizeStatusHolder summarizeStatusHolder;
 
     @PostMapping("/run")
     public ResponseEntity<Map<String, String>> run() {
@@ -98,6 +99,42 @@ public class MigrationController {
         body.put("finishedAt", busanAttractionStatusHolder.getFinishedAt());
         body.put("result", busanAttractionStatusHolder.getLastResult());
         body.put("error", busanAttractionStatusHolder.getLastError());
+        return ResponseEntity.ok(body);
+    }
+
+    // 부산명소정보 API로 채워진 소개글(description)이 너무 길다는 피드백에 따라 Groq로 2~3문장 재요약
+    @PostMapping("/busan-attraction/summarize")
+    public ResponseEntity<Map<String, String>> summarizeBusanDescriptions() {
+        if (!summarizeStatusHolder.tryStart()) {
+            return ResponseEntity.status(HttpStatus.CONFLICT)
+                    .body(Map.of("message", "이미 소개글 요약이 진행 중입니다."));
+        }
+
+        Mono.fromCallable(migrationService::summarizeBusanDescriptions)
+                .subscribeOn(Schedulers.boundedElastic())
+                .subscribe(
+                        result -> {
+                            summarizeStatusHolder.markCompleted(result);
+                            log.info("소개글 요약 완료: {}", result);
+                        },
+                        error -> {
+                            summarizeStatusHolder.markFailed(error.getMessage());
+                            log.error("소개글 요약 실패", error);
+                        }
+                );
+
+        return ResponseEntity.accepted()
+                .body(Map.of("message", "소개글 요약이 시작되었습니다. /busan-attraction/summarize/status 로 진행 상황을 확인하세요."));
+    }
+
+    @GetMapping("/busan-attraction/summarize/status")
+    public ResponseEntity<Map<String, Object>> summarizeStatus() {
+        Map<String, Object> body = new java.util.HashMap<>();
+        body.put("status", summarizeStatusHolder.getStatus());
+        body.put("startedAt", summarizeStatusHolder.getStartedAt());
+        body.put("finishedAt", summarizeStatusHolder.getFinishedAt());
+        body.put("result", summarizeStatusHolder.getLastResult());
+        body.put("error", summarizeStatusHolder.getLastError());
         return ResponseEntity.ok(body);
     }
 }

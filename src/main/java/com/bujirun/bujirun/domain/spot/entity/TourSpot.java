@@ -122,4 +122,8 @@ public class TourSpot {
             this.operatingHours = operatingHoursIfBlank;
         }
     }
+
+    public void updateDescription(String description) {
+        this.description = description;
+    }
 }
