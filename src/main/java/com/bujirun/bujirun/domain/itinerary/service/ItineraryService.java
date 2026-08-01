@@ -20,6 +20,7 @@ import com.bujirun.bujirun.domain.spot.repository.TourSpotRepository;
 import com.bujirun.bujirun.domain.swipe.entity.SwipeSession;
 import com.bujirun.bujirun.domain.swipe.repository.SwipeSessionRepository;
 import com.bujirun.bujirun.domain.visit.repository.VisitRepository;
+import com.bujirun.bujirun.global.util.TransitRouteUtils;
 import jakarta.persistence.EntityNotFoundException;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -189,11 +190,12 @@ public class ItineraryService {
 
                 if (!routes.isEmpty() && !routes.get(0).options().isEmpty()) {
                     TransitOption leg = routes.get(0).options().get(0);
-                    SubPath firstSubPath = !leg.subPaths().isEmpty() ? leg.subPaths().get(0) : null;
+                    SubPath firstSubPath = TransitRouteUtils.findFirstTransitSubPath(leg.subPaths());
 
                     travelMode = toTravelMode(leg.type());
                     travelTimeMin = leg.totalTime();
-                    routeType = leg.type();
+                    // routeType: subPath 실측 타입(버스/지하철) 우선, 없으면(도보/택시 옵션) 옵션 타입 그대로
+                    routeType = firstSubPath != null ? firstSubPath.type() : leg.type();
                     routeNo = firstSubPath != null ? firstSubPath.routeNo() : null;
                     startStationName = firstSubPath != null ? firstSubPath.startName() : null;
                     endStationName = firstSubPath != null ? firstSubPath.endName() : null;
@@ -322,12 +324,13 @@ public class ItineraryService {
 
     // 선택된 옵션의 경로 상세(노선번호·정류장명 등)를 항목에 반영한다
     private void applyMatchedOption(ItineraryItem item, String preferredMode, TransitOption matched) {
-        SubPath firstSubPath = !matched.subPaths().isEmpty() ? matched.subPaths().get(0) : null;
+        SubPath firstSubPath = TransitRouteUtils.findFirstTransitSubPath(matched.subPaths());
 
+        // routeType: subPath 실측 타입(버스/지하철) 우선, 없으면(도보/택시 옵션) 옵션 타입 그대로
         item.updateRoute(
                 preferredMode,
                 matched.totalTime(),
-                matched.type(),
+                firstSubPath != null ? firstSubPath.type() : matched.type(),
                 firstSubPath != null ? firstSubPath.routeNo() : null,
                 firstSubPath != null ? firstSubPath.startName() : null,
                 firstSubPath != null ? firstSubPath.endName() : null,
