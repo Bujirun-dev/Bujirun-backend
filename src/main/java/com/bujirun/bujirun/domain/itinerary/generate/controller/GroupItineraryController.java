@@ -33,14 +33,18 @@ public class GroupItineraryController {
             @PathVariable UUID groupId,
             @RequestBody @Valid GroupItineraryRequest req,
             @AuthenticationPrincipal UUID userId) {
-        return blocking(() -> {
-            ItineraryGenerateResponse generated = groupItineraryGenerateService.generateGroupItinerary(groupId, req, userId);
-            UUID voteSessionId = itineraryVoteService.startVoteSession(groupId, generated);
-            return GroupItineraryGenerateResponse.builder()
-                    .voteSessionId(voteSessionId)
-                    .plans(generated)
-                    .build();
-        }).map(r -> ResponseEntity.ok(ApiResponse.ok(r)));
+        return blocking(() ->
+                itineraryVoteService.findActiveSession(groupId)
+                        .orElseGet(() -> {
+                            ItineraryGenerateResponse generated =
+                                    groupItineraryGenerateService.generateGroupItinerary(groupId, req, userId);
+                            UUID voteSessionId = itineraryVoteService.startVoteSession(groupId, generated);
+                            return GroupItineraryGenerateResponse.builder()
+                                    .voteSessionId(voteSessionId)
+                                    .plans(generated)
+                                    .build();
+                        })
+        ).map(r -> ResponseEntity.ok(ApiResponse.ok(r)));
     }
 
 
