@@ -14,6 +14,7 @@ import com.bujirun.bujirun.domain.itinerary.generate.service.TransitRouteService
 import com.bujirun.bujirun.domain.itinerary.optimize.dto.request.ItineraryOptimizeRequest;
 import com.bujirun.bujirun.domain.itinerary.optimize.dto.response.ItineraryOptimizeResponse;
 import com.bujirun.bujirun.domain.itinerary.repository.ItineraryDayRepository;
+import com.bujirun.bujirun.global.util.TransitRouteUtils;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.persistence.EntityNotFoundException;
@@ -233,8 +234,8 @@ public class ItineraryOptimizeService {
                     ? null
                     : routes.get(i - 1).options().get(0);
 
-            SubPath firstSubPath = (leg != null && !leg.subPaths().isEmpty())
-                    ? leg.subPaths().get(0)
+            SubPath firstTransitSubPath = leg != null
+                    ? TransitRouteUtils.findFirstTransitSubPath(leg.subPaths())
                     : null;
 
             // 순서/도착시각/체류시간/메모 갱신
@@ -244,14 +245,15 @@ public class ItineraryOptimizeService {
                     item.getMemo());
 
             // 경로 상세(노선번호·정류장명 등) 갱신
+            // routeType: subPath 실측 타입(버스/지하철) 우선, 없으면(도보/택시 옵션) 옵션 타입 그대로
             item.updateRoute(
                     leg != null ? toTravelMode(leg.type()) : null,
                     leg != null ? leg.totalTime() : null,
-                    leg != null ? leg.type() : null,
-                    firstSubPath != null ? firstSubPath.routeNo() : null,
-                    firstSubPath != null ? firstSubPath.startName() : null,
-                    firstSubPath != null ? firstSubPath.endName() : null,
-                    firstSubPath != null ? firstSubPath.startArsId() : null
+                    firstTransitSubPath != null ? firstTransitSubPath.type() : (leg != null ? leg.type() : null),
+                    firstTransitSubPath != null ? firstTransitSubPath.routeNo() : null,
+                    firstTransitSubPath != null ? firstTransitSubPath.startName() : null,
+                    firstTransitSubPath != null ? firstTransitSubPath.endName() : null,
+                    firstTransitSubPath != null ? firstTransitSubPath.startArsId() : null
             );
         }
     }
