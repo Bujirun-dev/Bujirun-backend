@@ -1,6 +1,7 @@
 package com.bujirun.bujirun.domain.spot.service;
 
 import com.bujirun.bujirun.domain.spot.client.BusanAttractionApiClient;
+import com.bujirun.bujirun.domain.spot.client.GroqClient;
 import com.bujirun.bujirun.domain.spot.client.TourApiClient;
 import com.bujirun.bujirun.domain.spot.dto.response.BusanAttractionApiResponse;
 import com.bujirun.bujirun.domain.spot.dto.response.TourApiResponse.*;
@@ -28,11 +29,22 @@ public class MigrationService {
 
     private final TourApiClient             tourApiClient;
     private final BusanAttractionApiClient  busanAttractionApiClient;
+    private final GroqClient                groqClient;
     private final TourSpotRepository        tourSpotRepository;
     private final TourSpotTagRepository     tourSpotTagRepository;
     private final SigunguRepository         sigunguRepository;
     private static final List<Integer> TARGET_CONTENT_TYPES = List.of(12, 14, 28,38); // 관광지, 문화시설, 레포츠, 시장
     private static final double BUSAN_ATTRACTION_MATCH_RADIUS_KM = 0.1; // 100m 이내면 같은 관광지로 판단
+    private static final int    SUMMARIZE_MIN_LENGTH = 200; // 이보다 짧으면 이미 충분히 짧다고 보고 건너뜀
+
+    private static final String SUMMARIZE_SYSTEM_PROMPT = """
+            너는 부산 관광지 소개글을 다듬는 편집자야. 아래 원문을 자연스러운 한국어 2~3문장으로 요약해.
+            규칙:
+            - 원문에 없는 정보를 추가하지 마.
+            - 광고성 문구, 특수기호(★, ▶ 등), 중복된 줄바꿈은 제거해.
+            - 존댓말(합니다체)로 통일해.
+            - 요약문만 출력하고, 다른 설명이나 따옴표는 붙이지 마.
+            """;
 
     private static final Map<Integer, String> CATEGORY_MAP = Map.of(
             12, "관광지",
@@ -146,6 +158,49 @@ public class MigrationService {
         BusanEnrichResult result = new BusanEnrichResult(items.size(), matched, unmatched, failed);
         log.info("========== 부산명소정보 API 연동 완료: {} ==========", result);
         return result;
+    }
+
+    // 부산명소정보 API 원문(description)이 너무 길다는 피드백에 따라 Groq로 2~3문장으로 재요약.
+    // SUMMARIZE_MIN_LENGTH 이하는 이미 짧다고 보고 건너뜀. 실패한 건은 원문을 그대로 두고 다음 건 계속 진행.
+    @Transactional
+    public SummarizeResult summarizeBusanDescriptions() {
+        log.info("========== 부산명소정보 소개글 요약 시작 ==========");
+
+        List<TourSpot> targets = tourSpotRepository.findByBusanUcSeqIsNotNullAndDescriptionIsNotNull();
+        int summarized = 0, skipped = 0, failed = 0;
+
+        for (TourSpot spot : targets) {
+            String original = spot.getDescription();
+            if (original.length() <= SUMMARIZE_MIN_LENGTH) {
+                skipped++;
+                continue;
+            }
+
+            try {
+                String summary = groqClient.chat(SUMMARIZE_SYSTEM_PROMPT, original);
+                if (summary == null || summary.isBlank()) {
+                    failed++;
+                    continue;
+                }
+                spot.updateDescription(summary);
+                tourSpotRepository.save(spot);
+                summarized++;
+                Thread.sleep(300);
+            } catch (Exception e) {
+                log.error("[SummarizeDescription] 실패 - contentId={}, {}", spot.getContentId(), e.getMessage());
+                failed++;
+            }
+        }
+
+        SummarizeResult result = new SummarizeResult(targets.size(), summarized, skipped, failed);
+        log.info("========== 부산명소정보 소개글 요약 완료: {} ==========", result);
+        return result;
+    }
+
+    public record SummarizeResult(int total, int summarized, int skipped, int failed) {
+        @Override public String toString() {
+            return String.format("전체=%d, 요약=%d, 건너뜀(이미짧음)=%d, 실패=%d", total, summarized, skipped, failed);
+        }
     }
 
     // 공백·괄호·특수문자 표기 차이를 무시하고 한쪽이 다른 쪽 이름을 포함하면 같은 관광지로 판단

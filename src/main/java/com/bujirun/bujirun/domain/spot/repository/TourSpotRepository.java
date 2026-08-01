@@ -69,6 +69,9 @@ public interface TourSpotRepository extends JpaRepository<TourSpot, UUID> {
 
     List<TourSpot> findByCollectionTrueAndCollectionCategory(String collectionCategory);
 
+    // 부산명소정보 API로 보완된 소개글(description) 요약 대상 조회
+    List<TourSpot> findByBusanUcSeqIsNotNullAndDescriptionIsNotNull();
+
 }
 
 
