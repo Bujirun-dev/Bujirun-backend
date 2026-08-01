@@ -3,6 +3,7 @@ package com.bujirun.bujirun.domain.auth.service;
 import com.bujirun.bujirun.domain.auth.dto.request.UpdateProfileRequest;
 import com.bujirun.bujirun.domain.auth.dto.response.UserProfileResponse;
 import com.bujirun.bujirun.domain.auth.entity.User;
+import com.bujirun.bujirun.domain.auth.exception.DuplicateNicknameException;
 import com.bujirun.bujirun.domain.auth.repository.UserRepository;
 import com.bujirun.bujirun.domain.log.service.TravelLogService;
 import jakarta.persistence.EntityNotFoundException;
@@ -29,7 +30,10 @@ public class UserService {
     public UserProfileResponse updateProfile(UUID userId, UpdateProfileRequest req) {
         User user = findUser(userId);
 
-        if (req.nickname() != null) {
+        if (req.nickname() != null && !req.nickname().equals(user.getNickname())) {
+            if (userRepository.existsByNicknameAndDeletedAtIsNull(req.nickname())) {
+                throw new DuplicateNicknameException("이미 사용 중인 닉네임입니다.");
+            }
             user.updateNickname(req.nickname());
         }
         if (req.profileImageUrl() != null) {
