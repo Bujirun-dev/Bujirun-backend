@@ -54,6 +54,15 @@ public class JwtAuthFilter extends OncePerRequestFilter {
         return false;
     }
 
+    // OncePerRequestFilter 기본값(true)이면 컨트롤러에서 매핑 안 된 예외가 터져
+    // Spring Boot가 내부적으로 /error로 forward할 때 이 필터가 재실행되지 않는다.
+    // 그 결과 인증 정보가 없는 요청으로 취급되어 원래 500 등으로 나가야 할 응답이
+    // SecurityConfig의 authenticationEntryPoint에 가로채여 엉뚱하게 401로 나간다.
+    @Override
+    protected boolean shouldNotFilterErrorDispatch() {
+        return false;
+    }
+
     private String resolveToken(HttpServletRequest request) {
         String bearer = request.getHeader("Authorization");
         if (bearer != null && bearer.startsWith("Bearer ")) {

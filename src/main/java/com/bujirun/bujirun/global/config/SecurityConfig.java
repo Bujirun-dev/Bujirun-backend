@@ -36,6 +36,7 @@ public class SecurityConfig {
                 .exceptionHandling(exception -> exception
                         .authenticationEntryPoint((request, response, authException) -> {
                             response.setStatus(HttpStatus.UNAUTHORIZED.value()); // 401
+                            response.setCharacterEncoding("UTF-8");
                             response.setContentType(MediaType.APPLICATION_JSON_VALUE);
                             response.getWriter().write(
                                     "{\"success\":false,\"message\":\"인증이 필요합니다.\",\"data\":null}"
@@ -43,6 +44,7 @@ public class SecurityConfig {
                         })
                         .accessDeniedHandler((request, response, accessDeniedException) -> {
                             response.setStatus(HttpStatus.FORBIDDEN.value()); // 403 (진짜 권한 부족일 때)
+                            response.setCharacterEncoding("UTF-8");
                             response.setContentType(MediaType.APPLICATION_JSON_VALUE);
                             response.getWriter().write(
                                     "{\"success\":false,\"message\":\"접근 권한이 없습니다.\",\"data\":null}"
