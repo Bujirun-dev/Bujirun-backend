@@ -2,6 +2,7 @@ package com.bujirun.bujirun.domain.itinerary.service;
 
 import com.bujirun.bujirun.domain.collection.repository.CollectionEntryRepository;
 import com.bujirun.bujirun.domain.group.repository.GroupMemberRepository;
+import com.bujirun.bujirun.domain.group.service.GroupService;
 import com.bujirun.bujirun.domain.itinerary.dto.request.*;
 import com.bujirun.bujirun.domain.itinerary.dto.response.*;
 import com.bujirun.bujirun.domain.itinerary.entity.Itinerary;
@@ -46,14 +47,20 @@ public class ItineraryService {
     private final CollectionEntryRepository  collectionEntryRepository;
     private final VisitRepository            visitRepository;
     private final GroupMemberRepository      groupMemberRepository;
+    private final GroupService               groupService;
     private final SwipeSessionRepository     swipeSessionRepository;
     private final TransitRouteService transitRouteService;
     // ── Itinerary ──────────────────────────────────────────────────
 
     @Transactional
     public ItineraryDetailResponse create(CreateItineraryRequest req, UUID userId) {
-        if (req.groupId() != null && !groupMemberRepository.existsById_GroupIdAndId_UserId(req.groupId(), userId)) {
-            throw new IllegalArgumentException("그룹 멤버만 그룹 일정을 만들 수 있습니다.");
+        if (req.groupId() != null) {
+            if (!groupMemberRepository.existsById_GroupIdAndId_UserId(req.groupId(), userId)) {
+                throw new IllegalArgumentException("그룹 멤버만 그룹 일정을 만들 수 있습니다.");
+            }
+            if (itineraryRepository.existsByGroupId(req.groupId())) {
+                throw new IllegalArgumentException("이미 이 그룹의 일정이 존재합니다. 그룹당 일정은 하나만 만들 수 있습니다.");
+            }
         }
 
         UUID sessionId = null;
@@ -92,7 +99,7 @@ public class ItineraryService {
                 .map(gm -> gm.getId().getGroupId())
                 .toList();
 
-        List<Itinerary> own = itineraryRepository.findByUserIdOrderByCreatedAtDesc(userId);
+        List<Itinerary> own = itineraryRepository.findByUserIdAndGroupIdIsNullOrderByCreatedAtDesc(userId);
         List<Itinerary> grouped = groupIds.isEmpty()
                 ? List.of()
                 : itineraryRepository.findByGroupIdInOrderByCreatedAtDesc(groupIds);
@@ -115,13 +122,27 @@ public class ItineraryService {
         return ItineraryDetailResponse.from(itinerary, fetchCollectedSpotIds(userId), fetchVisitedSpotIds(userId));
     }
 
-    // 일정 삭제는 그룹원 전체가 아니라 소유자만 가능 (공유 일정을 그룹원이 통째로 지울 수 없도록)
+    // 일정 삭제는 개인 일정 전용. 그룹 일정은 나가기(leave)로만 정리 가능 (공유 일정을 통째로 지울 수 없도록)
     @Transactional
     public void delete(UUID id, UUID userId) {
         Itinerary itinerary = itineraryRepository.findById(id)
                 .orElseThrow(() -> new EntityNotFoundException("일정을 찾을 수 없습니다. id=" + id));
         validateOwnerOnly(itinerary, userId);
+        if (itinerary.getGroupId() != null) {
+            throw new IllegalArgumentException("그룹 일정은 삭제 대신 나가기를 사용해주세요.");
+        }
         itineraryRepository.delete(itinerary);
+    }
+
+    // 그룹 일정 나가기. 그룹에 혼자 남은 상태에서 나가면 그룹과 일정이 함께 삭제된다.
+    @Transactional
+    public void leave(UUID id, UUID userId) {
+        Itinerary itinerary = itineraryRepository.findById(id)
+                .orElseThrow(() -> new EntityNotFoundException("일정을 찾을 수 없습니다. id=" + id));
+        if (itinerary.getGroupId() == null) {
+            throw new IllegalArgumentException("개인 일정은 나가기를 사용할 수 없습니다. 삭제를 이용해주세요.");
+        }
+        groupService.leave(itinerary.getGroupId(), userId);
     }
 
     // ── Day ────────────────────────────────────────────────────────
@@ -357,13 +378,14 @@ public class ItineraryService {
         return Set.copyOf(visitRepository.findVerifiedSpotIdsByUserId(userId));
     }
 
-    // 소유자 또는 그룹원이면 접근 허용 (읽기/수정/Day·Item 편집용)
+    // 개인 일정은 소유자만, 그룹 일정은 현재 그룹 멤버만 접근 허용 (읽기/수정/Day·Item 편집용)
+    // 그룹 일정에서는 만든 사람이라도 그룹을 나가면(leave) 더 이상 접근할 수 없어야 하므로 userId로 우회 허용하지 않는다.
     private void validateAccess(Itinerary itinerary, UUID userId) {
-        if (itinerary.getUserId().equals(userId)) return;
-        if (itinerary.getGroupId() != null
-                && groupMemberRepository.existsById_GroupIdAndId_UserId(itinerary.getGroupId(), userId)) {
-            return;
+        if (itinerary.getGroupId() != null) {
+            if (groupMemberRepository.existsById_GroupIdAndId_UserId(itinerary.getGroupId(), userId)) return;
+            throw new IllegalArgumentException("해당 일정에 대한 권한이 없습니다.");
         }
+        if (itinerary.getUserId().equals(userId)) return;
         throw new IllegalArgumentException("해당 일정에 대한 권한이 없습니다.");
     }
 
