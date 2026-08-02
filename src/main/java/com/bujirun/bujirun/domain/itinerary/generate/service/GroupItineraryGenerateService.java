@@ -5,6 +5,7 @@ import com.bujirun.bujirun.domain.swipe.dto.projection.SpotSwipeAggregate;
 import com.bujirun.bujirun.domain.itinerary.generate.dto.request.GroupItineraryRequest;
 import com.bujirun.bujirun.domain.swipe.dto.request.SwipeRequest;
 import com.bujirun.bujirun.domain.itinerary.generate.dto.response.ItineraryGenerateResponse;
+import com.bujirun.bujirun.domain.itinerary.repository.ItineraryRepository;
 import com.bujirun.bujirun.domain.swipe.repository.SwipeResultRepository;
 import com.bujirun.bujirun.domain.spot.entity.TourSpot;
 import com.bujirun.bujirun.domain.spot.repository.TourSpotRepository;
@@ -30,6 +31,7 @@ public class GroupItineraryGenerateService {
     private final TourSpotRepository tourSpotRepository;
     private final ItineraryGenerateService itineraryGenerateService;
     private final GroupMemberRepository groupMemberRepository;
+    private final ItineraryRepository itineraryRepository;
 
     @Transactional(readOnly = true)
     public ItineraryGenerateResponse generateGroupItinerary(UUID groupId, GroupItineraryRequest request, UUID requesterId) {
@@ -37,6 +39,11 @@ public class GroupItineraryGenerateService {
         if (!groupMemberRepository.existsById_GroupIdAndId_UserId(groupId, requesterId)) {
             log.warn("멤버십 체크 실패 - groupId={}, requesterId={}", groupId, requesterId);
             throw new IllegalArgumentException("그룹 멤버만 그룹 일정을 생성할 수 있습니다.");
+        }
+
+        // 여행 하나당 그룹 하나 정책 — 이미 확정된 일정이 있는 그룹은 재생성 불가
+        if (itineraryRepository.existsByGroupId(groupId)) {
+            throw new IllegalArgumentException("이미 이 그룹의 일정이 확정되어 있습니다.");
         }
 
         List<SpotSwipeAggregate> aggregates = swipeResultRepository.aggregateByGroup(groupId);

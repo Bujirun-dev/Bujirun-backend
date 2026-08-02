@@ -144,6 +144,11 @@ public class ItineraryVoteService {
 
     private UUID saveConfirmedItinerary(UUID groupId, String finalPlan, ItineraryVoteSession session,
                                         FinalizeItineraryRequest request) {
+        // 여행 하나당 그룹 하나 정책 — 그 사이 다른 세션이 먼저 확정했을 수 있으므로 저장 직전에도 재확인
+        if (itineraryRepository.existsByGroupId(groupId)) {
+            throw new IllegalStateException("이미 이 그룹의 일정이 확정되어 있습니다.");
+        }
+
         List<FinalizeItineraryRequest.DayInput> days = request.getDays() != null
                 ? request.getDays()
                 : extractDaysFromPlan(session.getPlansJson(), finalPlan);

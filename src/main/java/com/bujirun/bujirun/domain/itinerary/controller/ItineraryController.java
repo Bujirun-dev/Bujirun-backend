@@ -63,12 +63,22 @@ public class ItineraryController {
                 .map(r -> ResponseEntity.ok(ApiResponse.ok(r)));
     }
 
-    @Operation(summary = "일정 삭제", description = "일정을 삭제합니다.")
+    @Operation(summary = "일정 삭제", description = "개인 일정을 삭제합니다. 그룹 일정은 대신 나가기(leave)를 사용해야 합니다.")
     @DeleteMapping("/{id}")
     public Mono<ResponseEntity<Void>> delete(
             @PathVariable UUID id,
             @AuthenticationPrincipal UUID userId) {
         return Mono.fromRunnable(() -> itineraryService.delete(id, userId))
+                .subscribeOn(Schedulers.boundedElastic())
+                .thenReturn(ResponseEntity.noContent().<Void>build());
+    }
+
+    @Operation(summary = "일정 나가기", description = "그룹 일정에서 나갑니다. 마지막 멤버가 나가면 그룹과 일정이 함께 삭제됩니다.")
+    @PostMapping("/{id}/leave")
+    public Mono<ResponseEntity<Void>> leave(
+            @PathVariable UUID id,
+            @AuthenticationPrincipal UUID userId) {
+        return Mono.fromRunnable(() -> itineraryService.leave(id, userId))
                 .subscribeOn(Schedulers.boundedElastic())
                 .thenReturn(ResponseEntity.noContent().<Void>build());
     }

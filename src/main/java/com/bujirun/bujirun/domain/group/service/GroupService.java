@@ -10,6 +10,7 @@ import com.bujirun.bujirun.domain.group.entity.Group;
 import com.bujirun.bujirun.domain.group.entity.GroupMember;
 import com.bujirun.bujirun.domain.group.repository.GroupMemberRepository;
 import com.bujirun.bujirun.domain.group.repository.GroupRepository;
+import com.bujirun.bujirun.domain.itinerary.repository.ItineraryRepository;
 import jakarta.persistence.EntityNotFoundException;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -32,6 +33,7 @@ public class GroupService {
     private final GroupRepository groupRepository;
     private final GroupMemberRepository groupMemberRepository;
     private final UserRepository userRepository;
+    private final ItineraryRepository itineraryRepository;
 
     @Transactional
     public GroupResponse create(CreateGroupRequest req, UUID userId) {
@@ -86,6 +88,20 @@ public class GroupService {
     public void validateMember(UUID groupId, UUID userId) {
         if (!groupMemberRepository.existsById_GroupIdAndId_UserId(groupId, userId)) {
             throw new IllegalArgumentException("그룹 멤버만 접근할 수 있습니다.");
+        }
+    }
+
+    // 그룹에서 나가기. 남은 멤버가 없어지면(마지막 1인이 나가는 경우) 그룹의 일정과 그룹 자체를 함께 삭제한다.
+    @Transactional
+    public void leave(UUID groupId, UUID userId) {
+        validateMember(groupId, userId);
+
+        long memberCount = groupMemberRepository.countById_GroupId(groupId);
+        if (memberCount <= 1) {
+            itineraryRepository.deleteAll(itineraryRepository.findByGroupId(groupId));
+            groupRepository.deleteById(groupId); // group_members는 ON DELETE CASCADE로 함께 삭제됨
+        } else {
+            groupMemberRepository.deleteById_GroupIdAndId_UserId(groupId, userId);
         }
     }
 
