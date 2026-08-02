@@ -92,7 +92,10 @@ public class ItineraryVoteService {
     }
 
     public VoteStatusResponse getVoteStatus(UUID sessionId, UUID userId) {
-        ItineraryVoteSession session = getVotingSession(sessionId);
+        // 확정된 세션도 조회는 가능해야 한다 — 프론트가 finalize 직후에도 이 API를
+        // 폴링해서 status가 "confirmed"로 바뀐 걸 보고 화면을 전환하기 때문에,
+        // getVotingSession()의 "확정된 세션 거부" 체크를 여기선 쓰면 안 된다.
+        ItineraryVoteSession session = findSession(sessionId);
         validateGroupMember(session.getGroupId(), userId);
         return buildVoteStatus(session);
     }
@@ -286,12 +289,16 @@ public class ItineraryVoteService {
     }
 
     private ItineraryVoteSession getVotingSession(UUID sessionId) {
-        ItineraryVoteSession session = sessionRepository.findById(sessionId)
-                .orElseThrow(() -> new IllegalArgumentException("투표 세션을 찾을 수 없습니다."));
+        ItineraryVoteSession session = findSession(sessionId);
         if ("confirmed".equals(session.getStatus())) {
             throw new IllegalStateException("이미 확정된 일정입니다.");
         }
         return session;
+    }
+
+    private ItineraryVoteSession findSession(UUID sessionId) {
+        return sessionRepository.findById(sessionId)
+                .orElseThrow(() -> new IllegalArgumentException("투표 세션을 찾을 수 없습니다."));
     }
 
     private void validateGroupMember(UUID groupId, UUID userId) {
