@@ -17,6 +17,7 @@ import com.bujirun.bujirun.domain.itinerary.vote.repository.ItineraryVoteReposit
 import com.bujirun.bujirun.domain.itinerary.vote.repository.ItineraryVoteSessionRepository;
 import com.bujirun.bujirun.domain.spot.entity.TourSpot;
 import com.bujirun.bujirun.domain.spot.repository.TourSpotRepository;
+import com.bujirun.bujirun.global.util.TransitRouteUtils;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -179,8 +180,8 @@ public class ItineraryVoteService {
                         ? null
                         : routes.get(i - 1).options().get(0);
 
-                SubPath firstSubPath = (leg != null && !leg.subPaths().isEmpty())
-                        ? leg.subPaths().get(0)
+                SubPath firstTransitSubPath = leg != null
+                        ? TransitRouteUtils.findFirstTransitSubPath(leg.subPaths())
                         : null;
 
                 ItineraryItem item = ItineraryItem.builder()
@@ -190,12 +191,13 @@ public class ItineraryVoteService {
                         .durationMin(DEFAULT_VISIT_DURATION_MINUTES)
                         .travelMode(leg != null ? toTravelMode(leg.type()) : null)
                         .travelTimeMin(leg != null ? leg.totalTime() : null)
-                        .routeType(leg != null ? leg.type() : null)
-                        .routeNo(firstSubPath != null ? firstSubPath.routeNo() : null)
-                        .startStationName(firstSubPath != null ? firstSubPath.startName() : null)
-                        .endStationName(firstSubPath != null ? firstSubPath.endName() : null)
-                        .startArsId(firstSubPath != null ? firstSubPath.startArsId() : null)
+                        .routeType(firstTransitSubPath != null ? firstTransitSubPath.type() : (leg != null ? leg.type() : null))
+                        .routeNo(firstTransitSubPath != null ? firstTransitSubPath.routeNo() : null)
+                        .startStationName(firstTransitSubPath != null ? firstTransitSubPath.startName() : null)
+                        .endStationName(firstTransitSubPath != null ? firstTransitSubPath.endName() : null)
+                        .startArsId(firstTransitSubPath != null ? firstTransitSubPath.startArsId() : null)
                         .build();
+                
                 day.getItems().add(item);
             }
             itinerary.getDays().add(day);
