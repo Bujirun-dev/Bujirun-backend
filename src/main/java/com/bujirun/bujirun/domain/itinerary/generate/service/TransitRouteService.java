@@ -27,6 +27,9 @@ public class TransitRouteService {
     private static final int TAXI_BASE_METER = 2000;         // 기본요금 적용 거리 (2km)
     private static final double TAXI_EXTRA_FARE_PER_M = 100.0 / 132.0; // 100원/132m
 
+    private static final double ROAD_DISTANCE_FACTOR = 1.3;  // 차량용
+    private static final double WALK_DISTANCE_FACTOR = 1.4;  // 도보용 (골목/계단 등 우회 반영)
+
     public List<TransitRouteResponse> getRoutesForDay(List<SpotInfo> spots, String optimizationType) {
         List<TransitRouteResponse> routes = new ArrayList<>();
 
@@ -103,18 +106,21 @@ public class TransitRouteService {
     }
 
     private TransitOption calcWalk(double distanceM) {
-        int timeMin = (int) Math.ceil(distanceM / WALK_SPEED_MPS / 60);
+        double walkDistanceM = distanceM * WALK_DISTANCE_FACTOR;
+        int timeMin = (int) Math.ceil(walkDistanceM / WALK_SPEED_MPS / 60);
         return new TransitOption("도보", timeMin, 0, 0, true, List.of());
     }
 
     private TransitOption calcTaxi(double distanceM) {
+        double roadDistanceM = distanceM * ROAD_DISTANCE_FACTOR;
+
         int fare;
-        if (distanceM <= TAXI_BASE_METER) {
+        if (roadDistanceM <= TAXI_BASE_METER) {
             fare = TAXI_BASE_FARE;
         } else {
-            fare = TAXI_BASE_FARE + (int) ((distanceM - TAXI_BASE_METER) * TAXI_EXTRA_FARE_PER_M);
+            fare = TAXI_BASE_FARE + (int) ((roadDistanceM - TAXI_BASE_METER) * TAXI_EXTRA_FARE_PER_M);
         }
-        int timeMin = (int) Math.ceil(distanceM / 1000 / 30 * 60);
+        int timeMin = (int) Math.ceil(roadDistanceM / 1000 / 30 * 60);
         return new TransitOption("택시", timeMin, fare, 0, true, List.of());
     }
 
