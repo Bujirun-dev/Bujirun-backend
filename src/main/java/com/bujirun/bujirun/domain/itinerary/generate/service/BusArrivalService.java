@@ -1,6 +1,7 @@
 package com.bujirun.bujirun.domain.itinerary.generate.service;
 
 import com.bujirun.bujirun.domain.itinerary.generate.dto.response.SubPath;
+import io.netty.channel.ChannelOption;
 import io.netty.resolver.DefaultAddressResolverGroup;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -14,10 +15,14 @@ import reactor.netty.http.client.HttpClient;
 
 import javax.xml.parsers.DocumentBuilderFactory;
 import java.io.ByteArrayInputStream;
+import java.time.Duration;
 
 @Slf4j
 @Service
 public class BusArrivalService implements ArrivalInfoProvider {
+
+    private static final Duration RESPONSE_TIMEOUT = Duration.ofSeconds(5);
+    private static final int CONNECT_TIMEOUT_MILLIS = 2000;
 
     private final WebClient webClient;
     private final String apiKey;
@@ -26,7 +31,10 @@ public class BusArrivalService implements ArrivalInfoProvider {
         this.apiKey = apiKey;
         this.webClient = WebClient.builder()
                 .clientConnector(new ReactorClientHttpConnector(
-                        HttpClient.create().resolver(DefaultAddressResolverGroup.INSTANCE)
+                        HttpClient.create()
+                                .resolver(DefaultAddressResolverGroup.INSTANCE)
+                                .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, CONNECT_TIMEOUT_MILLIS)
+                                .responseTimeout(RESPONSE_TIMEOUT)
                 ))
                 .build();
     }
@@ -56,6 +64,7 @@ public class BusArrivalService implements ArrivalInfoProvider {
                             .build())
                     .retrieve()
                     .bodyToMono(String.class)
+                    .timeout(RESPONSE_TIMEOUT)
                     .block();
 
             return parseMin1(xml, subPath.routeNo());
@@ -78,6 +87,7 @@ public class BusArrivalService implements ArrivalInfoProvider {
                             .build())
                     .retrieve()
                     .bodyToMono(String.class)
+                    .timeout(RESPONSE_TIMEOUT)
                     .block();
             return parseMin1(xml, routeNo);
         } catch (Exception e) {
