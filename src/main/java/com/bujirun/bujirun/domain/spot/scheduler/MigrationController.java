@@ -102,7 +102,7 @@ public class MigrationController {
         return ResponseEntity.ok(body);
     }
 
-    // 부산명소정보 API로 채워진 소개글(description)이 너무 길다는 피드백에 따라 Groq로 2~3문장 재요약
+    // 부산명소정보 API로 채워진 소개글(description)이 너무 길다는 피드백에 따라 OpenAI로 2~3문장 재요약
     @PostMapping("/busan-attraction/summarize")
     public ResponseEntity<Map<String, String>> summarizeBusanDescriptions() {
         if (!summarizeStatusHolder.tryStart()) {
