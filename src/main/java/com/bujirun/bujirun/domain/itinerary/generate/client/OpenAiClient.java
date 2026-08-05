@@ -33,7 +33,7 @@ public class OpenAiClient {
     }
 
     /**
-     * OpenAI API 호출 - 프롬프트를 받아 텍스트 응답 반환
+     * OpenAI API 호출 - 프롬프트를 받아 JSON 응답 반환 (일정 생성/재최적화용, JSON 형식 강제)
      */
     public String chat(String systemPrompt, String userPrompt) {
         Map<String, Object> body = Map.of(
@@ -46,7 +46,26 @@ public class OpenAiClient {
                 "max_tokens", 8000,
                 "response_format", Map.of("type", "json_object")
         );
+        return call(body);
+    }
 
+    /**
+     * OpenAI API 호출 - JSON 형식 강제 없이 순수 텍스트 응답 반환 (예: 소개글 요약)
+     */
+    public String chatPlainText(String systemPrompt, String userPrompt) {
+        Map<String, Object> body = Map.of(
+                "model", model,
+                "messages", List.of(
+                        Map.of("role", "system", "content", systemPrompt),
+                        Map.of("role", "user", "content", userPrompt)
+                ),
+                "temperature", 0.3,
+                "max_tokens", 500
+        );
+        return call(body);
+    }
+
+    private String call(Map<String, Object> body) {
         JsonNode response = webClient.post()
                 .uri("/chat/completions")
                 .bodyValue(body)
