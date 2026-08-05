@@ -1,7 +1,7 @@
 package com.bujirun.bujirun.domain.spot.service;
 
+import com.bujirun.bujirun.domain.itinerary.generate.client.OpenAiClient;
 import com.bujirun.bujirun.domain.spot.client.BusanAttractionApiClient;
-import com.bujirun.bujirun.domain.spot.client.GroqClient;
 import com.bujirun.bujirun.domain.spot.client.TourApiClient;
 import com.bujirun.bujirun.domain.spot.dto.response.BusanAttractionApiResponse;
 import com.bujirun.bujirun.domain.spot.dto.response.TourApiResponse.*;
@@ -29,7 +29,7 @@ public class MigrationService {
 
     private final TourApiClient             tourApiClient;
     private final BusanAttractionApiClient  busanAttractionApiClient;
-    private final GroqClient                groqClient;
+    private final OpenAiClient              openAiClient;
     private final TourSpotRepository        tourSpotRepository;
     private final TourSpotTagRepository     tourSpotTagRepository;
     private final SigunguRepository         sigunguRepository;
@@ -160,7 +160,7 @@ public class MigrationService {
         return result;
     }
 
-    // 부산명소정보 API 원문(description)이 너무 길다는 피드백에 따라 Groq로 2~3문장으로 재요약.
+    // 부산명소정보 API 원문(description)이 너무 길다는 피드백에 따라 OpenAI로 2~3문장으로 재요약.
     // SUMMARIZE_MIN_LENGTH 이하는 이미 짧다고 보고 건너뜀. 실패한 건은 원문을 그대로 두고 다음 건 계속 진행.
     @Transactional
     public SummarizeResult summarizeBusanDescriptions() {
@@ -177,7 +177,7 @@ public class MigrationService {
             }
 
             try {
-                String summary = groqClient.chat(SUMMARIZE_SYSTEM_PROMPT, original);
+                String summary = openAiClient.chatPlainText(SUMMARIZE_SYSTEM_PROMPT, original);
                 if (summary == null || summary.isBlank()) {
                     failed++;
                     continue;
