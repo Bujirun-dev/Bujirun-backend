@@ -11,7 +11,6 @@ import com.bujirun.bujirun.domain.spot.entity.TourSpotTag;
 import com.bujirun.bujirun.domain.spot.repository.SigunguRepository;
 import com.bujirun.bujirun.domain.spot.repository.TourSpotRepository;
 import com.bujirun.bujirun.domain.spot.repository.TourSpotTagRepository;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
@@ -26,7 +25,6 @@ import java.util.Optional;
 
 @Slf4j
 @Service
-@RequiredArgsConstructor
 public class MigrationService {
 
     private final TourApiClient             tourApiClient;
@@ -37,8 +35,25 @@ public class MigrationService {
     private final SigunguRepository         sigunguRepository;
     // 항목 단위 재시도 격리를 위한 자가주입 프록시(@Lazy로 순환참조 회피) — enrichSingleBusanItem()을
     // 이 프록시로 호출해야 REQUIRES_NEW가 실제로 새 트랜잭션을 열어준다(self-invocation은 프록시를 안 거침).
-    @Lazy
+    // @Lazy는 필드가 아니라 생성자 파라미터에 붙어야 실제로 적용된다(Lombok @RequiredArgsConstructor는
+    // 필드의 @Lazy를 생성자로 복사해주지 않음) — 그래서 @RequiredArgsConstructor 대신 생성자를 직접 작성함.
     private final MigrationService self;
+
+    public MigrationService(TourApiClient tourApiClient,
+                             BusanAttractionApiClient busanAttractionApiClient,
+                             OpenAiClient openAiClient,
+                             TourSpotRepository tourSpotRepository,
+                             TourSpotTagRepository tourSpotTagRepository,
+                             SigunguRepository sigunguRepository,
+                             @Lazy MigrationService self) {
+        this.tourApiClient = tourApiClient;
+        this.busanAttractionApiClient = busanAttractionApiClient;
+        this.openAiClient = openAiClient;
+        this.tourSpotRepository = tourSpotRepository;
+        this.tourSpotTagRepository = tourSpotTagRepository;
+        this.sigunguRepository = sigunguRepository;
+        this.self = self;
+    }
     private static final List<Integer> TARGET_CONTENT_TYPES = List.of(12, 14, 28,38); // 관광지, 문화시설, 레포츠, 시장
     private static final double BUSAN_ATTRACTION_MATCH_RADIUS_KM = 0.1; // 100m 이내면 같은 관광지로 판단
     private static final int    SUMMARIZE_MIN_LENGTH = 200; // 이보다 짧으면 이미 충분히 짧다고 보고 건너뜀
