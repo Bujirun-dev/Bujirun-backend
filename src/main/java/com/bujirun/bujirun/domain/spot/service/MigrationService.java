@@ -13,7 +13,9 @@ import com.bujirun.bujirun.domain.spot.repository.TourSpotRepository;
 import com.bujirun.bujirun.domain.spot.repository.TourSpotTagRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
@@ -33,6 +35,10 @@ public class MigrationService {
     private final TourSpotRepository        tourSpotRepository;
     private final TourSpotTagRepository     tourSpotTagRepository;
     private final SigunguRepository         sigunguRepository;
+    // 항목 단위 재시도 격리를 위한 자가주입 프록시(@Lazy로 순환참조 회피) — enrichSingleBusanItem()을
+    // 이 프록시로 호출해야 REQUIRES_NEW가 실제로 새 트랜잭션을 열어준다(self-invocation은 프록시를 안 거침).
+    @Lazy
+    private final MigrationService self;
     private static final List<Integer> TARGET_CONTENT_TYPES = List.of(12, 14, 28,38); // 관광지, 문화시설, 레포츠, 시장
     private static final double BUSAN_ATTRACTION_MATCH_RADIUS_KM = 0.1; // 100m 이내면 같은 관광지로 판단
     private static final int    SUMMARIZE_MIN_LENGTH = 200; // 이보다 짧으면 이미 충분히 짧다고 보고 건너뜀
@@ -117,38 +123,11 @@ public class MigrationService {
 
         for (BusanAttractionApiResponse item : items) {
             try {
-                Double lat = parseDouble(item.getLat());
-                Double lng = parseDouble(item.getLng());
-                if (lat == null || lng == null) {
+                if (self.enrichSingleBusanItem(item)) {
+                    matched++;
+                } else {
                     unmatched++;
-                    continue;
                 }
-
-                List<TourSpot> nearby = tourSpotRepository.findNearby(lat, lng, BUSAN_ATTRACTION_MATCH_RADIUS_KM);
-                TourSpot spot = nearby.stream()
-                        .filter(candidate -> namesMatch(candidate.getName(),
-                                item.getMainTitle(), item.getTitle(), item.getPlace()))
-                        .findFirst()
-                        .orElse(null);
-
-                if (spot == null) {
-                    unmatched++;
-                    continue;
-                }
-
-                spot.enrichFromBusanAttraction(
-                        item.getUcSeq(),
-                        item.getSubtitle(),
-                        item.getItemCntnts(),
-                        item.getCntctTel(),
-                        item.getHomepageUrl(),
-                        item.getTrfcInfo(),
-                        buildBusanOperatingHours(item),
-                        item.getHldyInfo(),
-                        item.getUsageAmount()
-                );
-                tourSpotRepository.save(spot);
-                matched++;
             } catch (Exception e) {
                 log.error("[BusanEnrich] 실패 - UC_SEQ={}, {}", item.getUcSeq(), e.getMessage());
                 failed++;
@@ -158,6 +137,45 @@ public class MigrationService {
         BusanEnrichResult result = new BusanEnrichResult(items.size(), matched, unmatched, failed);
         log.info("========== 부산명소정보 API 연동 완료: {} ==========", result);
         return result;
+    }
+
+    // enrichWithBusanAttractionApi()의 항목 하나를 독립된 트랜잭션에서 처리한다.
+    // 기존엔 213건 전체가 하나의 세션/트랜잭션을 공유해서, 중간에 하나가 유니크 제약 위반(중복
+    // busan_uc_seq 매칭 등)으로 실패하면 "current transaction is aborted"가 그 뒤 모든 항목에
+    // 전파되어 사실상 첫 실패 이후로는 전부 실패 처리되던 문제가 있었음(2026-08-06 실제 재현·발견).
+    // REQUIRES_NEW로 매 항목마다 새 트랜잭션을 열어서 한 건의 실패가 나머지에 번지지 않게 격리한다.
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public boolean enrichSingleBusanItem(BusanAttractionApiResponse item) {
+        Double lat = parseDouble(item.getLat());
+        Double lng = parseDouble(item.getLng());
+        if (lat == null || lng == null) {
+            return false;
+        }
+
+        List<TourSpot> nearby = tourSpotRepository.findNearby(lat, lng, BUSAN_ATTRACTION_MATCH_RADIUS_KM);
+        TourSpot spot = nearby.stream()
+                .filter(candidate -> namesMatch(candidate.getName(),
+                        item.getMainTitle(), item.getTitle(), item.getPlace()))
+                .findFirst()
+                .orElse(null);
+
+        if (spot == null) {
+            return false;
+        }
+
+        spot.enrichFromBusanAttraction(
+                item.getUcSeq(),
+                item.getSubtitle(),
+                item.getItemCntnts(),
+                item.getCntctTel(),
+                item.getHomepageUrl(),
+                item.getTrfcInfo(),
+                buildBusanOperatingHours(item),
+                item.getHldyInfo(),
+                item.getUsageAmount()
+        );
+        tourSpotRepository.save(spot);
+        return true;
     }
 
     // 부산명소정보 API 원문(description)이 너무 길다는 피드백에 따라 OpenAI로 2~3문장으로 재요약.
