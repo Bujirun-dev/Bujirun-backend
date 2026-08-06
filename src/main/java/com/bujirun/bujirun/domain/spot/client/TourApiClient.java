@@ -73,8 +73,14 @@ public class TourApiClient {
         }
     }
 
-    public Optional<DetailCommonResponse.CommonItem> fetchDetailCommon(String contentId, int contentTypeId) {
+    public Optional<DetailCommonResponse.CommonItem> fetchDetailCommon(String contentId) {
         try {
+            // detailCommon2는 현재 contentId 외의 파라미터(contentTypeId, defaultYN, firstImageYN,
+            // addrinfoYN, mapinfoYN, overviewYN 등)를 하나라도 같이 보내면 그 파라미터를 걸어
+            // INVALID_REQUEST_PARAMETER_ERROR를 반환한다(2026-08-06 실제 호출로 확인 — 예전엔
+            // 됐을 수도 있으나 API 스펙이 바뀐 듯). 예전엔 이 실패가 catch에 조용히 먹혀서
+            // TourAPI의 overview/tel/homepage가 항상 폴백 문구("등록된 정보 없음")로만 나갔음.
+            // contentId만 보내도 overview/tel/homepage/firstimage 등은 기본으로 포함되어 내려온다.
             DetailCommonResponse res = webClient.get()
                     .uri(uri -> uri.path("/detailCommon2")
                             .queryParam("serviceKey",    serviceKey)
@@ -82,12 +88,6 @@ public class TourApiClient {
                             .queryParam("MobileApp",     "BujiRun")
                             .queryParam("_type",         "json")
                             .queryParam("contentId",     contentId)
-                            .queryParam("contentTypeId", contentTypeId)
-                            .queryParam("defaultYN",     "Y")
-                            .queryParam("firstImageYN",  "Y")
-                            .queryParam("addrinfoYN",    "Y")
-                            .queryParam("mapinfoYN",     "Y")
-                            .queryParam("overviewYN",    "Y")
                             .build())
                     .retrieve()
                     .bodyToMono(DetailCommonResponse.class)
@@ -100,7 +100,7 @@ public class TourApiClient {
                     .map(list -> list.get(0));
 
         } catch (Exception e) {
-            log.warn("[TourAPI] detailCommon 실패 - contentId={}, contentTypeId={}, {}", contentId, contentTypeId, e.getMessage());
+            log.warn("[TourAPI] detailCommon 실패 - contentId={}, {}", contentId, e.getMessage());
             return Optional.empty();
         }
     }
