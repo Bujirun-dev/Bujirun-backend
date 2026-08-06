@@ -191,6 +191,12 @@ public class ItineraryService {
         TourSpot spot = tourSpotRepository.findById(req.spotId())
                 .orElseThrow(() -> new EntityNotFoundException("관광지를 찾을 수 없습니다. id=" + req.spotId()));
 
+        boolean alreadyInDay = day.getItems().stream()
+                .anyMatch(existing -> existing.getSpot().getId().equals(spot.getId()));
+        if (alreadyInDay) {
+            throw new IllegalArgumentException("이미 해당 일차에 추가된 관광지입니다. spotId=" + req.spotId());
+        }
+
         // 프론트가 travelMode를 직접 안 보내면, 직전 스팟과의 구간을 자동 계산
         String travelMode = req.travelMode();
         Integer travelTimeMin = req.travelTimeMin();

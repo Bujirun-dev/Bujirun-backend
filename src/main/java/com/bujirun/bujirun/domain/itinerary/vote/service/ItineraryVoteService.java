@@ -260,6 +260,10 @@ public class ItineraryVoteService {
                 throw new IllegalArgumentException(
                         "day " + day.getDay() + "에 최소 1개 이상의 관광지가 필요합니다.");
             }
+            if (new HashSet<>(day.getSpotContentIds()).size() != day.getSpotContentIds().size()) {
+                throw new IllegalArgumentException(
+                        "day " + day.getDay() + "에 같은 관광지가 중복으로 포함되어 있습니다.");
+            }
         }
     }
 

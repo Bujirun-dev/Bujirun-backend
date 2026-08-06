@@ -6,6 +6,7 @@ import com.bujirun.bujirun.domain.itinerary.generate.exception.OpenAiRateLimitEx
 import com.bujirun.bujirun.global.response.ApiResponse;
 import jakarta.persistence.EntityNotFoundException;
 import jakarta.validation.ConstraintViolationException;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
@@ -69,5 +70,12 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(DuplicateNicknameException.class)
     public ResponseEntity<ApiResponse<Void>> handleDuplicateNickname(DuplicateNicknameException e) {
         return ResponseEntity.status(409).body(ApiResponse.fail(e.getMessage()));
+    }
+
+    // DB 유니크 제약 위반의 최종 방어선(예: 동시 요청이 애플리케이션 레벨 중복 체크를 함께 통과한 경우).
+    // 원인을 특정할 수 없는 제약 위반도 있으므로 메시지는 범용으로 유지.
+    @ExceptionHandler(DataIntegrityViolationException.class)
+    public ResponseEntity<ApiResponse<Void>> handleDataIntegrityViolation(DataIntegrityViolationException e) {
+        return ResponseEntity.status(409).body(ApiResponse.fail("이미 존재하거나 중복된 데이터입니다."));
     }
 }
