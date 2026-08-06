@@ -5,6 +5,7 @@ import com.bujirun.bujirun.domain.itinerary.generate.exception.OpenAiApiExceptio
 import com.bujirun.bujirun.domain.itinerary.generate.exception.OpenAiRateLimitException;
 import com.bujirun.bujirun.global.response.ApiResponse;
 import jakarta.persistence.EntityNotFoundException;
+import jakarta.validation.ConstraintViolationException;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
@@ -41,6 +42,16 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(MissingServletRequestParameterException.class)
     public ResponseEntity<ApiResponse<Void>> handleMissingParam(MissingServletRequestParameterException e) {
         return ResponseEntity.badRequest().body(ApiResponse.fail(e.getParameterName() + " 파라미터가 필요합니다"));
+    }
+
+    // @Validated + @RequestParam/@PathVariable에 붙인 @Size 등이 실패했을 때(예: 닉네임 중복확인 API)
+    @ExceptionHandler(ConstraintViolationException.class)
+    public ResponseEntity<ApiResponse<Void>> handleConstraintViolation(ConstraintViolationException e) {
+        String message = e.getConstraintViolations().stream()
+                .findFirst()
+                .map(v -> v.getMessage())
+                .orElse("요청 값이 올바르지 않습니다.");
+        return ResponseEntity.badRequest().body(ApiResponse.fail(message));
     }
 
     @ExceptionHandler(OpenAiRateLimitException.class)

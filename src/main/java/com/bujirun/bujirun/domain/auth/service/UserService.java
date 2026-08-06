@@ -1,6 +1,7 @@
 package com.bujirun.bujirun.domain.auth.service;
 
 import com.bujirun.bujirun.domain.auth.dto.request.UpdateProfileRequest;
+import com.bujirun.bujirun.domain.auth.dto.response.NicknameAvailabilityResponse;
 import com.bujirun.bujirun.domain.auth.dto.response.UserProfileResponse;
 import com.bujirun.bujirun.domain.auth.entity.User;
 import com.bujirun.bujirun.domain.auth.exception.DuplicateNicknameException;
@@ -41,6 +42,17 @@ public class UserService {
         }
 
         return UserProfileResponse.from(user);
+    }
+
+    // 닉네임 변경 전 미리 중복 여부만 확인(실제 변경은 안 함). 지금 쓰는 닉네임 그대로 조회해도
+    // updateProfile과 동일하게 사용 가능(available=true) 처리.
+    public NicknameAvailabilityResponse checkNicknameAvailability(UUID userId, String nickname) {
+        User user = findUser(userId);
+
+        boolean available = nickname.equals(user.getNickname())
+                || !userRepository.existsByNicknameAndDeletedAtIsNull(nickname);
+
+        return new NicknameAvailabilityResponse(available);
     }
 
     /**
