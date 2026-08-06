@@ -60,18 +60,23 @@ public class ItineraryVoteService {
                 });
     }
 
+    // 그룹당 진행 중(voting) 세션은 DB 유니크 인덱스(V26)로 하나만 허용됨.
+    // 동시에 여러 멤버가 투표를 시작하면 먼저 커밋된 쪽만 성공하고 나머지는
+    // DataIntegrityViolationException이 그대로 던져지니, 호출부(컨트롤러)에서
+    // 이를 잡아 새로 만들지 않고 기존 세션을 재조회해서 합류시켜야 한다.
     public UUID startVoteSession(UUID groupId, ItineraryGenerateResponse generated) {
+        String plansJson;
         try {
-            String plansJson = objectMapper.writeValueAsString(generated);
-            ItineraryVoteSession session = sessionRepository.save(ItineraryVoteSession.builder()
-                    .groupId(groupId)
-                    .plansJson(plansJson)
-                    .status("voting")
-                    .build());
-            return session.getId();
+            plansJson = objectMapper.writeValueAsString(generated);
         } catch (Exception e) {
             throw new RuntimeException("투표 세션 생성 실패", e);
         }
+        ItineraryVoteSession session = sessionRepository.save(ItineraryVoteSession.builder()
+                .groupId(groupId)
+                .plansJson(plansJson)
+                .status("voting")
+                .build());
+        return session.getId();
     }
 
     public VoteStatusResponse castVote(UUID sessionId, CastVoteRequest request, UUID userId) {
