@@ -30,6 +30,7 @@ public class MigrationController {
     private final MigrationStatusHolder statusHolder;
     private final BusanAttractionStatusHolder busanAttractionStatusHolder;
     private final SummarizeStatusHolder summarizeStatusHolder;
+    private final TourApiOverviewStatusHolder tourApiOverviewStatusHolder;
 
     @PostMapping("/run")
     public ResponseEntity<Map<String, String>> run() {
@@ -135,6 +136,42 @@ public class MigrationController {
         body.put("finishedAt", summarizeStatusHolder.getFinishedAt());
         body.put("result", summarizeStatusHolder.getLastResult());
         body.put("error", summarizeStatusHolder.getLastError());
+        return ResponseEntity.ok(body);
+    }
+
+    // 부산명소정보 API로도 매칭 안 된 관광지의 소개글(description)을 TourAPI 자체 개요(overview)로 백필
+    @PostMapping("/tourapi-overview/run")
+    public ResponseEntity<Map<String, String>> runTourApiOverview() {
+        if (!tourApiOverviewStatusHolder.tryStart()) {
+            return ResponseEntity.status(HttpStatus.CONFLICT)
+                    .body(Map.of("message", "이미 TourAPI 개요 백필이 진행 중입니다."));
+        }
+
+        Mono.fromCallable(migrationService::enrichWithTourApiOverview)
+                .subscribeOn(Schedulers.boundedElastic())
+                .subscribe(
+                        result -> {
+                            tourApiOverviewStatusHolder.markCompleted(result);
+                            log.info("TourAPI 개요 백필 완료: {}", result);
+                        },
+                        error -> {
+                            tourApiOverviewStatusHolder.markFailed(error.getMessage());
+                            log.error("TourAPI 개요 백필 실패", error);
+                        }
+                );
+
+        return ResponseEntity.accepted()
+                .body(Map.of("message", "TourAPI 개요 백필이 시작되었습니다. /tourapi-overview/status 로 진행 상황을 확인하세요."));
+    }
+
+    @GetMapping("/tourapi-overview/status")
+    public ResponseEntity<Map<String, Object>> tourApiOverviewStatus() {
+        Map<String, Object> body = new java.util.HashMap<>();
+        body.put("status", tourApiOverviewStatusHolder.getStatus());
+        body.put("startedAt", tourApiOverviewStatusHolder.getStartedAt());
+        body.put("finishedAt", tourApiOverviewStatusHolder.getFinishedAt());
+        body.put("result", tourApiOverviewStatusHolder.getLastResult());
+        body.put("error", tourApiOverviewStatusHolder.getLastError());
         return ResponseEntity.ok(body);
     }
 }

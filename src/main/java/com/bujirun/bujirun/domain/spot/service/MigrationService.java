@@ -22,6 +22,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.UUID;
 
 @Slf4j
 @Service
@@ -191,6 +192,70 @@ public class MigrationService {
         );
         tourSpotRepository.save(spot);
         return true;
+    }
+
+    // 부산명소정보 API로도 매칭 안 된 관광지(description 없음)를 TourAPI 자체 개요(overview)로 백필.
+    // detailCommon2가 contentId 외 파라미터를 얹으면 거부되던 버그를 수정한 뒤(2026-08-06),
+    // 매칭 안 된 256곳 중 251곳(98%)에서 실제로 개요가 내려오는 것을 확인해서 만든 배치.
+    // 지금까지는 상세조회 시점에 매번 TourAPI를 호출하는 라이브 폴백이었는데, 이 배치로 description에
+    // 영구 저장해두면 매 조회마다 외부 API를 안 타도 됨. REQUIRES_NEW로 항목별 격리(부산명소정보 배치와 동일 이유).
+    @Transactional
+    public TourApiOverviewResult enrichWithTourApiOverview() {
+        log.info("========== TourAPI 개요(overview) 백필 시작 ==========");
+
+        List<UUID> targetIds = tourSpotRepository.findWithoutDescription().stream()
+                .map(TourSpot::getId)
+                .toList();
+        log.info("대상: {}건", targetIds.size());
+
+        int filled = 0, empty = 0, failed = 0;
+
+        for (UUID spotId : targetIds) {
+            try {
+                if (self.fillTourApiOverview(spotId)) {
+                    filled++;
+                } else {
+                    empty++;
+                }
+                Thread.sleep(150);
+            } catch (Exception e) {
+                log.error("[TourApiOverview] 실패 - spotId={}, {}", spotId, e.getMessage());
+                failed++;
+            }
+        }
+
+        TourApiOverviewResult result = new TourApiOverviewResult(targetIds.size(), filled, empty, failed);
+        log.info("========== TourAPI 개요 백필 완료: {} ==========", result);
+        return result;
+    }
+
+    // enrichWithTourApiOverview()의 항목 하나를 독립된 트랜잭션에서 처리.
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public boolean fillTourApiOverview(UUID spotId) {
+        TourSpot spot = tourSpotRepository.findById(spotId)
+                .orElseThrow(() -> new IllegalStateException("존재하지 않는 관광지입니다. spotId=" + spotId));
+
+        if (spot.getContentId() == null || spot.getContentId().isBlank()) {
+            return false;
+        }
+
+        String overview = tourApiClient.fetchDetailCommon(spot.getContentId())
+                .map(DetailCommonResponse.CommonItem::getOverview)
+                .orElse(null);
+
+        if (overview == null || overview.isBlank()) {
+            return false;
+        }
+
+        spot.updateDescription(overview);
+        tourSpotRepository.save(spot);
+        return true;
+    }
+
+    public record TourApiOverviewResult(int total, int filled, int empty, int failed) {
+        @Override public String toString() {
+            return String.format("전체=%d, 채움=%d, 원본없음=%d, 실패=%d", total, filled, empty, failed);
+        }
     }
 
     // 부산명소정보 API 원문(description)이 너무 길다는 피드백에 따라 OpenAI로 2~3문장으로 재요약.
