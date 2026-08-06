@@ -1,18 +1,22 @@
 package com.bujirun.bujirun.domain.auth.controller;
 
 import com.bujirun.bujirun.domain.auth.dto.request.UpdateProfileRequest;
+import com.bujirun.bujirun.domain.auth.dto.response.NicknameAvailabilityResponse;
 import com.bujirun.bujirun.domain.auth.dto.response.UserProfileResponse;
 import com.bujirun.bujirun.domain.auth.service.UserService;
 import com.bujirun.bujirun.global.response.ApiResponse;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.Size;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import jakarta.servlet.http.HttpServletResponse;
@@ -26,6 +30,7 @@ import java.util.UUID;
 @RestController
 @RequestMapping("/api/users")
 @RequiredArgsConstructor
+@Validated
 public class UserController {
 
     private final UserService userService;
@@ -43,6 +48,14 @@ public class UserController {
             @AuthenticationPrincipal UUID userId,
             @RequestBody @Valid UpdateProfileRequest req) {
         return ApiResponse.ok(userService.updateProfile(userId, req));
+    }
+
+    @Operation(summary = "닉네임 중복 확인", description = "닉네임을 실제로 변경하기 전에 사용 가능한 닉네임인지 미리 확인합니다.")
+    @GetMapping("/me/nickname/availability")
+    public ApiResponse<NicknameAvailabilityResponse> checkNicknameAvailability(
+            @AuthenticationPrincipal UUID userId,
+            @RequestParam @Size(min = 1, max = 50, message = "닉네임은 1자 이상 50자 이하로 입력해주세요.") String nickname) {
+        return ApiResponse.ok(userService.checkNicknameAvailability(userId, nickname));
     }
 
     // 회원 탈퇴
