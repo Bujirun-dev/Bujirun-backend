@@ -19,6 +19,7 @@ public class ItineraryGenerateResponse {
         private String type;        // "A" | "B" | "C"
         private String label;       // "취향 집중형" 등
         private String description; // 한 줄 설명
+        private String summaryReason; // 추가: 그룹 일정 생성 시에만 채워지는 플랜 추천 이유 한 줄 요약 (개인 일정은 항상 null)
         private List<DayPlan> days;
     }
 
