@@ -1,5 +1,7 @@
 package com.bujirun.bujirun.domain.itinerary.generate.controller;
 
+import com.bujirun.bujirun.domain.group.dto.response.GroupPreferenceSummary; // 추가
+import com.bujirun.bujirun.domain.group.service.GroupPreferenceService; // 추가
 import com.bujirun.bujirun.domain.itinerary.generate.dto.request.GroupItineraryRequest;
 import com.bujirun.bujirun.domain.itinerary.generate.dto.response.GroupItineraryGenerateResponse;
 import com.bujirun.bujirun.domain.itinerary.generate.dto.response.ItineraryGenerateResponse;
@@ -27,6 +29,7 @@ public class GroupItineraryController {
 
     private final GroupItineraryGenerateService groupItineraryGenerateService;
     private final ItineraryVoteService itineraryVoteService;
+    private final GroupPreferenceService groupPreferenceService; // 추가
 
     @Operation(summary = "그룹 일정 자동 생성", description = "그룹 멤버들의 스와이프 결과를 종합하여 그룹 일정을 자동 생성합니다.")
     @PostMapping("/{groupId}/generate")
@@ -43,18 +46,24 @@ public class GroupItineraryController {
     // DB 유니크 인덱스(V26)가 하나만 통과시키므로, 진 쪽은 새로 만들지 않고
     // 이긴 쪽 세션을 재조회해서 그대로 합류한다.
     private GroupItineraryGenerateResponse resolveVoteSession(UUID groupId, GroupItineraryRequest req, UUID userId) {
+        // 추가: 그룹원 취향 집계는 매 요청마다 최신 상태로 계산해 응답에 함께 내려준다 (AI 호출 없는 순수 집계)
+        GroupPreferenceSummary groupSummary = groupPreferenceService.summarize(groupId);
+
         return itineraryVoteService.findActiveSession(groupId)
+                .map(existing -> existing.toBuilder().groupSummary(groupSummary).build()) // 추가
                 .orElseGet(() -> {
                     ItineraryGenerateResponse generated =
-                            groupItineraryGenerateService.generateGroupItinerary(groupId, req, userId);
+                            groupItineraryGenerateService.generateGroupItinerary(groupId, req, userId, groupSummary); // 추가: groupSummary 전달
                     try {
                         UUID voteSessionId = itineraryVoteService.startVoteSession(groupId, generated);
                         return GroupItineraryGenerateResponse.builder()
                                 .voteSessionId(voteSessionId)
                                 .plans(generated)
+                                .groupSummary(groupSummary) // 추가
                                 .build();
                     } catch (DataIntegrityViolationException e) {
                         return itineraryVoteService.findActiveSession(groupId)
+                                .map(existing -> existing.toBuilder().groupSummary(groupSummary).build()) // 추가
                                 .orElseThrow(() -> new IllegalStateException("투표 세션 생성 경합 처리 실패", e));
                     }
                 });
