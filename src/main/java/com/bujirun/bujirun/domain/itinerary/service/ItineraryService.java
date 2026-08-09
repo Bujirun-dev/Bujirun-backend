@@ -191,7 +191,15 @@ public class ItineraryService {
         TourSpot spot = tourSpotRepository.findById(req.spotId())
                 .orElseThrow(() -> new EntityNotFoundException("관광지를 찾을 수 없습니다. id=" + req.spotId()));
 
-        // 프론트가 travelMode를 직접 안 보내면, 직전 스팟과의 구간을 자동 계산
+        boolean alreadyInDay = day.getItems().stream()
+                .anyMatch(existing -> existing.getSpot().getId().equals(spot.getId()));
+        if (alreadyInDay) {
+            throw new IllegalArgumentException("이미 해당 일차에 추가된 관광지입니다. spotId=" + req.spotId());
+        }
+
+        // 직전 스팟과의 구간 정보(역명/노선번호 등)는 항상 자동 계산한다.
+        // travelMode는 프론트가 보낸 값이 있으면 그 수단에 맞는 옵션을 찾아서 쓰고,
+        // 없으면(null) 자동 산출된 최적 옵션을 그대로 쓴다.
         String travelMode = req.travelMode();
         Integer travelTimeMin = req.travelTimeMin();
         String routeType = null;
@@ -200,28 +208,33 @@ public class ItineraryService {
         String endStationName = null;
         String startArsId = null;
 
-        if (travelMode == null) {
-            ItineraryItem prevItem = day.getItems().stream()
-                    .max(Comparator.comparing(ItineraryItem::getOrderIndex))
-                    .orElse(null);
+        ItineraryItem prevItem = day.getItems().stream()
+                .max(Comparator.comparing(ItineraryItem::getOrderIndex))
+                .orElse(null);
 
-            if (prevItem != null) {
-                List<SpotInfo> pair = List.of(toSpotInfo(prevItem.getSpot()), toSpotInfo(spot));
-                List<TransitRouteResponse> routes = transitRouteService.getRoutesForDay(pair, null);
+        if (prevItem != null) {
+            List<SpotInfo> pair = List.of(toSpotInfo(prevItem.getSpot()), toSpotInfo(spot));
+            List<TransitRouteResponse> routes = transitRouteService.getRoutesForDay(pair, null);
 
-                if (!routes.isEmpty() && !routes.get(0).options().isEmpty()) {
-                    TransitOption leg = routes.get(0).options().get(0);
-                    SubPath firstSubPath = TransitRouteUtils.findFirstTransitSubPath(leg.subPaths());
+            if (!routes.isEmpty() && !routes.get(0).options().isEmpty()) {
+                List<TransitOption> options = routes.get(0).options();
+                String requestedMode = travelMode;
+                TransitOption leg = requestedMode != null
+                        ? options.stream()
+                                .filter(opt -> requestedMode.equals(toTravelMode(opt.type())))
+                                .findFirst()
+                                .orElse(options.get(0))
+                        : options.get(0);
+                SubPath firstSubPath = TransitRouteUtils.findFirstTransitSubPath(leg.subPaths());
 
-                    travelMode = toTravelMode(leg.type());
-                    travelTimeMin = leg.totalTime();
-                    // routeType: subPath 실측 타입(버스/지하철) 우선, 없으면(도보/택시 옵션) 옵션 타입 그대로
-                    routeType = firstSubPath != null ? firstSubPath.type() : leg.type();
-                    routeNo = firstSubPath != null ? firstSubPath.routeNo() : null;
-                    startStationName = firstSubPath != null ? firstSubPath.startName() : null;
-                    endStationName = firstSubPath != null ? firstSubPath.endName() : null;
-                    startArsId = firstSubPath != null ? firstSubPath.startArsId() : null;
-                }
+                travelMode = toTravelMode(leg.type());
+                if (travelTimeMin == null) travelTimeMin = leg.totalTime();
+                // routeType: subPath 실측 타입(버스/지하철) 우선, 없으면(도보/택시 옵션) 옵션 타입 그대로
+                routeType = firstSubPath != null ? firstSubPath.type() : leg.type();
+                routeNo = firstSubPath != null ? firstSubPath.routeNo() : null;
+                startStationName = firstSubPath != null ? firstSubPath.startName() : null;
+                endStationName = firstSubPath != null ? firstSubPath.endName() : null;
+                startArsId = firstSubPath != null ? firstSubPath.startArsId() : null;
             }
         }
 
@@ -294,8 +307,10 @@ public class ItineraryService {
     }
 
     // 사용자가 이동수단(walk/transit/taxi)만 선택했을 때, 직전 스팟과의 구간을 해당 수단 기준으로 재계산
-    // 관대한 버전: updateItem()에서 호출. 재계산에 실패해도 예외를 던지지 않고 조용히 무시해서
-    // orderIndex/arrivalTime/durationMin/memo 등 나머지 필드는 계속 저장되도록 한다.
+    // 관대한 버전: updateItem()에서 호출. 첫 스팟(idx<=0)은 애초에 이동정보가 없는 게 정상이라
+    // 조용히 스킵하지만, 그 외의 실패(요청한 수단의 경로를 못 찾음)는 다른 수단으로 조용히
+    // 바꿔치기하지 않고 예외를 던진다 — 그렇지 않으면 "지하철을 선택했는데 도보로 저장됨" 같은
+    // 상황이 200 OK로 감춰져 버린다(2026-08-07 그룹 일정 버스/지하철 정보 조사에서 발견).
     private void applyPreferredTravelMode(ItineraryItem item, String preferredMode) {
         List<ItineraryItem> dayItems = item.getDay().getItems(); // orderIndex ASC 정렬됨
 
@@ -303,12 +318,11 @@ public class ItineraryService {
         if (idx <= 0) return; // 첫 스팟은 이동정보 없음, 변경 대상 아님
 
         List<TransitOption> options = fetchLegOptions(dayItems.get(idx - 1), item);
-        if (options.isEmpty()) return;
-
         TransitOption matched = options.stream()
                 .filter(opt -> preferredMode.equals(toTravelMode(opt.type())))
                 .findFirst()
-                .orElse(options.get(0)); // 요청한 수단이 없으면 기본값(첫 옵션)으로 폴백
+                .orElseThrow(() -> new IllegalArgumentException(
+                        "요청한 이동수단(" + preferredMode + ")의 경로를 찾을 수 없습니다."));
 
         applyMatchedOption(item, preferredMode, matched);
     }

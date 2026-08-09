@@ -1,6 +1,7 @@
 package com.bujirun.bujirun.domain.itinerary.generate.service;
 
 import com.bujirun.bujirun.domain.collection.repository.CollectionEntryRepository;
+import com.bujirun.bujirun.domain.group.dto.response.GroupPreferenceSummary; // 추가: 그룹 추천 이유 생성용
 import com.bujirun.bujirun.domain.itinerary.generate.client.OpenAiClient;
 import com.bujirun.bujirun.domain.itinerary.generate.dto.response.ItineraryGenerateResponse;
 import com.bujirun.bujirun.domain.itinerary.generate.dto.response.SpotInfo;
@@ -42,6 +43,12 @@ public class ItineraryGenerateService {
 
     @Transactional(readOnly = true)
     public ItineraryGenerateResponse generateItinerary(SwipeRequest request, UUID userId) {
+        return generateItinerary(request, userId, null);
+    }
+
+    // 추가: 그룹 일정 생성 시 취향 집계(GroupPreferenceSummary)를 전달받아 추천 이유를 함께 생성한다. null이면 기존 개인 일정 로직과 완전히 동일하게 동작한다.
+    @Transactional(readOnly = true)
+    public ItineraryGenerateResponse generateItinerary(SwipeRequest request, UUID userId, GroupPreferenceSummary groupPreferenceSummary) {
 
         // 여행 일수 계산 및 상한 검증 (최대 3박 4일)
         long tripDays = request.getStartDate().until(request.getEndDate()).getDays() + 1;
@@ -143,10 +150,11 @@ public class ItineraryGenerateService {
                 .toList();
 
         // OpenAI 호출
-        String systemPrompt = buildSystemPrompt();
+        String systemPrompt = buildSystemPrompt(groupPreferenceSummary != null); // 추가: 그룹 일정이면 추천 이유 스키마 포함
         String userPrompt = buildUserPrompt(likedSpotInfos, preferenceVector, candidates, tripDays,
                 request.getOptimizationType(), request.getStartDate(),
-                request.getEndDate(), request.getStartTime(), request.getEndTime(), activityHours);
+                request.getEndDate(), request.getStartTime(), request.getEndTime(), activityHours,
+                groupPreferenceSummary); // 추가
 
         log.info("OpenAI 호출 시작 - 후보 관광지 {}개, 여행 {}일", candidates.size(), tripDays);
         String rawResponse = openAiClient.chat(systemPrompt, userPrompt);
@@ -207,24 +215,59 @@ public class ItineraryGenerateService {
         }
     }
 
-    private String buildSystemPrompt() {
+    private String buildSystemPrompt(boolean includeReasons) {
+        if (!includeReasons) {
+            return """
+                    당신은 부산 여행 일정을 생성하는 전문가입니다.
+                                반드시 아래 JSON 형식만 출력하세요. 설명이나 마크다운 없이 순수 JSON만 출력하세요.
+                                필드명과 타입을 정확히 지키세요. "day"는 1부터 시작하는 정수이며, "date"가 아닙니다.
+                                "spotContentIds"는 contentId 문자열 배열이며, "places" 같은 객체 배열이 아닙니다.
+
+                    {
+                      "planA": {
+                        "type": "A",
+                        "label": "취향 집중 코스",
+                        "description": "공통 취향을 가장 많이 반영한 일정",
+                        "days": [...]
+                      },
+                      "planB": {
+                        "type": "B",
+                        "label": "뚜벅이 최적 코스",
+                        "description": "이동 시간을 줄이고 효율적으로 즐기는 일정",
+                        "days": [...]
+                      }
+                    }
+                    """;
+        }
+
+        // 추가: 그룹 일정 생성 전용 — summaryReason(플랜별 한 줄 추천 이유), spotReasons(스팟별 추천 이유 배열) 필드를 요구한다.
         return """
                 당신은 부산 여행 일정을 생성하는 전문가입니다.
                             반드시 아래 JSON 형식만 출력하세요. 설명이나 마크다운 없이 순수 JSON만 출력하세요.
                             필드명과 타입을 정확히 지키세요. "day"는 1부터 시작하는 정수이며, "date"가 아닙니다.
                             "spotContentIds"는 contentId 문자열 배열이며, "places" 같은 객체 배열이 아닙니다.
-                
+                            "summaryReason"은 해당 플랜을 추천하는 이유를 한 줄로 요약한 문자열입니다.
+                            "spotReasons"는 { "contentId": ["이유1", "이유2"] } 형태의 객체이며, spotContentIds에 포함된 각 관광지를 일정에 포함한 이유를 3개 내외의 문자열 배열로 담습니다.
+
                 {
                   "planA": {
                     "type": "A",
                     "label": "취향 집중 코스",
                     "description": "공통 취향을 가장 많이 반영한 일정",
-                    "days": [...]
+                    "summaryReason": "그룹원들이 가장 많이 좋아요한 카테고리를 집중 반영한 코스입니다",
+                    "days": [
+                      {
+                        "day": 1,
+                        "spotContentIds": ["..."],
+                        "spotReasons": { "126508": ["그룹원 4명이 좋아요한 장소", "선호 카테고리와 일치"] }
+                      }
+                    ]
                   },
                   "planB": {
                     "type": "B",
                     "label": "뚜벅이 최적 코스",
                     "description": "이동 시간을 줄이고 효율적으로 즐기는 일정",
+                    "summaryReason": "...",
                     "days": [...]
                   }
                 }
@@ -240,7 +283,8 @@ public class ItineraryGenerateService {
                                    LocalDate endDate,
                                    LocalTime startTime,
                                    LocalTime endTime,
-                                   int activityHours) {
+                                   int activityHours,
+                                   GroupPreferenceSummary groupPreferenceSummary) {
         StringBuilder sb = new StringBuilder();
 
         sb.append("## 좋아요한 장소 목록\n");
@@ -252,6 +296,14 @@ public class ItineraryGenerateService {
         sb.append("\n## 사용자 성향 벡터 (카테고리별 선호도)\n");
         preferenceVector.forEach((category, count) ->
                 sb.append("- ").append(category).append(": ").append(count).append("회 좋아요\n"));
+
+        // 추가: 그룹 일정 생성 시에만 그룹원 취향 집계 컨텍스트와 reason 작성 지침을 포함한다
+        if (groupPreferenceSummary != null) {
+            sb.append("\n## 그룹원 취향 집계 (스와이프 완료 ").append(groupPreferenceSummary.getParticipantCount()).append("명)\n");
+            groupPreferenceSummary.getCategoryCounts().forEach((category, count) ->
+                    sb.append("- ").append(category).append(": ").append(count).append("명 좋아요\n"));
+            sb.append("\n위 그룹원 취향 집계를 근거로 각 플랜의 summaryReason과 각 관광지의 spotReasons를 구체적으로 작성하세요.");
+        }
 
         sb.append("\n## 이동 최적화 기준: ").append(
                 switch (optimizationType != null ? optimizationType : "TIME_SHORT") {
@@ -348,6 +400,7 @@ public class ItineraryGenerateService {
                     continue;
                 }
                 int day = dayField.asInt();
+                JsonNode spotReasonsNode = dayNode.get("spotReasons"); // 추가: 그룹 일정 생성 시에만 존재하는 스팟별 추천 이유
 
                 List<SpotInfo> spots = new ArrayList<>();
                 JsonNode spotIds = dayNode.get("spotContentIds");
@@ -360,7 +413,9 @@ public class ItineraryGenerateService {
                         }
                         SpotInfo spot = spotMap.get(contentId);
                         if (spot != null) {
-                            spots.add(spot);
+                            // 추가: spotReasons가 있으면 이 스팟에만 이유를 채워서 새 인스턴스로 추가 (spotMap 공유 인스턴스는 변경하지 않음)
+                            List<String> reasons = parseSpotReasons(spotReasonsNode, contentId);
+                            spots.add(reasons != null ? spot.toBuilder().reasons(reasons).build() : spot);
                         } else {
                             log.warn("day={}, contentId={}가 candidates 목록에 없음 (OpenAI 응답 오류 가능성)", day, contentId);
                         }
@@ -385,8 +440,24 @@ public class ItineraryGenerateService {
                 .type(planNode.path("type").asText())
                 .label(planNode.path("label").asText())
                 .description(planNode.path("description").asText())
+                .summaryReason(planNode.hasNonNull("summaryReason") ? planNode.get("summaryReason").asText() : null) // 추가: 그룹 일정 생성 시에만 존재
                 .days(days)
                 .build();
+    }
+
+    // 추가: spotReasons({ contentId: [이유, ...] } 형태의 JSON 객체)에서 특정 contentId의 이유 배열을 defensive하게 추출
+    private List<String> parseSpotReasons(JsonNode spotReasonsNode, String contentId) {
+        if (spotReasonsNode == null || !spotReasonsNode.isObject()) return null;
+        JsonNode reasonsArr = spotReasonsNode.get(contentId);
+        if (reasonsArr == null || !reasonsArr.isArray()) return null;
+
+        List<String> reasons = new ArrayList<>();
+        for (JsonNode r : reasonsArr) {
+            if (r.isTextual()) {
+                reasons.add(r.asText());
+            }
+        }
+        return reasons.isEmpty() ? null : reasons;
     }
 
     private List<SpotInfo> sortByNearestNeighbor(List<SpotInfo> spots) {

@@ -1,5 +1,6 @@
 package com.bujirun.bujirun.domain.itinerary.generate.service;
 
+import com.bujirun.bujirun.domain.group.dto.response.GroupPreferenceSummary; // 추가
 import com.bujirun.bujirun.domain.group.repository.GroupMemberRepository;
 import com.bujirun.bujirun.domain.swipe.dto.projection.SpotSwipeAggregate;
 import com.bujirun.bujirun.domain.itinerary.generate.dto.request.GroupItineraryRequest;
@@ -34,7 +35,8 @@ public class GroupItineraryGenerateService {
     private final ItineraryRepository itineraryRepository;
 
     @Transactional(readOnly = true)
-    public ItineraryGenerateResponse generateGroupItinerary(UUID groupId, GroupItineraryRequest request, UUID requesterId) {
+    public ItineraryGenerateResponse generateGroupItinerary(UUID groupId, GroupItineraryRequest request, UUID requesterId,
+                                                             GroupPreferenceSummary groupSummary) { // 추가: 그룹원 취향 집계 (AI 추천 이유 생성용)
 
         if (!groupMemberRepository.existsById_GroupIdAndId_UserId(groupId, requesterId)) {
             log.warn("멤버십 체크 실패 - groupId={}, requesterId={}", groupId, requesterId);
@@ -80,7 +82,7 @@ public class GroupItineraryGenerateService {
         SwipeRequest swipeRequest = buildAggregatedSwipeRequest(likedIds, dislikedIds, request);
 
         // 그룹 요청이지만 도감(수집 상태) 우선순위는 요청자(방장) 기준으로 반영
-        return itineraryGenerateService.generateItinerary(swipeRequest, requesterId);
+        return itineraryGenerateService.generateItinerary(swipeRequest, requesterId, groupSummary); // 추가: groupSummary 전달
     }
 
     private SwipeRequest buildAggregatedSwipeRequest(List<String> likedIds, List<String> dislikedIds,
