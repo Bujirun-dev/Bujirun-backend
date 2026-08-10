@@ -13,6 +13,7 @@ public record TravelLogSummaryResponse(
         String thumbnailPhotoUrl,
         boolean isPublic,
         LocalDate startDate,
+        LocalDate endDate,
         int totalSpots,
         int collectedSpots,
         String authorNickname,
@@ -29,6 +30,8 @@ public record TravelLogSummaryResponse(
 
         LocalDate startDate = itinerary.getStartAt() != null ? itinerary.getStartAt()
                 : (itinerary.getDays().isEmpty() ? null : itinerary.getDays().get(0).getDate());
+        LocalDate endDate = itinerary.getEndAt() != null ? itinerary.getEndAt()
+                : (itinerary.getDays().isEmpty() ? null : itinerary.getDays().get(itinerary.getDays().size() - 1).getDate());
 
         return new TravelLogSummaryResponse(
                 log.getId(),
@@ -36,6 +39,7 @@ public record TravelLogSummaryResponse(
                 log.getThumbnailPhotoUrl(),
                 log.isPublic(),
                 startDate,
+                endDate,
                 totalSpots,
                 collectedSpots,
                 authorNickname,

@@ -21,6 +21,7 @@ public record TravelLogDetailResponse(
         int collectedSpots,
         String duration,
         LocalDate startDate,
+        LocalDate endDate,
         boolean isPublic,
         String thumbnailPhotoUrl,
         Integer mood,
@@ -47,6 +48,8 @@ public record TravelLogDetailResponse(
 
         LocalDate startDate = itinerary.getStartAt() != null ? itinerary.getStartAt()
                 : (itinerary.getDays().isEmpty() ? null : itinerary.getDays().get(0).getDate());
+        LocalDate endDate = itinerary.getEndAt() != null ? itinerary.getEndAt()
+                : (itinerary.getDays().isEmpty() ? null : itinerary.getDays().get(itinerary.getDays().size() - 1).getDate());
 
         List<TravelLogDayResponse> days = itinerary.getDays().stream()
                 .map(d -> TravelLogDayResponse.of(d, logItemMap, visitedItemIds))
@@ -60,6 +63,7 @@ public record TravelLogDetailResponse(
                 collectedSpots,
                 duration,
                 startDate,
+                endDate,
                 log.isPublic(),
                 log.getThumbnailPhotoUrl(),
                 log.getMood(),
