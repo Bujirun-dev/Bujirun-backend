@@ -83,10 +83,10 @@ public class Itinerary {
     }
 
     public void updatePeriod(LocalDate startAt, LocalTime startTime, LocalDate endAt, LocalTime endTime) {
-        this.startAt = startAt;
-        this.startTime = startTime;
-        this.endAt = endAt;
-        this.endTime = endTime;
+        if (startAt   != null) this.startAt   = startAt;
+        if (startTime != null) this.startTime = startTime;
+        if (endAt     != null) this.endAt     = endAt;
+        if (endTime   != null) this.endTime   = endTime;
     }
 
     public void confirm() {

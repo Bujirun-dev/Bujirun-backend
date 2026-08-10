@@ -294,6 +294,8 @@ public class ItineraryVoteService {
                 .status(session.getStatus())
                 .voteCounts(counts)
                 .totalVotes(votes.size())
+                .confirmedPlan(session.getConfirmedPlan())
+                .itineraryId(session.getItineraryId())
                 .build();
     }
 

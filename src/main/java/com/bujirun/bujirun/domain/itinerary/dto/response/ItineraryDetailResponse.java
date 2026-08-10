@@ -4,6 +4,7 @@ import com.bujirun.bujirun.domain.itinerary.entity.Itinerary;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.LocalTime;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
@@ -17,7 +18,9 @@ public record ItineraryDetailResponse(
         String planType,
         String status,
         LocalDate startAt,
+        LocalTime startTime,
         LocalDate endAt,
+        LocalTime endTime,
         LocalDateTime createdAt,
         LocalDateTime updatedAt,
         List<ItineraryDayResponse> days
@@ -32,7 +35,9 @@ public record ItineraryDetailResponse(
                 itinerary.getPlanType(),
                 itinerary.getStatus(),
                 itinerary.getStartAt(),
+                itinerary.getStartTime(),
                 itinerary.getEndAt(),
+                itinerary.getEndTime(),
                 itinerary.getCreatedAt(),
                 itinerary.getUpdatedAt(),
                 itinerary.getDays().stream().map(d -> ItineraryDayResponse.from(d, collectedSpotIds, visitedSpotIds)).toList()

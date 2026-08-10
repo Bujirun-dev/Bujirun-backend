@@ -6,5 +6,6 @@ import java.util.UUID;
 public record GroupMemberResponse(
         UUID userId,
         String nickname,
-        LocalDateTime joinedAt
+        LocalDateTime joinedAt,
+        boolean isLeader
 ) {}

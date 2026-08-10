@@ -32,6 +32,9 @@ public class UserService {
         User user = findUser(userId);
 
         if (req.nickname() != null && !req.nickname().equals(user.getNickname())) {
+            if (req.nickname().isBlank()) {
+                throw new IllegalArgumentException("닉네임은 공백일 수 없습니다.");
+            }
             if (userRepository.existsByNicknameAndDeletedAtIsNull(req.nickname())) {
                 throw new DuplicateNicknameException("이미 사용 중인 닉네임입니다.");
             }
