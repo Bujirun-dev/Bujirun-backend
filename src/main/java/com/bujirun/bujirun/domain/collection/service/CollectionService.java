@@ -8,6 +8,7 @@ import com.bujirun.bujirun.domain.collection.repository.CollectionEntryRepositor
 import com.bujirun.bujirun.domain.spot.dto.response.SpotSearchResponse;
 import com.bujirun.bujirun.domain.spot.entity.TourSpot;
 import com.bujirun.bujirun.domain.spot.repository.TourSpotRepository;
+import com.bujirun.bujirun.domain.visit.repository.VisitRepository;
 import com.bujirun.bujirun.domain.auth.entity.User;
 import jakarta.persistence.EntityNotFoundException;
 import lombok.RequiredArgsConstructor;
@@ -25,6 +26,7 @@ public class CollectionService {
     private final CollectionEntryRepository collectionEntryRepository;
     private final TourSpotRepository tourSpotRepository;
     private final UserRepository userRepository;
+    private final VisitRepository visitRepository;
     private static final List<String> DECK_CATEGORIES = List.of("바다", "자연", "문화", "체험");
 
     public List<CollectionListResponse> getCollectionBoard(UUID userId) {
@@ -78,6 +80,7 @@ public class CollectionService {
                 .stream()
                 .map(ce -> ce.getSpot().getId())
                 .collect(Collectors.toSet());
+        Set<UUID> visitedIds = new HashSet<>(visitRepository.findVerifiedSpotIdsByUserId(userId));
 
         List<TourSpot> deck = new ArrayList<>();
 
@@ -96,7 +99,7 @@ public class CollectionService {
         Collections.shuffle(deck);
 
         return deck.stream()
-                .map(spot -> SpotSearchResponse.from(spot, collectedIds.contains(spot.getId()), false))
+                .map(spot -> SpotSearchResponse.from(spot, collectedIds.contains(spot.getId()), visitedIds.contains(spot.getId())))
                 .toList();
     }
 }

@@ -48,6 +48,6 @@ public class KakaoController {
                 .build();
         response.addHeader(HttpHeaders.SET_COOKIE, refreshCookie.toString());
 
-        return ApiResponse.ok(KakaoLoginResponse.of(token, authResult.isNewUser()));
+        return ApiResponse.ok(KakaoLoginResponse.of(token, authResult.isNewUser(), authResult.user()));
     }
 }

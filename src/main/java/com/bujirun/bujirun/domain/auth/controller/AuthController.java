@@ -59,10 +59,7 @@ public class AuthController {
         }
 
         // 새 Access Token 발급
-        TokenResponse token = TokenResponse.builder()
-                .accessToken(jwtProvider.createAccessToken(userId))
-                .tokenType("Bearer")
-                .build();
+        TokenResponse token = jwtProvider.createTokenResponse(userId);
 
         return ApiResponse.ok(token);
     }

@@ -42,7 +42,7 @@ public class UploadService {
                         .build());
 
         String publicUrl = "https://%s.s3.%s.amazonaws.com/%s".formatted(bucket, region, key);
-        return new PresignUploadResponse(presigned.url().toString(), publicUrl);
+        return new PresignUploadResponse(presigned.url().toString(), publicUrl, presigned.expiration());
     }
 
     private String extensionOf(String contentType) {

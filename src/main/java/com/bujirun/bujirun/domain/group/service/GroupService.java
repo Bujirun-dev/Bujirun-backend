@@ -76,11 +76,15 @@ public class GroupService {
     public List<GroupMemberResponse> getMembers(UUID groupId, UUID userId) {
         validateMember(groupId, userId);
 
+        UUID leaderId = groupRepository.findById(groupId)
+                .map(Group::getCreatedBy)
+                .orElse(null);
+
         return groupMemberRepository.findById_GroupId(groupId).stream()
                 .map(gm -> {
                     UUID memberId = gm.getId().getUserId();
                     String nickname = userRepository.findById(memberId).map(User::getNickname).orElse(null);
-                    return new GroupMemberResponse(memberId, nickname, gm.getJoinedAt());
+                    return new GroupMemberResponse(memberId, nickname, gm.getJoinedAt(), memberId.equals(leaderId));
                 })
                 .toList();
     }

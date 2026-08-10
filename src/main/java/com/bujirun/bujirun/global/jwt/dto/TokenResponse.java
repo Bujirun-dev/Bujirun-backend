@@ -10,4 +10,5 @@ public class TokenResponse {
 
     private String accessToken;  // 30분짜리, API 호출할 때 사용
     private String tokenType;    // "Bearer" 고정값
+    private long expiresIn;      // accessToken 만료까지 남은 시간(초)
 }
