@@ -13,4 +13,6 @@ public class VoteStatusResponse {
     private String status;
     private Map<String, Long> voteCounts;
     private int totalVotes;
+    private String confirmedPlan;
+    private UUID itineraryId;
 }

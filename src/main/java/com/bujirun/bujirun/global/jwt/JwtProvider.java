@@ -63,6 +63,7 @@ public class JwtProvider {
         return TokenResponse.builder()
                 .accessToken(createAccessToken(userId))
                 .tokenType("Bearer")
+                .expiresIn(jwtProperties.getAccessTokenExpiration() / 1000)
                 .build();
     }
 }

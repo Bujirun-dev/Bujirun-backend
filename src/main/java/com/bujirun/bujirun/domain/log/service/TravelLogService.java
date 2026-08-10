@@ -4,7 +4,9 @@ import com.bujirun.bujirun.domain.auth.entity.User;
 import com.bujirun.bujirun.domain.auth.repository.UserRepository;
 import com.bujirun.bujirun.domain.collection.repository.CollectionEntryRepository;
 import com.bujirun.bujirun.domain.group.dto.response.GroupMemberResponse;
+import com.bujirun.bujirun.domain.group.entity.Group;
 import com.bujirun.bujirun.domain.group.repository.GroupMemberRepository;
+import com.bujirun.bujirun.domain.group.repository.GroupRepository;
 import com.bujirun.bujirun.domain.itinerary.dto.response.ItineraryDetailResponse;
 import com.bujirun.bujirun.domain.itinerary.entity.Itinerary;
 import com.bujirun.bujirun.domain.itinerary.entity.ItineraryDay;
@@ -47,6 +49,7 @@ public class TravelLogService {
     private final ItineraryItemRepository    itineraryItemRepository;
     private final UserRepository             userRepository;
     private final GroupMemberRepository      groupMemberRepository;
+    private final GroupRepository            groupRepository;
     private final CollectionEntryRepository  collectionEntryRepository;
     private final VisitRepository            visitRepository;
     private final VisitPhotoRepository       visitPhotoRepository;
@@ -438,11 +441,15 @@ public class TravelLogService {
     private List<GroupMemberResponse> fetchGroupMembers(Itinerary itinerary) {
         if (itinerary.getGroupId() == null) return List.of();
 
+        UUID leaderId = groupRepository.findById(itinerary.getGroupId())
+                .map(Group::getCreatedBy)
+                .orElse(null);
+
         return groupMemberRepository.findById_GroupId(itinerary.getGroupId()).stream()
                 .map(gm -> {
                     UUID memberId = gm.getId().getUserId();
                     String nickname = userRepository.findById(memberId).map(User::getNickname).orElse(null);
-                    return new GroupMemberResponse(memberId, nickname, gm.getJoinedAt());
+                    return new GroupMemberResponse(memberId, nickname, gm.getJoinedAt(), memberId.equals(leaderId));
                 })
                 .toList();
     }
