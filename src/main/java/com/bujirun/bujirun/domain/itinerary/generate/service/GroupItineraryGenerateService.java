@@ -1,9 +1,10 @@
 package com.bujirun.bujirun.domain.itinerary.generate.service;
 
-import com.bujirun.bujirun.domain.group.dto.response.GroupPreferenceSummary; // 추가
+import com.bujirun.bujirun.domain.group.dto.response.GroupPreferenceSummary;
 import com.bujirun.bujirun.domain.group.repository.GroupMemberRepository;
 import com.bujirun.bujirun.domain.swipe.dto.projection.SpotSwipeAggregate;
 import com.bujirun.bujirun.domain.itinerary.generate.dto.request.GroupItineraryRequest;
+import com.bujirun.bujirun.domain.itinerary.generate.dto.response.SpotInfo;
 import com.bujirun.bujirun.domain.swipe.dto.request.SwipeRequest;
 import com.bujirun.bujirun.domain.itinerary.generate.dto.response.ItineraryGenerateResponse;
 import com.bujirun.bujirun.domain.itinerary.repository.ItineraryRepository;
@@ -15,8 +16,10 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -28,6 +31,10 @@ public class GroupItineraryGenerateService {
     // 그룹원 중 이 비율 이상이 싫어요를 누르면 후보에서 완전히 제외
     private static final double DISLIKE_EXCLUDE_RATIO = 0.5;
 
+    // planA/planB의 overlap 비율이 이 값을 초과하면(두 플랜이 대부분 동일한 스팟으로 채워졌으면) WARN 로그를 남긴다.
+    // ItineraryGenerateService의 다양성 규칙(MIN_PLAN_DIFF_SPOTS)이 지켜지지 않았는지 진단하는 용도
+    private static final double OVERLAP_WARN_RATIO = 0.7;
+
     private final SwipeResultRepository swipeResultRepository;
     private final TourSpotRepository tourSpotRepository;
     private final ItineraryGenerateService itineraryGenerateService;
@@ -36,7 +43,7 @@ public class GroupItineraryGenerateService {
 
     @Transactional(readOnly = true)
     public ItineraryGenerateResponse generateGroupItinerary(UUID groupId, GroupItineraryRequest request, UUID requesterId,
-                                                             GroupPreferenceSummary groupSummary) { // 추가: 그룹원 취향 집계 (AI 추천 이유 생성용)
+                                                             GroupPreferenceSummary groupSummary) { // 그룹원 취향 집계 (AI 추천 이유 생성용)
 
         if (!groupMemberRepository.existsById_GroupIdAndId_UserId(groupId, requesterId)) {
             log.warn("멤버십 체크 실패 - groupId={}, requesterId={}", groupId, requesterId);
@@ -82,7 +89,62 @@ public class GroupItineraryGenerateService {
         SwipeRequest swipeRequest = buildAggregatedSwipeRequest(likedIds, dislikedIds, request);
 
         // 그룹 요청이지만 도감(수집 상태) 우선순위는 요청자(방장) 기준으로 반영
-        return itineraryGenerateService.generateItinerary(swipeRequest, requesterId, groupSummary); // 추가: groupSummary 전달
+        ItineraryGenerateResponse response = itineraryGenerateService.generateItinerary(swipeRequest, requesterId, groupSummary); // 추가: groupSummary 전달
+
+        // AI 추천 이유 결과를 로그로 검증하기 위한 진단 로깅
+        logGroupRecommendationResult(groupId, groupSummary, response);
+
+        return response;
+    }
+
+    // 취향 집계(categoryScore, isUniformPreference)와 AI가 생성한 추천 이유, planA/planB 다양성을 INFO/WARN으로 남긴다
+    private void logGroupRecommendationResult(UUID groupId, GroupPreferenceSummary groupSummary, ItineraryGenerateResponse response) {
+        log.info("[그룹 일정 생성 결과] groupId={}, 참여자수={}, categoryScore={}, isUniformPreference={}",
+                groupId, groupSummary.getParticipantCount(), groupSummary.getCategoryScore(), groupSummary.isUniformPreference());
+
+        logPlanReasons(groupId, "A", response.getPlanA());
+        logPlanReasons(groupId, "B", response.getPlanB());
+
+        checkPlanOverlap(groupId, response.getPlanA(), response.getPlanB());
+    }
+
+    // 플랜별 summaryReason과 스팟별 reasons를 로그로 남긴다 (reasons가 없는 스팟은 제외)
+    private void logPlanReasons(UUID groupId, String planType, ItineraryGenerateResponse.PlanOption plan) {
+        if (plan == null || plan.getDays() == null) return;
+
+        Map<String, List<String>> spotReasons = plan.getDays().stream()
+                .flatMap(d -> d.getSpots().stream())
+                .filter(spot -> spot.getReasons() != null)
+                .collect(Collectors.toMap(SpotInfo::getContentId, SpotInfo::getReasons, (a, b) -> a));
+
+        log.info("[그룹 일정 생성 결과] groupId={}, plan={}, summaryReason={}, spotReasons={}",
+                groupId, planType, plan.getSummaryReason(), spotReasons);
+    }
+
+    // planA/planB 스팟 overlap 개수를 항상 INFO로 남기고, 다양성 규칙 위반이 의심되면 WARN도 남긴다
+    private void checkPlanOverlap(UUID groupId, ItineraryGenerateResponse.PlanOption planA, ItineraryGenerateResponse.PlanOption planB) {
+        if (planA == null || planB == null || planA.getDays() == null || planB.getDays() == null) return;
+
+        Set<String> spotsA = planA.getDays().stream()
+                .flatMap(d -> d.getSpots().stream())
+                .map(SpotInfo::getContentId)
+                .collect(Collectors.toSet());
+        Set<String> spotsB = planB.getDays().stream()
+                .flatMap(d -> d.getSpots().stream())
+                .map(SpotInfo::getContentId)
+                .collect(Collectors.toSet());
+
+        Set<String> overlap = new HashSet<>(spotsA);
+        overlap.retainAll(spotsB);
+
+        log.info("[그룹 일정 생성 결과] groupId={}, planA-planB overlap={}개 (planA={}개, planB={}개)",
+                groupId, overlap.size(), spotsA.size(), spotsB.size());
+
+        int largerSize = Math.max(spotsA.size(), spotsB.size());
+        if (largerSize > 0 && (double) overlap.size() / largerSize > OVERLAP_WARN_RATIO) {
+            log.warn("[그룹 일정 생성 결과] groupId={}, planA/planB 다양성 부족 - overlap={}개/{}개 (임계치 {}% 초과)",
+                    groupId, overlap.size(), largerSize, (int) (OVERLAP_WARN_RATIO * 100));
+        }
     }
 
     private SwipeRequest buildAggregatedSwipeRequest(List<String> likedIds, List<String> dislikedIds,
@@ -94,9 +156,9 @@ public class GroupItineraryGenerateService {
         return SwipeRequest.builder()
                 .swipes(swipes)
                 .startDate(request.getStartDate())
-                .startTime(request.getStartTime())   // 추가
+                .startTime(request.getStartTime())
                 .endDate(request.getEndDate())
-                .endTime(request.getEndTime())       // 추가
+                .endTime(request.getEndTime())
                 .optimizationType(request.getOptimizationType())
                 .build();
     }
