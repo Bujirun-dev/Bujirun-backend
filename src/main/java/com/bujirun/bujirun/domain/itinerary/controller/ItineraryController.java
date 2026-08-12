@@ -145,6 +145,21 @@ public class ItineraryController {
                 .map(r -> ResponseEntity.ok(ApiResponse.ok(r)));
     }
 
+    @Operation(summary = "방문 항목 순서 일괄 변경",
+            description = "일차에 속한 방문 항목 전체의 순서를 한 번에 원자적으로 반영합니다. " +
+                    "항목별 개별 PATCH로 순서를 나눠 반영하면 동시편집 시 order_index가 충돌할 수 있어 도입됨. " +
+                    "itemIds는 그 일차에 존재하는 항목 id 전체를 원하는 순서대로 담아야 합니다.")
+    @PatchMapping("/{itineraryId}/days/{dayId}/items/order")
+    public Mono<ResponseEntity<Void>> reorderItems(
+            @PathVariable UUID itineraryId,
+            @PathVariable UUID dayId,
+            @RequestBody @Valid ReorderItemsRequest req,
+            @AuthenticationPrincipal UUID userId) {
+        return Mono.fromRunnable(() -> itineraryService.reorderItems(itineraryId, dayId, req, userId))
+                .subscribeOn(Schedulers.boundedElastic())
+                .thenReturn(ResponseEntity.noContent().<Void>build());
+    }
+
     @Operation(summary = "방문 항목 삭제", description = "일차에서 특정 방문 항목을 삭제합니다.")
     @DeleteMapping("/{itineraryId}/days/{dayId}/items/{itemId}")
     public Mono<ResponseEntity<Void>> deleteItem(

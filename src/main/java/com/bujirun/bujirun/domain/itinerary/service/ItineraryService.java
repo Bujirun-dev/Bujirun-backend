@@ -30,6 +30,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.LocalDate;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -378,6 +379,33 @@ public class ItineraryService {
         ItineraryItem item = findItem(itineraryId, dayId, itemId);
         validateAccess(item.getDay().getItinerary(), userId);
         itineraryItemRepository.delete(item);
+    }
+
+    // day에 속한 방문 항목 전체의 순서를 한 트랜잭션에서 원자적으로 재반영한다.
+    // updateItem처럼 항목별로 나눠 PATCH하면, 그룹 일정에서 여러 클라이언트가 거의 동시에
+    // flush할 때 서로 다른 순서 계산 결과가 겹쳐 쓰이며 order_index가 충돌할 수 있다
+    // (2026-08-12 프로덕션 DB에서 실제로 같은 day_id+order_index 중복 확인). 클라이언트는
+    // 항상 그 day의 전체 항목 id를 원하는 순서 그대로 보내야 하며, 일부만 보내거나
+    // 다른 항목이 섞이면 거부한다 — 부분 반영 시 조용히 잘못된 최종 순서가 저장되는
+    // 상황을 막기 위함.
+    @Transactional
+    public void reorderItems(UUID itineraryId, UUID dayId, ReorderItemsRequest req, UUID userId) {
+        ItineraryDay day = itineraryDayRepository.findById(dayId)
+                .filter(d -> d.getItinerary().getId().equals(itineraryId))
+                .orElseThrow(() -> new EntityNotFoundException("Day를 찾을 수 없습니다. id=" + dayId));
+        validateAccess(day.getItinerary(), userId);
+
+        List<ItineraryItem> currentItems = day.getItems();
+        Set<UUID> currentIds = currentItems.stream().map(ItineraryItem::getId).collect(Collectors.toSet());
+        if (!currentIds.equals(Set.copyOf(req.itemIds())) || currentIds.size() != req.itemIds().size()) {
+            throw new IllegalArgumentException("요청한 항목 목록이 현재 일차의 항목 구성과 일치하지 않습니다.");
+        }
+
+        Map<UUID, ItineraryItem> itemById = currentItems.stream()
+                .collect(Collectors.toMap(ItineraryItem::getId, i -> i));
+        for (int i = 0; i < req.itemIds().size(); i++) {
+            itemById.get(req.itemIds().get(i)).updateOrder(i);
+        }
     }
 
     // ── 내부 헬퍼 ──────────────────────────────────────────────────
