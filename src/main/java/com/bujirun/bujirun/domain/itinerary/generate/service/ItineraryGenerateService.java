@@ -166,7 +166,7 @@ public class ItineraryGenerateService {
         ItineraryGenerateResponse response = parseResponse(rawResponse, candidates, request.getOptimizationType());
 
         // OpenAI가 capacity보다 적게 채운 날짜 자동 백필
-        backfillUnderfilledDays(response, allCandidates, likedSpots, preferenceVector,
+        response = backfillUnderfilledDays(response, allCandidates, likedSpots, preferenceVector,
                 (int) tripDays, request.getStartTime(), request.getEndTime(),
                 activityHours, request.getOptimizationType());
 
