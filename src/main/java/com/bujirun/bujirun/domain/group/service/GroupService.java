@@ -4,6 +4,7 @@ import com.bujirun.bujirun.domain.auth.entity.User;
 import com.bujirun.bujirun.domain.auth.repository.UserRepository;
 import com.bujirun.bujirun.domain.group.dto.request.CreateGroupRequest;
 import com.bujirun.bujirun.domain.group.dto.request.JoinGroupRequest;
+import com.bujirun.bujirun.domain.group.dto.response.GroupInvitePreviewResponse;
 import com.bujirun.bujirun.domain.group.dto.response.GroupMemberResponse;
 import com.bujirun.bujirun.domain.group.dto.response.GroupResponse;
 import com.bujirun.bujirun.domain.group.entity.Group;
@@ -64,6 +65,19 @@ public class GroupService {
         }
 
         return GroupResponse.from(group);
+    }
+
+    public GroupInvitePreviewResponse previewByInviteCode(String inviteCode) {
+        Group group = groupRepository.findByInviteCode(inviteCode)
+                .orElseThrow(() -> new EntityNotFoundException("초대 코드를 찾을 수 없습니다."));
+
+        String inviterNickname = userRepository.findById(group.getCreatedBy())
+                .map(User::getNickname)
+                .orElse(null);
+
+        long memberCount = groupMemberRepository.countById_GroupId(group.getId());
+
+        return new GroupInvitePreviewResponse(group.getName(), inviterNickname, memberCount);
     }
 
     public List<GroupResponse> getMyGroups(UUID userId) {
