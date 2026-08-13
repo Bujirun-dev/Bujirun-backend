@@ -166,7 +166,7 @@ public class ItineraryGenerateService {
         ItineraryGenerateResponse response = parseResponse(rawResponse, candidates, request.getOptimizationType());
 
         // OpenAI가 capacity보다 적게 채운 날짜 자동 백필
-        backfillUnderfilledDays(response, allCandidates, likedSpots, preferenceVector,
+        response = backfillUnderfilledDays(response, allCandidates, likedSpots, preferenceVector,
                 (int) tripDays, request.getStartTime(), request.getEndTime(),
                 activityHours, request.getOptimizationType());
 
@@ -641,6 +641,9 @@ public class ItineraryGenerateService {
                     spots.add(toSpotInfo(candidate));
                     usedInPlan.add(candidate.getContentId());
                 }
+
+                // 백필된 스팟이 리스트 맨 뒤가 아니라 동선상 적절한 위치에 오도록 좌표 기준 재정렬
+                spots = SpotOrderOptimizer.sortByNearestNeighbor(spots);
 
                 if (spots.size() < dayPlan.getSpots().size() + 1) {
                     log.info("day={} 백필 시도했으나 후보 부족 (기존 {}개 → {}개, capacity {}개)",
