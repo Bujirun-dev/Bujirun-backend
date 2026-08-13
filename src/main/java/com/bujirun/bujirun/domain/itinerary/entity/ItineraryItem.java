@@ -59,14 +59,23 @@ public class ItineraryItem {
 
     private String memo;
 
-    public void update(int orderIndex, LocalTime arrivalTime, Integer durationMin,
+    // orderIndex는 Integer(nullable)로 받아 생략 시 그대로 둔다 — 예전엔 primitive int라
+    // 요청 JSON에 orderIndex를 안 넣으면(예: 시간만 바꾸는 호출) Jackson이 0으로 채워 넣어
+    // 순서를 조용히 0으로 되돌려버리는 문제가 있었다. 순서 자체는 이제 이 메서드가 아니라
+    // reorderItems(전체 순서를 한 번에 원자 반영)로만 바꾸는 게 원칙 — [[itinerary-order-index-race]] 참고.
+    public void update(Integer orderIndex, LocalTime arrivalTime, Integer durationMin,
                        String travelMode, Integer travelTimeMin, String memo) {
-        this.orderIndex = orderIndex;
+        if (orderIndex    != null) this.orderIndex    = orderIndex;
         if (arrivalTime   != null) this.arrivalTime   = arrivalTime;
         if (durationMin   != null) this.durationMin   = durationMin;
         if (travelMode    != null) this.travelMode    = travelMode;
         if (travelTimeMin != null) this.travelTimeMin = travelTimeMin;
         if (memo          != null) this.memo          = memo;
+    }
+
+    // day 전체 순서를 한 번의 트랜잭션으로 원자적으로 반영할 때만 사용(reorderItems 전용)
+    public void updateOrder(int orderIndex) {
+        this.orderIndex = orderIndex;
     }
 
     // 경로 상세(노선번호·정류장명 등)까지 함께 갱신할 때 사용

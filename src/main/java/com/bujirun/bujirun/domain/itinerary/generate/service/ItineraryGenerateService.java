@@ -40,6 +40,7 @@ public class ItineraryGenerateService {
     private static final int MIN_ACTIVITY_HOURS = 1; // 하루 최소 활동시간
     private static final int MAX_ACTIVITY_HOURS = 16; // 하루 최대 활동시간 상한
     private static final int DEFAULT_ACTIVITY_HOURS = 12; // 추가: activityHours 미입력 시 기본값 (09:00~21:00 기준)
+    private static final int MIN_PLAN_DIFF_SPOTS = 3; // 추가: 그룹 일정 생성 시 planA/planB 최소 차별화 스팟 수 (다양성 규칙)
 
     @Transactional(readOnly = true)
     public ItineraryGenerateResponse generateItinerary(SwipeRequest request, UUID userId) {
@@ -150,11 +151,11 @@ public class ItineraryGenerateService {
                 .toList();
 
         // OpenAI 호출
-        String systemPrompt = buildSystemPrompt(groupPreferenceSummary != null); // 추가: 그룹 일정이면 추천 이유 스키마 포함
+        String systemPrompt = buildSystemPrompt(groupPreferenceSummary); // 그룹 일정이면 추천 이유 스키마 + 다양성 규칙 포함
         String userPrompt = buildUserPrompt(likedSpotInfos, preferenceVector, candidates, tripDays,
                 request.getOptimizationType(), request.getStartDate(),
                 request.getEndDate(), request.getStartTime(), request.getEndTime(), activityHours,
-                groupPreferenceSummary); // 추가
+                groupPreferenceSummary);
 
         log.info("OpenAI 호출 시작 - 후보 관광지 {}개, 여행 {}일", candidates.size(), tripDays);
         String rawResponse = openAiClient.chat(systemPrompt, userPrompt);
@@ -215,8 +216,9 @@ public class ItineraryGenerateService {
         }
     }
 
-    private String buildSystemPrompt(boolean includeReasons) {
-        if (!includeReasons) {
+    // groupPreferenceSummary가 null이면 개인 일정 프롬프트(기존 로직 그대로), 아니면 그룹 전용 프롬프트를 반환한다
+    private String buildSystemPrompt(GroupPreferenceSummary groupPreferenceSummary) {
+        if (groupPreferenceSummary == null) {
             return """
                     당신은 부산 여행 일정을 생성하는 전문가입니다.
                                 반드시 아래 JSON 형식만 출력하세요. 설명이나 마크다운 없이 순수 JSON만 출력하세요.
@@ -240,8 +242,8 @@ public class ItineraryGenerateService {
                     """;
         }
 
-        // 추가: 그룹 일정 생성 전용 — summaryReason(플랜별 한 줄 추천 이유), spotReasons(스팟별 추천 이유 배열) 필드를 요구한다.
-        return """
+        // 그룹 일정 생성 전용 — summaryReason(플랜별 한 줄 추천 이유), spotReasons(스팟별 추천 이유 배열) 필드를 요구한다.
+        String base = """
                 당신은 부산 여행 일정을 생성하는 전문가입니다.
                             반드시 아래 JSON 형식만 출력하세요. 설명이나 마크다운 없이 순수 JSON만 출력하세요.
                             필드명과 타입을 정확히 지키세요. "day"는 1부터 시작하는 정수이며, "date"가 아닙니다.
@@ -272,6 +274,24 @@ public class ItineraryGenerateService {
                   }
                 }
                 """;
+
+        // planA/planB가 거의 동일한 스팟으로 채워지지 않도록 명시적 다양성 규칙 부여
+        String diversityRule = "\n## 그룹 일정 다양성 규칙\n"
+                + "planA와 planB는 스팟 구성이 최소 " + MIN_PLAN_DIFF_SPOTS + "곳 이상 서로 달라야 합니다. "
+                + "두 플랜을 동일하거나 거의 동일한 관광지 목록으로 채우지 마세요.\n";
+
+        // isUniformPreference 여부에 따라 summaryReason/spotReasons 작성 지침을 분기한다
+        String reasonGuidance = groupPreferenceSummary.isUniformPreference()
+                ? "\n## 추천 이유 작성 지침 (편중 없는 취향)\n"
+                        + "그룹원들의 선호가 특정 카테고리에 뚜렷하게 쏠리지 않고 폭넓게 분산되어 있습니다. "
+                        + "summaryReason과 spotReasons에서 특정 카테고리를 근거로 들지 말고, "
+                        + "\"그룹원들이 폭넓게 선호를 표시해 대표 명소 위주로 구성했습니다\"와 같이 일반화된 이유를 사용하세요.\n"
+                : "\n## 추천 이유 작성 지침 (뚜렷한 취향)\n"
+                        + "그룹원들의 선호가 특정 카테고리에 뚜렷하게 쏠려 있습니다. "
+                        + "summaryReason과 spotReasons에서는 유저 프롬프트에 제공되는 그룹원 취향 집계(categoryScore) 상위 카테고리를 "
+                        + "구체적인 근거로 사용하세요.\n";
+
+        return base + diversityRule + reasonGuidance;
     }
 
     private String buildUserPrompt(List<SpotInfo> likedSpots,
@@ -297,12 +317,20 @@ public class ItineraryGenerateService {
         preferenceVector.forEach((category, count) ->
                 sb.append("- ").append(category).append(": ").append(count).append("회 좋아요\n"));
 
-        // 추가: 그룹 일정 생성 시에만 그룹원 취향 집계 컨텍스트와 reason 작성 지침을 포함한다
+        // 그룹 일정 생성 시에만 그룹원 취향 집계 컨텍스트와 reason 작성 지침을 포함한다
         if (groupPreferenceSummary != null) {
             sb.append("\n## 그룹원 취향 집계 (스와이프 완료 ").append(groupPreferenceSummary.getParticipantCount()).append("명)\n");
             groupPreferenceSummary.getCategoryCounts().forEach((category, count) ->
                     sb.append("- ").append(category).append(": ").append(count).append("명 좋아요\n"));
-            sb.append("\n위 그룹원 취향 집계를 근거로 각 플랜의 summaryReason과 각 관광지의 spotReasons를 구체적으로 작성하세요.");
+
+            // selectivity 가중치를 반영한 categoryScore — 단순 좋아요 수보다, 취향이 뚜렷한 참여자의 의견에 더 큰 비중을 둔 지표
+            sb.append("\n## 그룹원 취향 집계 (selectivity 가중치 반영 점수, 근거로 우선 사용)\n");
+            groupPreferenceSummary.getCategoryScore().forEach((category, score) ->
+                    sb.append("- ").append(category).append(": ").append(String.format("%.2f", score)).append("점\n"));
+
+            sb.append("\n## 편중도(isUniformPreference): ").append(groupPreferenceSummary.isUniformPreference()).append("\n");
+            sb.append("\n위 그룹원 취향 집계를 근거로 각 플랜의 summaryReason과 각 관광지의 spotReasons를 구체적으로 작성하세요. ")
+                    .append("isUniformPreference와 categoryScore에 따른 작성 지침은 시스템 프롬프트를 따르세요.");
         }
 
         sb.append("\n## 이동 최적화 기준: ").append(
@@ -413,7 +441,7 @@ public class ItineraryGenerateService {
                         }
                         SpotInfo spot = spotMap.get(contentId);
                         if (spot != null) {
-                            // 추가: spotReasons가 있으면 이 스팟에만 이유를 채워서 새 인스턴스로 추가 (spotMap 공유 인스턴스는 변경하지 않음)
+                            // spotReasons가 있으면 이 스팟에만 이유를 채워서 새 인스턴스로 추가 (spotMap 공유 인스턴스는 변경하지 않음)
                             List<String> reasons = parseSpotReasons(spotReasonsNode, contentId);
                             spots.add(reasons != null ? spot.toBuilder().reasons(reasons).build() : spot);
                         } else {
@@ -445,7 +473,7 @@ public class ItineraryGenerateService {
                 .build();
     }
 
-    // 추가: spotReasons({ contentId: [이유, ...] } 형태의 JSON 객체)에서 특정 contentId의 이유 배열을 defensive하게 추출
+    // spotReasons({ contentId: [이유, ...] } 형태의 JSON 객체)에서 특정 contentId의 이유 배열을 defensive하게 추출
     private List<String> parseSpotReasons(JsonNode spotReasonsNode, String contentId) {
         if (spotReasonsNode == null || !spotReasonsNode.isObject()) return null;
         JsonNode reasonsArr = spotReasonsNode.get(contentId);
