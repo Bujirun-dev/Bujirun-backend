@@ -2,6 +2,7 @@ package com.bujirun.bujirun.domain.group.controller;
 
 import com.bujirun.bujirun.domain.group.dto.request.CreateGroupRequest;
 import com.bujirun.bujirun.domain.group.dto.request.JoinGroupRequest;
+import com.bujirun.bujirun.domain.group.dto.response.GroupInvitePreviewResponse;
 import com.bujirun.bujirun.domain.group.dto.response.GroupMemberResponse;
 import com.bujirun.bujirun.domain.group.dto.response.GroupResponse;
 import com.bujirun.bujirun.domain.group.service.GroupService;
@@ -57,5 +58,11 @@ public class GroupController {
             @PathVariable UUID groupId,
             @AuthenticationPrincipal UUID userId) {
         return ApiResponse.ok(groupService.getMembers(groupId, userId));
+    }
+
+    @Operation(summary = "초대 정보 미리보기", description = "초대 코드로 그룹명, 초대자 닉네임, 멤버 수를 조회합니다.")
+    @GetMapping("/invites/{inviteCode}/preview")
+    public ApiResponse<GroupInvitePreviewResponse> previewInvite(@PathVariable String inviteCode) {
+        return ApiResponse.ok(groupService.previewByInviteCode(inviteCode));
     }
 }

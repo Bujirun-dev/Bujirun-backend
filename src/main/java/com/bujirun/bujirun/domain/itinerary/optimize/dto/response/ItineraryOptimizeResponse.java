@@ -21,5 +21,12 @@ public class ItineraryOptimizeResponse {
         private String name;
         private int order;
         private LocalTime arrivalTime;
+        private String travelMode;
+        private Integer travelTimeMin;
+        private String routeType;
+        private String routeNo;
+        private String startStationName;
+        private String endStationName;
+        private String startArsId;
     }
 }

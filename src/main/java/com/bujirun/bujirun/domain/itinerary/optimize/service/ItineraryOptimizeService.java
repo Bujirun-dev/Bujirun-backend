@@ -95,16 +95,27 @@ public class ItineraryOptimizeService {
         List<LocalTime> finalArrivalTimes = calculateArrivalTimes(startTime, finalTravelTimes);
 
         // 결과를 ItineraryItem에 반영
-        applyToEntities(items, finalOrder, finalArrivalTimes, routes);
+        Map<String, ItineraryItem> itemMap = items.stream()
+                .collect(Collectors.toMap(item -> item.getSpot().getContentId(), item -> item));
+        applyToEntities(itemMap, finalOrder, finalArrivalTimes, routes);
 
+        // 응답의 교통정보 필드는 ItineraryItemResponse와 동일하게, applyToEntities가 방금 반영한 엔티티 값을 그대로 담는다
         List<ItineraryOptimizeResponse.OptimizedSpot> optimizedSpots = new ArrayList<>();
         for (int i = 0; i < finalOrder.size(); i++) {
             SpotInfo spot = finalOrder.get(i);
+            ItineraryItem item = itemMap.get(spot.getContentId());
             optimizedSpots.add(ItineraryOptimizeResponse.OptimizedSpot.builder()
                     .contentId(spot.getContentId())
                     .name(spot.getName())
                     .order(i + 1)
                     .arrivalTime(finalArrivalTimes.get(i))
+                    .travelMode(item != null ? item.getTravelMode() : null)
+                    .travelTimeMin(item != null ? item.getTravelTimeMin() : null)
+                    .routeType(item != null ? item.getRouteType() : null)
+                    .routeNo(item != null ? item.getRouteNo() : null)
+                    .startStationName(item != null ? item.getStartStationName() : null)
+                    .endStationName(item != null ? item.getEndStationName() : null)
+                    .startArsId(item != null ? item.getStartArsId() : null)
                     .build());
         }
 
@@ -220,11 +231,8 @@ public class ItineraryOptimizeService {
         }
     }
 
-    private void applyToEntities(List<ItineraryItem> items, List<SpotInfo> finalOrder, List<LocalTime> arrivalTimes,
+    private void applyToEntities(Map<String, ItineraryItem> itemMap, List<SpotInfo> finalOrder, List<LocalTime> arrivalTimes,
                                  List<TransitRouteResponse> routes) {
-        Map<String, ItineraryItem> itemMap = items.stream()
-                .collect(Collectors.toMap(item -> item.getSpot().getContentId(), item -> item));
-
         for (int i = 0; i < finalOrder.size(); i++) {
             SpotInfo spot = finalOrder.get(i);
             ItineraryItem item = itemMap.get(spot.getContentId());
