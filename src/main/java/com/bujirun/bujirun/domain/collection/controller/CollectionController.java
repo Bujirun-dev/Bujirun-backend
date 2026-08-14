@@ -2,6 +2,7 @@ package com.bujirun.bujirun.domain.collection.controller;
 
 import com.bujirun.bujirun.domain.collection.dto.response.CollectionDetailResponse;
 import com.bujirun.bujirun.domain.collection.dto.response.CollectionListResponse;
+import com.bujirun.bujirun.domain.collection.dto.response.MyCollectionResponse;
 import com.bujirun.bujirun.domain.collection.service.CollectionService;
 import com.bujirun.bujirun.domain.spot.dto.response.SpotSearchResponse;
 import io.swagger.v3.oas.annotations.Operation;
@@ -28,6 +29,13 @@ public class CollectionController {
     public ResponseEntity<List<CollectionListResponse>> getBoard(
             @AuthenticationPrincipal UUID userId) {
         return ResponseEntity.ok(collectionService.getCollectionBoard(userId));
+    }
+
+    @Operation(summary = "내 도감 수집 현황 조회", description = "로그인한 사용자의 도감 수집 현황(전체 대상 수, 수집 수, 수집 목록)을 조회합니다.")
+    @GetMapping("/my")
+    public ResponseEntity<MyCollectionResponse> getMyCollections(
+            @AuthenticationPrincipal UUID userId) {
+        return ResponseEntity.ok(collectionService.getMyCollections(userId));
     }
 
     @Operation(summary = "도감 상세 조회", description = "도감에 담긴 특정 여행지의 상세 정보를 조회합니다.")

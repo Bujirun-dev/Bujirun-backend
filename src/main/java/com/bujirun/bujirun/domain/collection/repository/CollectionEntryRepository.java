@@ -14,7 +14,14 @@ public interface CollectionEntryRepository extends JpaRepository<CollectionEntry
 
     Optional<CollectionEntry> findByUserIdAndSpotId(UUID userId, UUID spotId);
 
-    List<CollectionEntry> findByUserIdAndCollectedTrue(UUID userId);
+    @Query("""
+        select ce from CollectionEntry ce
+        join fetch ce.spot
+        where ce.user.id = :userId and ce.collected = true
+        """)
+    List<CollectionEntry> findByUserIdAndCollectedTrue(@Param("userId") UUID userId);
+
+    long countByUserIdAndCollectedTrue(UUID userId);
 
     @Query("""
         select ts.id as spotId, ts.name as name, ts.sigungu.id as sigunguId,
