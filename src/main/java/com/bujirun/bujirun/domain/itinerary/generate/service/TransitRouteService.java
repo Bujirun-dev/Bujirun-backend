@@ -6,6 +6,7 @@ import com.bujirun.bujirun.domain.itinerary.generate.dto.response.SubPath;
 import com.bujirun.bujirun.domain.itinerary.generate.dto.response.TransitOption;
 import com.bujirun.bujirun.domain.itinerary.generate.dto.response.TransitRouteResponse;
 import com.bujirun.bujirun.global.util.GeoUtils;
+import com.bujirun.bujirun.global.util.TransitRouteUtils;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -29,6 +30,7 @@ public class TransitRouteService {
 
     private static final double ROAD_DISTANCE_FACTOR = 1.3;  // 차량용
     private static final double WALK_DISTANCE_FACTOR = 1.4;  // 도보용 (골목/계단 등 우회 반영)
+    private static final int WALK_DISTANCE_THRESHOLD_M = 1000; // 이 거리(하버사인) 이상이면 도보 옵션 자체를 후보에서 제외
 
     public List<TransitRouteResponse> getRoutesForDay(List<SpotInfo> spots, String optimizationType) {
         List<TransitRouteResponse> routes = new ArrayList<>();
@@ -43,8 +45,9 @@ public class TransitRouteService {
             List<TransitOption> options = new ArrayList<>();
 
             // 대중교통 — 구조적 정보는 캐시에서, 도착정보는 매번 새로 enrich
+            TransitOption transitOption = null;
             try {
-                TransitOption transitOption = odsayClient.searchTransitRoute(
+                transitOption = odsayClient.searchTransitRoute(
                         from.getLng(), from.getLat(),
                         to.getLng(), to.getLat()
                 );
@@ -58,7 +61,8 @@ public class TransitRouteService {
                 }
 
                 if (transitOption != null) {
-                    options.add(enrichWithArrival(transitOption));
+                    transitOption = enrichWithArrival(transitOption);
+                    options.add(transitOption);
                 }
             } catch (Exception e) {
                 log.warn("ODsay 경로 조회 실패 {} → {}: {}", from.getName(), to.getName(), e.getMessage());
@@ -67,7 +71,10 @@ public class TransitRouteService {
             // 도보 + 택시
             double distanceM = GeoUtils.haversineDistance(from.getLat(), from.getLng(), to.getLat(), to.getLng());
 
-            options.add(calcWalk(distanceM));
+            if (distanceM <= WALK_DISTANCE_THRESHOLD_M) { // 도보 거리 임계값 초과 시 도보 옵션 자체를 후보에서 제외
+                options.add(resolveWalkOption(distanceM, transitOption)); // ODsay 도보 구간 sectionTime 재사용, 매칭 실패 시 calcWalk 폴백
+            }
+
             options.add(calcTaxi(distanceM));
 
             options.sort(comparator);
@@ -109,6 +116,21 @@ public class TransitRouteService {
         double walkDistanceM = distanceM * WALK_DISTANCE_FACTOR;
         int timeMin = (int) Math.ceil(walkDistanceM / WALK_SPEED_MPS / 60);
         return new TransitOption("도보", timeMin, 0, 0, true, List.of());
+    }
+
+    // ODsay 응답이 전 구간 도보(trafficType 3)로만 구성된 경우 그 sectionTime 합을
+    // 도보 소요시간으로 재사용한다. ODsay 응답이 없거나 도보 전용 매칭이 아니면 calcWalk()로 폴백.
+    private TransitOption resolveWalkOption(double distanceM, TransitOption transitOption) {
+        List<SubPath> subPaths = transitOption != null ? transitOption.subPaths() : List.of();
+        boolean isWalkOnlyRoute = !subPaths.isEmpty()
+                && TransitRouteUtils.findFirstTransitSubPath(subPaths) == null;
+
+        if (isWalkOnlyRoute) {
+            int sectionTimeSum = subPaths.stream().mapToInt(SubPath::sectionTime).sum();
+            return new TransitOption("도보", sectionTimeSum, 0, 0, false, subPaths);
+        }
+
+        return calcWalk(distanceM); // ODsay 매칭 실패 시 기존 계산식으로 폴백
     }
 
     private TransitOption calcTaxi(double distanceM) {
