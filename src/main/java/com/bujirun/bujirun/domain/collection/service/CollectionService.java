@@ -3,6 +3,8 @@ package com.bujirun.bujirun.domain.collection.service;
 import com.bujirun.bujirun.domain.auth.repository.UserRepository;
 import com.bujirun.bujirun.domain.collection.dto.response.CollectionDetailResponse;
 import com.bujirun.bujirun.domain.collection.dto.response.CollectionListResponse;
+import com.bujirun.bujirun.domain.collection.dto.response.CollectionResponse;
+import com.bujirun.bujirun.domain.collection.dto.response.MyCollectionResponse;
 import com.bujirun.bujirun.domain.collection.entity.CollectionEntry;
 import com.bujirun.bujirun.domain.collection.repository.CollectionEntryRepository;
 import com.bujirun.bujirun.domain.spot.dto.response.SpotSearchResponse;
@@ -38,6 +40,16 @@ public class CollectionService {
     public Map<String, List<CollectionListResponse>> getCollectionGroupedByCategory(UUID userId) {
         return getCollectionBoard(userId).stream()
                 .collect(Collectors.groupingBy(CollectionListResponse::collectionCategory));
+    }
+
+    public MyCollectionResponse getMyCollections(UUID userId) {
+        long totalCount = tourSpotRepository.countByCollectionTrue();
+        long collectedCount = collectionEntryRepository.countByUserIdAndCollectedTrue(userId);
+        List<CollectionResponse> entries = collectionEntryRepository.findByUserIdAndCollectedTrue(userId).stream()
+                .map(CollectionResponse::of)
+                .toList();
+
+        return MyCollectionResponse.of(totalCount, collectedCount, entries);
     }
 
     public CollectionDetailResponse getDetail(UUID userId, UUID spotId) {
