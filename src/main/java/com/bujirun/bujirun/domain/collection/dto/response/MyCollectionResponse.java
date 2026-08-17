@@ -5,9 +5,15 @@ import java.util.List;
 public record MyCollectionResponse(
         long totalCount,
         long collectedCount,
-        List<CollectionResponse> entries
+        List<CollectionListResponse> entries,
+        List<CollectionListResponse> uncollectedEntries
 ) {
-    public static MyCollectionResponse of(long totalCount, long collectedCount, List<CollectionResponse> entries) {
-        return new MyCollectionResponse(totalCount, collectedCount, entries);
+    public static MyCollectionResponse of(
+            long totalCount,
+            long collectedCount,
+            List<CollectionListResponse> entries,
+            List<CollectionListResponse> uncollectedEntries
+    ) {
+        return new MyCollectionResponse(totalCount, collectedCount, entries, uncollectedEntries);
     }
 }
