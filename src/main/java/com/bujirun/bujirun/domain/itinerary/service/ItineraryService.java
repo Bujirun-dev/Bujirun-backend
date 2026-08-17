@@ -307,6 +307,20 @@ public class ItineraryService {
         return ItineraryItemResponse.from(item, fetchCollectedSpotIds(userId), fetchVisitedSpotIds(userId));
     }
 
+    // 이동수단 변경 화면에서 확정 전 버스/지하철/택시/도보 후보의 실제 소요시간·요금을 미리 보여주기 위한 조회 API
+    public List<TransitOption> getTravelModeOptions(UUID itineraryId, UUID dayId, UUID itemId, UUID userId) {
+        ItineraryItem item = findItem(itineraryId, dayId, itemId);
+        validateAccess(item.getDay().getItinerary(), userId);
+
+        List<ItineraryItem> dayItems = item.getDay().getItems(); // orderIndex ASC 정렬됨
+        int idx = dayItems.indexOf(item);
+        if (idx <= 0) {
+            throw new IllegalArgumentException("첫 번째 방문 항목은 이동수단 옵션이 없습니다.");
+        }
+
+        return fetchLegOptions(dayItems.get(idx - 1), item);
+    }
+
     // 사용자가 이동수단(walk/transit/taxi)만 선택했을 때, 직전 스팟과의 구간을 해당 수단 기준으로 재계산
     // 관대한 버전: updateItem()에서 호출. 첫 스팟(idx<=0)은 애초에 이동정보가 없는 게 정상이라
     // 조용히 스킵하지만, 그 외의 실패(요청한 수단의 경로를 못 찾음)는 다른 수단으로 조용히

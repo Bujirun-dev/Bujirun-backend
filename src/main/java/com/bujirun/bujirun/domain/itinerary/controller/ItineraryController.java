@@ -2,6 +2,7 @@ package com.bujirun.bujirun.domain.itinerary.controller;
 
 import com.bujirun.bujirun.domain.itinerary.dto.request.*;
 import com.bujirun.bujirun.domain.itinerary.dto.response.*;
+import com.bujirun.bujirun.domain.itinerary.generate.dto.response.TransitOption;
 import com.bujirun.bujirun.domain.itinerary.service.ItineraryService;
 import com.bujirun.bujirun.global.response.ApiResponse;
 import io.swagger.v3.oas.annotations.Operation;
@@ -142,6 +143,21 @@ public class ItineraryController {
             @RequestBody @Valid UpdateTravelModeRequest req,
             @AuthenticationPrincipal UUID userId) {
         return blocking(() -> itineraryService.updateTravelMode(itineraryId, dayId, itemId, req, userId))
+                .map(r -> ResponseEntity.ok(ApiResponse.ok(r)));
+    }
+
+    // 이동수단 변경 화면에서 확정 전 버스/지하철/택시/도보 후보의 실제 소요시간·요금을 미리 보여주기 위한 조회 API
+    @Operation(summary = "이동수단 변경 후보 옵션 조회",
+            description = "직전 방문 항목과의 구간에 대해 선택 가능한 이동수단 후보(버스/지하철/택시/도보)와 " +
+                    "각각의 실제 소요시간·요금을 조회합니다. DB에 저장된 값이 아니라 매번 새로 계산한 값이며, " +
+                    "확정하려면 이동수단 변경(travel-mode) API를 별도로 호출해야 합니다.")
+    @GetMapping("/{itineraryId}/days/{dayId}/items/{itemId}/travel-mode/options")
+    public Mono<ResponseEntity<ApiResponse<List<TransitOption>>>> getTravelModeOptions(
+            @PathVariable UUID itineraryId,
+            @PathVariable UUID dayId,
+            @PathVariable UUID itemId,
+            @AuthenticationPrincipal UUID userId) {
+        return blocking(() -> itineraryService.getTravelModeOptions(itineraryId, dayId, itemId, userId))
                 .map(r -> ResponseEntity.ok(ApiResponse.ok(r)));
     }
 
