@@ -1,6 +1,11 @@
 package com.bujirun.bujirun.domain.itinerary.generate.client;
 
 import com.bujirun.bujirun.domain.itinerary.generate.dto.response.SubPath;
+import com.bujirun.bujirun.domain.itinerary.generate.dto.response.SubwayDaySchedule;
+import com.bujirun.bujirun.domain.itinerary.generate.dto.response.SubwayDeparture;
+import com.bujirun.bujirun.domain.itinerary.generate.dto.response.SubwaySchedule;
+import com.bujirun.bujirun.domain.itinerary.generate.dto.response.SubwayTransferDetail;
+import com.bujirun.bujirun.domain.itinerary.generate.dto.response.SubwayTransitInfo;
 import com.bujirun.bujirun.domain.itinerary.generate.dto.response.TransitOption;
 import com.fasterxml.jackson.databind.JsonNode;
 import io.netty.resolver.DefaultAddressResolverGroup;
@@ -140,5 +145,127 @@ public class OdsayClient {
                 false,
                 subPaths // enriched 아니라 subPaths 그대로 (remainMinutes는 전부 null 상태)
         );
+    }
+
+    /**
+     * 지하철역 전체 배차 시각표 조회 (부산교통공사가 ODsay에 등록한 시각표 — GPS 기반 실시간 아님).
+     *
+     * @param stationId ODsay 지하철 역코드 (SubPath.startId())
+     * @param wayCode   방면 코드 (1: 상행, 2: 하행)
+     */
+    @Cacheable(
+            value = "odsaySubwaySchedule",
+            key = "T(String).format('%d:%d', #stationId, #wayCode)",
+            unless = "#result == null"
+    )
+    public SubwaySchedule searchSubwaySchedule(int stationId, int wayCode) {
+        JsonNode root = webClient.get()
+                .uri(uriBuilder -> uriBuilder
+                        .path("/searchSubwaySchedule")
+                        .queryParam("apiKey", apiKey)
+                        .queryParam("stationID", stationId)
+                        .queryParam("wayCode", wayCode)
+                        .build())
+                .header("Referer", "http://localhost:8080")
+                .retrieve()
+                .bodyToMono(JsonNode.class)
+                .block();
+
+        log.info("ODsay 지하철 시각표 조회 (캐시 미스) — stationId:{} wayCode:{}", stationId, wayCode);
+
+        return parseSubwaySchedule(root);
+    }
+
+    private SubwaySchedule parseSubwaySchedule(JsonNode root) {
+        if (root == null) return null;
+
+        JsonNode result = root.path("result");
+        if (result.isMissingNode()) {
+            log.warn("ODsay 지하철 시각표 없음 — 원본 응답: {}", root);
+            return null;
+        }
+
+        return new SubwaySchedule(
+                result.path("stationName").asText(""),
+                result.path("stationID").asInt(),
+                parseDaySchedule(result.path("weekdaySchedule")),
+                parseDaySchedule(result.path("saturdaySchedule")),
+                parseDaySchedule(result.path("holidaySchedule"))
+        );
+    }
+
+    private SubwayDaySchedule parseDaySchedule(JsonNode node) {
+        if (node == null || node.isMissingNode()) return new SubwayDaySchedule(List.of(), List.of());
+        return new SubwayDaySchedule(
+                parseDepartures(node.path("up")),
+                parseDepartures(node.path("down"))
+        );
+    }
+
+    private List<SubwayDeparture> parseDepartures(JsonNode arrayNode) {
+        if (!arrayNode.isArray()) return List.of();
+        List<SubwayDeparture> departures = new ArrayList<>();
+        for (JsonNode entry : arrayNode) {
+            departures.add(new SubwayDeparture(
+                    entry.path("departureTime").asText(""),
+                    entry.path("subwayClass").asInt(0),
+                    entry.path("firstLastFlag").asInt(0)
+            ));
+        }
+        return departures;
+    }
+
+    /**
+     * 지하철역 환승 정보 조회 (해당 역에서 갈아탈 수 있는 노선 안내 — 부산교통공사가 ODsay에 등록한 정적 데이터).
+     *
+     * @param stationId ODsay 지하철 역코드
+     */
+    @Cacheable(
+            value = "odsaySubwayTransitInfo",
+            key = "#stationId",
+            unless = "#result == null"
+    )
+    public SubwayTransitInfo getSubwayTransitInfo(int stationId) {
+        JsonNode root = webClient.get()
+                .uri(uriBuilder -> uriBuilder
+                        .path("/subwayTransitInfo")
+                        .queryParam("apiKey", apiKey)
+                        .queryParam("stationID", stationId)
+                        .build())
+                .header("Referer", "http://localhost:8080")
+                .retrieve()
+                .bodyToMono(JsonNode.class)
+                .block();
+
+        log.info("ODsay 지하철 환승정보 조회 (캐시 미스) — stationId:{}", stationId);
+
+        return parseSubwayTransitInfo(root);
+    }
+
+    private SubwayTransitInfo parseSubwayTransitInfo(JsonNode root) {
+        if (root == null) return null;
+
+        JsonNode result = root.path("result");
+        if (result.isMissingNode()) {
+            log.warn("ODsay 지하철 환승정보 없음 — 원본 응답: {}", root);
+            return null;
+        }
+
+        List<SubwayTransferDetail> details = new ArrayList<>();
+        JsonNode list = result.path("transitTotalInfo");
+        if (list.isArray()) {
+            for (JsonNode entry : list) {
+                details.add(new SubwayTransferDetail(
+                        entry.path("takeStationID").asInt(),
+                        entry.path("takeLaneName").asText(""),
+                        entry.path("exStationID").asInt(),
+                        entry.path("exLaneName").asText(""),
+                        entry.hasNonNull("FastTrain") ? entry.path("FastTrain").asInt() : null,
+                        entry.hasNonNull("FastFastDoor") ? entry.path("FastFastDoor").asInt() : null
+                ));
+            }
+        }
+
+        return new SubwayTransitInfo(result.path("count").asInt(details.size()), details);
     }
 }
