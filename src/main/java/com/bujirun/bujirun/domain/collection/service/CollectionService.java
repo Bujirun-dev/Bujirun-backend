@@ -44,12 +44,20 @@ public class CollectionService {
 
     public MyCollectionResponse getMyCollections(UUID userId) {
         long totalCount = tourSpotRepository.countByCollectionTrue();
-        long collectedCount = collectionEntryRepository.countByUserIdAndCollectedTrue(userId);
-        List<CollectionResponse> entries = collectionEntryRepository.findByUserIdAndCollectedTrue(userId).stream()
-                .map(CollectionResponse::of)
+
+        List<CollectionListResponse> board = collectionEntryRepository.findCollectionBoard(userId).stream()
+                .map(CollectionListResponse::from)
                 .toList();
 
-        return MyCollectionResponse.of(totalCount, collectedCount, entries);
+        List<CollectionListResponse> collectedEntries = board.stream()
+                .filter(CollectionListResponse::collected)
+                .toList();
+
+        List<CollectionListResponse> uncollectedEntries = board.stream()
+                .filter(r -> !r.collected())
+                .toList();
+
+        return MyCollectionResponse.of(totalCount, collectedEntries.size(), collectedEntries, uncollectedEntries);
     }
 
     public CollectionDetailResponse getDetail(UUID userId, UUID spotId) {

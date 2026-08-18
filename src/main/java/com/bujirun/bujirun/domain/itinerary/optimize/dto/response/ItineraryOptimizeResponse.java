@@ -1,5 +1,6 @@
 package com.bujirun.bujirun.domain.itinerary.optimize.dto.response;
 
+import com.bujirun.bujirun.domain.itinerary.generate.dto.response.TransitDetail;
 import com.bujirun.bujirun.domain.itinerary.generate.dto.response.TransitRouteResponse;
 import lombok.Builder;
 import lombok.Getter;
@@ -28,5 +29,6 @@ public class ItineraryOptimizeResponse {
         private String startStationName;
         private String endStationName;
         private String startArsId;
+        private TransitDetail transitDetail; // subPath 배열 전체 (환승 2회 이상 등 대표값으로 못 담는 구간 상세). "예정" 정보, 실시간 아님
     }
 }
