@@ -10,8 +10,10 @@ import com.bujirun.bujirun.domain.itinerary.entity.ItineraryDay;
 import com.bujirun.bujirun.domain.itinerary.entity.ItineraryItem;
 import com.bujirun.bujirun.domain.itinerary.generate.dto.response.SpotInfo;
 import com.bujirun.bujirun.domain.itinerary.generate.dto.response.SubPath;
+import com.bujirun.bujirun.domain.itinerary.generate.dto.response.TransitDetail;
 import com.bujirun.bujirun.domain.itinerary.generate.dto.response.TransitOption;
 import com.bujirun.bujirun.domain.itinerary.generate.dto.response.TransitRouteResponse;
+import com.bujirun.bujirun.domain.itinerary.generate.service.SubwayScheduleMappingService;
 import com.bujirun.bujirun.domain.itinerary.generate.service.TransitRouteService;
 import com.bujirun.bujirun.domain.itinerary.repository.ItineraryDayRepository;
 import com.bujirun.bujirun.domain.itinerary.repository.ItineraryItemRepository;
@@ -51,6 +53,7 @@ public class ItineraryService {
     private final GroupService               groupService;
     private final SwipeSessionRepository     swipeSessionRepository;
     private final TransitRouteService transitRouteService;
+    private final SubwayScheduleMappingService subwayScheduleMappingService;
     // ── Itinerary ──────────────────────────────────────────────────
 
     @Transactional
@@ -208,6 +211,7 @@ public class ItineraryService {
         String startStationName = null;
         String endStationName = null;
         String startArsId = null;
+        TransitDetail transitDetail = TransitDetail.EMPTY;
 
         ItineraryItem prevItem = day.getItems().stream()
                 .max(Comparator.comparing(ItineraryItem::getOrderIndex))
@@ -236,6 +240,7 @@ public class ItineraryService {
                 startStationName = firstSubPath != null ? firstSubPath.startName() : null;
                 endStationName = firstSubPath != null ? firstSubPath.endName() : null;
                 startArsId = firstSubPath != null ? firstSubPath.startArsId() : null;
+                transitDetail = TransitDetail.from(leg, subwayScheduleMappingService.mapSubwaySegments(leg));
             }
         }
 
@@ -252,6 +257,7 @@ public class ItineraryService {
                 .startStationName(startStationName)
                 .endStationName(endStationName)
                 .startArsId(startArsId)
+                .transitDetail(transitDetail)
                 .memo(req.memo())
                 .build();
 
@@ -375,6 +381,7 @@ public class ItineraryService {
     // 선택된 옵션의 경로 상세(노선번호·정류장명 등)를 항목에 반영한다
     private void applyMatchedOption(ItineraryItem item, String preferredMode, TransitOption matched) {
         SubPath firstSubPath = TransitRouteUtils.findFirstTransitSubPath(matched.subPaths());
+        TransitDetail transitDetail = TransitDetail.from(matched, subwayScheduleMappingService.mapSubwaySegments(matched));
 
         // routeType: subPath 실측 타입(버스/지하철) 우선, 없으면(도보/택시 옵션) 옵션 타입 그대로
         item.updateRoute(
@@ -384,7 +391,8 @@ public class ItineraryService {
                 firstSubPath != null ? firstSubPath.routeNo() : null,
                 firstSubPath != null ? firstSubPath.startName() : null,
                 firstSubPath != null ? firstSubPath.endName() : null,
-                firstSubPath != null ? firstSubPath.startArsId() : null
+                firstSubPath != null ? firstSubPath.startArsId() : null,
+                transitDetail
         );
     }
 

@@ -1,6 +1,7 @@
 package com.bujirun.bujirun.domain.itinerary.dto.response;
 
 import com.bujirun.bujirun.domain.itinerary.entity.ItineraryItem;
+import com.bujirun.bujirun.domain.itinerary.generate.dto.response.TransitDetail;
 import com.bujirun.bujirun.domain.spot.entity.TourSpot;
 
 import java.math.BigDecimal;
@@ -21,6 +22,7 @@ public record ItineraryItemResponse(
         String startStationName,
         String endStationName,
         String startArsId,
+        TransitDetail transitDetail, // subPath 배열 전체 (환승 2회 이상 등 대표값으로 못 담는 구간 상세). "예정" 정보, 실시간 아님
         String memo
 ) {
     public record SpotSummary(
@@ -56,6 +58,7 @@ public record ItineraryItemResponse(
                 item.getStartStationName(),
                 item.getEndStationName(),
                 item.getStartArsId(),
+                item.getTransitDetail(),
                 item.getMemo()
         );
     }

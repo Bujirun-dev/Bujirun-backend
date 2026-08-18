@@ -1,8 +1,11 @@
 package com.bujirun.bujirun.domain.itinerary.entity;
 
+import com.bujirun.bujirun.domain.itinerary.generate.dto.response.TransitDetail;
 import com.bujirun.bujirun.domain.spot.entity.TourSpot;
 import jakarta.persistence.*;
 import lombok.*;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 
 import java.time.LocalTime;
 import java.util.UUID;
@@ -57,6 +60,12 @@ public class ItineraryItem {
     @Column(name = "start_ars_id")
     private String startArsId;         // 버스 정류장 ARS번호
 
+    // subPath 배열 전체(도보/버스/지하철 전 구간 + 지하철 구간의 배차시각표/환승 "예정" 정보).
+    // 환승 2회 이상인 경로는 위 route_type/route_no 등 대표값 컬럼만으로 표현이 안 되어 V29에서 추가.
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "transit_detail", columnDefinition = "jsonb")
+    private TransitDetail transitDetail;
+
     private String memo;
 
     // orderIndex는 Integer(nullable)로 받아 생략 시 그대로 둔다 — 예전엔 primitive int라
@@ -82,7 +91,7 @@ public class ItineraryItem {
     public void updateRoute(String travelMode, Integer travelTimeMin,
                             String routeType, String routeNo,
                             String startStationName, String endStationName,
-                            String startArsId) {
+                            String startArsId, TransitDetail transitDetail) {
         if (travelMode        != null) this.travelMode        = travelMode;
         if (travelTimeMin     != null) this.travelTimeMin     = travelTimeMin;
         this.routeType         = routeType;          // 도보/택시면 null로 덮어써야 하니 무조건 대입
@@ -90,5 +99,6 @@ public class ItineraryItem {
         this.startStationName  = startStationName;
         this.endStationName    = endStationName;
         this.startArsId        = startArsId;
+        this.transitDetail     = transitDetail;       // 도보/택시면 null로 덮어써야 하니 무조건 대입
     }
 }
