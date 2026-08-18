@@ -18,7 +18,9 @@ import org.springframework.web.reactive.function.client.WebClient;
 import reactor.netty.http.client.HttpClient;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 @Slf4j
 @Component
@@ -38,27 +40,30 @@ public class OdsayClient {
     }
 
     /**
-     * 두 좌표 간 대중교통 경로 조회
+     * 두 좌표 간 대중교통 경로 조회. OPT=1(타입별정렬)로 요청해서 ODsay가 지하철 전용/버스 전용/
+     * 버스+지하철 조합 등 pathType별 후보를 따로 계산해주면, 그 후보들을 각각 별도 TransitOption으로
+     * 반환한다 — "버스로 가면 얼마/지하철로 가면 얼마"를 프론트가 추정하지 않고 실제 ODsay 계산값을
+     * 그대로 쓸 수 있게 하기 위함. 같은 pathType이 여러 개 오면 ODsay가 준 순서상 첫 번째(추천)만 쓴다.
      *
      * @param startX 출발지 경도
      * @param startY 출발지 위도
      * @param endX   도착지 경도
      * @param endY   도착지 위도
      */
-
     @Cacheable(
             value = "odsayRoute",
             key = "T(String).format('%.6f:%.6f:%.6f:%.6f', #startX, #startY, #endX, #endY)",
-            unless = "#result == null"
+            unless = "#result == null || #result.isEmpty()"
     )
-    public TransitOption searchTransitRoute(double startX, double startY, double endX, double endY) { // 반환 타입 JsonNode → TransitOption
-        JsonNode root = webClient.get() // 변수명 result → root (아래 parseTransit 호출용)
+    public List<TransitOption> searchTransitRoute(double startX, double startY, double endX, double endY) {
+        JsonNode root = webClient.get()
                 .uri(uriBuilder -> uriBuilder
                         .path("/searchPubTransPathT")
                         .queryParam("SX", startX)
                         .queryParam("SY", startY)
                         .queryParam("EX", endX)
                         .queryParam("EY", endY)
+                        .queryParam("OPT", 1) // 타입별정렬 — 지하철/버스/버스+지하철 후보를 따로 받기 위함
                         .queryParam("apiKey", apiKey) // uriBuilder가 한 번만 인코딩하므로 여기서 직접 URLEncoder를 쓰면 이중 인코딩됨
                         .build())
                 .header("Referer", "http://localhost:8080")
@@ -68,22 +73,31 @@ public class OdsayClient {
 
         log.info("ODsay API 호출 (캐시 미스) — SX:{} SY:{} EX:{} EY:{}", startX, startY, endX, endY);
 
-        return parseTransit(root); // JsonNode 그대로 리턴하지 않고 파싱해서 TransitOption으로 리턴
+        return parseTransitOptions(root);
     }
 
+    private List<TransitOption> parseTransitOptions(JsonNode root) {
+        if (root == null) return List.of();
+
+        JsonNode pathArray = root.path("result").path("path");
+        if (!pathArray.isArray() || pathArray.isEmpty()) {
+            log.warn("ODsay 경로 없음 (결과 path null) — 원본 응답: {}", root.toString());
+            return List.of();
+        }
+
+        List<TransitOption> options = new ArrayList<>();
+        Set<Integer> seenPathTypes = new HashSet<>();
+        for (JsonNode path : pathArray) {
+            int pathType = path.path("pathType").asInt();
+            if (!seenPathTypes.add(pathType)) continue; // 같은 타입 후보는 첫 번째(추천)만
+            options.add(parseTransitPath(path, pathType));
+        }
+        return options;
+    }
 
     // ransitRouteService에 있던 parseTransit 메서드를 통째로 이 클래스로 이동
     // remainMinutes 관련 enrich 로직은 제외 — 전부 null로 둔 채 리턴
-    private TransitOption parseTransit(JsonNode root) {
-        if (root == null) return null; // 추가: null 방어
-
-        JsonNode pathArray = root.path("result").path("path"); // path.get(0) 이전에 배열 체크 추가
-        if (!pathArray.isArray() || pathArray.isEmpty()) { // NPE 방지용 체크 강화
-            log.warn("ODsay 경로 없음 (결과 path null) — 원본 응답: {}", root.toString());
-            return null;
-        }
-        JsonNode path = pathArray.get(0);
-
+    private TransitOption parseTransitPath(JsonNode path, int pathType) {
         JsonNode info = path.path("info");
         List<SubPath> subPaths = new ArrayList<>();
 
@@ -132,19 +146,31 @@ public class OdsayClient {
         // 기존 TransitRouteService에 있던 remainMinutes enrich(stream/map) 블록은
         // 여기로 옮기지 않음 — TransitRouteService.enrichWithArrival()로 이동함
 
-        log.info("ODsay 경로 조회 성공 — {}분 · {}원 · 환승{}회",
+        String type = resolvePathTypeLabel(pathType);
+
+        log.info("ODsay 경로 조회 성공 — {} · {}분 · {}원 · 환승{}회", type,
                 info.path("totalTime").asInt(),
                 info.path("payment").asInt(),
                 info.path("busTransitCount").asInt() + info.path("subwayTransitCount").asInt());
 
         return new TransitOption(
-                "대중교통",
+                type,
                 info.path("totalTime").asInt(),
                 info.path("payment").asInt(),
                 info.path("busTransitCount").asInt() + info.path("subwayTransitCount").asInt(),
                 false,
                 subPaths // enriched 아니라 subPaths 그대로 (remainMinutes는 전부 null 상태)
         );
+    }
+
+    // ODsay pathType: 1=지하철 전용, 2=버스 전용, 3=버스+지하철 조합
+    private String resolvePathTypeLabel(int pathType) {
+        return switch (pathType) {
+            case 1 -> "지하철";
+            case 2 -> "버스";
+            case 3 -> "버스+지하철";
+            default -> "대중교통";
+        };
     }
 
     /**
