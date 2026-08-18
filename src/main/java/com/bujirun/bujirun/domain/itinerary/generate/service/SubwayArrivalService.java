@@ -1,36 +1,31 @@
 package com.bujirun.bujirun.domain.itinerary.generate.service;
 
+import com.bujirun.bujirun.domain.itinerary.generate.client.OdsayClient;
 import com.bujirun.bujirun.domain.itinerary.generate.dto.response.SubPath;
-import com.fasterxml.jackson.databind.JsonNode;
-import io.netty.resolver.DefaultAddressResolverGroup;
+import com.bujirun.bujirun.domain.itinerary.generate.dto.response.SubwayDaySchedule;
+import com.bujirun.bujirun.domain.itinerary.generate.dto.response.SubwayDeparture;
+import com.bujirun.bujirun.domain.itinerary.generate.dto.response.SubwaySchedule;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.http.client.reactive.ReactorClientHttpConnector;
 import org.springframework.stereotype.Service;
-import org.springframework.web.reactive.function.client.WebClient;
-import reactor.netty.http.client.HttpClient;
 
-import java.net.URLEncoder;
-import java.nio.charset.StandardCharsets;
 import java.time.DayOfWeek;
+import java.time.Duration;
 import java.time.LocalDate;
 import java.time.LocalTime;
+import java.util.List;
 
+/**
+ * "다음 지하철까지 몇 분 남았는지"를 ODsay 배차 시각표(searchSubwaySchedule) 기준으로 계산해서 제공한다.
+ * 부산 지하철은 ODsay에서도 GPS 기반 실시간 도착정보를 제공하지 않으므로, 이 값은 시각표상 다음 열차
+ * 출발 예정시각과 현재시각의 차이일 뿐 실시간 위치 추적 결과가 아니다.
+ */
 @Slf4j
 @Service
+@RequiredArgsConstructor
 public class SubwayArrivalService implements ArrivalInfoProvider {
 
-    private final WebClient webClient;
-    private final String apiKey;
-
-    public SubwayArrivalService(@Value("${odsay.api.key}") String apiKey) {
-        this.apiKey = apiKey;
-        this.webClient = WebClient.builder()
-                .clientConnector(new ReactorClientHttpConnector(
-                        HttpClient.create().resolver(DefaultAddressResolverGroup.INSTANCE)
-                ))
-                .build();
-    }
+    private final OdsayClient odsayClient;
 
     @Override
     public boolean supports(String type) {
@@ -44,42 +39,28 @@ public class SubwayArrivalService implements ArrivalInfoProvider {
             return null;
         }
         try {
-            String encodedKey = URLEncoder.encode(apiKey, StandardCharsets.UTF_8);
-            JsonNode result = webClient.get()
-                    .uri(uriBuilder -> uriBuilder
-                            .scheme("https")
-                            .host("api.odsay.com")
-                            .path("/v1/api/searchSubwaySchedule")
-                            .queryParam("apiKey", encodedKey)
-                            .queryParam("stationID", subPath.startId())
-                            .queryParam("wayCode", subPath.wayCode())
-                            .build())
-                    .retrieve()
-                    .bodyToMono(JsonNode.class)
-                    .block();
-
-            return parseNextArrival(result, subPath.wayCode());
+            SubwaySchedule schedule = odsayClient.searchSubwaySchedule(subPath.startId(), subPath.wayCode());
+            return parseNextArrival(schedule, subPath.wayCode());
         } catch (Exception e) {
-            log.warn("지하철 시각표 조회 실패 statnId={}: {}", subPath.startId(), e.getMessage());
+            log.warn("지하철 시각표 조회 실패 stationId={}: {}", subPath.startId(), e.getMessage());
             return null;
         }
     }
 
-    private Integer parseNextArrival(JsonNode root, int wayCode) {
-        if (root == null || root.path("result").isMissingNode()) return null;
-
-        JsonNode schedule = resolveSchedule(root.path("result"));
+    private Integer parseNextArrival(SubwaySchedule schedule, int wayCode) {
         if (schedule == null) return null;
 
-        String direction = wayCode == 1 ? "up" : "down";
-        JsonNode times = schedule.path(direction);
-        if (!times.isArray()) return null;
+        SubwayDaySchedule daySchedule = resolveSchedule(schedule);
+        if (daySchedule == null) return null;
+
+        List<SubwayDeparture> departures = wayCode == 1 ? daySchedule.up() : daySchedule.down();
+        if (departures == null || departures.isEmpty()) return null;
 
         LocalTime now = LocalTime.now();
 
-        for (JsonNode entry : times) {
-            String departureTime = entry.path("departureTime").asText();
-            if (departureTime.isBlank()) continue;
+        for (SubwayDeparture departure : departures) {
+            String departureTime = departure.departureTime();
+            if (departureTime == null || departureTime.isBlank()) continue;
 
             // departureTime 형식: "HH:mm" 또는 "H:mm"
             try {
@@ -89,7 +70,7 @@ public class SubwayArrivalService implements ArrivalInfoProvider {
                 if (hour >= 24) hour -= 24;
 
                 LocalTime trainTime = LocalTime.of(hour, min);
-                int diff = (int) java.time.Duration.between(now, trainTime).toMinutes();
+                int diff = (int) Duration.between(now, trainTime).toMinutes();
                 if (diff >= 0) {
                     log.info("다음 지하철 → {}분 후 ({}:{})", diff, hour, min);
                     return diff;
@@ -103,10 +84,10 @@ public class SubwayArrivalService implements ArrivalInfoProvider {
         return null;
     }
 
-    private JsonNode resolveSchedule(JsonNode result) {
+    private SubwayDaySchedule resolveSchedule(SubwaySchedule schedule) {
         DayOfWeek day = LocalDate.now().getDayOfWeek();
-        if (day == DayOfWeek.SATURDAY) return result.path("saturdaySchedule");
-        if (day == DayOfWeek.SUNDAY) return result.path("holidaySchedule");
-        return result.path("weekdaySchedule");
+        if (day == DayOfWeek.SATURDAY) return schedule.saturdaySchedule();
+        if (day == DayOfWeek.SUNDAY) return schedule.holidaySchedule();
+        return schedule.weekdaySchedule();
     }
 }
