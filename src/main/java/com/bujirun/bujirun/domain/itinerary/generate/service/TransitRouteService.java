@@ -44,25 +44,25 @@ public class TransitRouteService {
             SpotInfo to = spots.get(i + 1);
             List<TransitOption> options = new ArrayList<>();
 
-            // 대중교통 — 구조적 정보는 캐시에서, 도착정보는 매번 새로 enrich
-            TransitOption transitOption = null;
+            // 대중교통 — ODsay가 pathType별(지하철 전용/버스 전용/버스+지하철 조합)로 준 후보를
+            // 전부 옵션에 담는다. 구조적 정보는 캐시에서, 도착정보는 후보마다 매번 새로 enrich
+            List<TransitOption> transitOptions = List.of();
             try {
-                transitOption = odsayClient.searchTransitRoute(
+                transitOptions = odsayClient.searchTransitRoute(
                         from.getLng(), from.getLat(),
                         to.getLng(), to.getLat()
                 );
 
-                if (transitOption == null) {
+                if (transitOptions.isEmpty()) {
                     log.info("ODsay 경로 없음 — 재시도 {} → {}", from.getName(), to.getName());
-                    transitOption = odsayClient.searchTransitRoute(
+                    transitOptions = odsayClient.searchTransitRoute(
                             from.getLng(), from.getLat(),
                             to.getLng(), to.getLat()
                     );
                 }
 
-                if (transitOption != null) {
-                    transitOption = enrichWithArrival(transitOption);
-                    options.add(transitOption);
+                for (TransitOption transitOption : transitOptions) {
+                    options.add(enrichWithArrival(transitOption));
                 }
             } catch (Exception e) {
                 log.warn("ODsay 경로 조회 실패 {} → {}: {}", from.getName(), to.getName(), e.getMessage());
@@ -71,8 +71,10 @@ public class TransitRouteService {
             // 도보 + 택시
             double distanceM = GeoUtils.haversineDistance(from.getLat(), from.getLng(), to.getLat(), to.getLng());
 
+            // 도보 전용 여부 판단은 ODsay가 준 첫 번째(추천) 대중교통 후보만 대표로 확인한다
+            TransitOption representativeOption = transitOptions.isEmpty() ? null : transitOptions.get(0);
             if (distanceM <= WALK_DISTANCE_THRESHOLD_M) { // 도보 거리 임계값 초과 시 도보 옵션 자체를 후보에서 제외
-                options.add(resolveWalkOption(distanceM, transitOption)); // ODsay 도보 구간 sectionTime 재사용, 매칭 실패 시 calcWalk 폴백
+                options.add(resolveWalkOption(distanceM, representativeOption)); // ODsay 도보 구간 sectionTime 재사용, 매칭 실패 시 calcWalk 폴백
             }
 
             options.add(calcTaxi(distanceM));
