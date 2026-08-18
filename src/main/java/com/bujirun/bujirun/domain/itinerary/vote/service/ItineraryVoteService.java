@@ -6,6 +6,7 @@ import com.bujirun.bujirun.domain.itinerary.entity.Itinerary;
 import com.bujirun.bujirun.domain.itinerary.entity.ItineraryDay;
 import com.bujirun.bujirun.domain.itinerary.entity.ItineraryItem;
 import com.bujirun.bujirun.domain.itinerary.generate.dto.response.*;
+import com.bujirun.bujirun.domain.itinerary.generate.service.SubwayScheduleMappingService;
 import com.bujirun.bujirun.domain.itinerary.generate.service.TransitRouteService;
 import com.bujirun.bujirun.domain.itinerary.repository.ItineraryRepository;
 import com.bujirun.bujirun.domain.itinerary.vote.dto.request.CastVoteRequest;
@@ -40,6 +41,7 @@ public class ItineraryVoteService {
     private final ItineraryRepository itineraryRepository;
     private final TourSpotRepository tourSpotRepository;
     private final TransitRouteService transitRouteService;
+    private final SubwayScheduleMappingService subwayScheduleMappingService;
     private final ObjectMapper objectMapper;
 
     private static final int DEFAULT_VISIT_DURATION_MINUTES = 60;
@@ -197,6 +199,10 @@ public class ItineraryVoteService {
                         ? TransitRouteUtils.findFirstTransitSubPath(leg.subPaths())
                         : null;
 
+                TransitDetail transitDetail = leg != null
+                        ? TransitDetail.from(leg, subwayScheduleMappingService.mapSubwaySegments(leg))
+                        : TransitDetail.EMPTY;
+
                 ItineraryItem item = ItineraryItem.builder()
                         .day(day)
                         .spot(spots.get(i))
@@ -209,6 +215,7 @@ public class ItineraryVoteService {
                         .startStationName(firstTransitSubPath != null ? firstTransitSubPath.startName() : null)
                         .endStationName(firstTransitSubPath != null ? firstTransitSubPath.endName() : null)
                         .startArsId(firstTransitSubPath != null ? firstTransitSubPath.startArsId() : null)
+                        .transitDetail(transitDetail)
                         .build();
                 
                 day.getItems().add(item);

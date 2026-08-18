@@ -7,9 +7,11 @@ import com.bujirun.bujirun.domain.itinerary.entity.ItineraryItem;
 import com.bujirun.bujirun.domain.itinerary.generate.client.OpenAiClient;
 import com.bujirun.bujirun.domain.itinerary.generate.dto.response.SpotInfo;
 import com.bujirun.bujirun.domain.itinerary.generate.dto.response.SubPath;
+import com.bujirun.bujirun.domain.itinerary.generate.dto.response.TransitDetail;
 import com.bujirun.bujirun.domain.itinerary.generate.dto.response.TransitOption;
 import com.bujirun.bujirun.domain.itinerary.generate.dto.response.TransitRouteResponse;
 import com.bujirun.bujirun.domain.itinerary.generate.service.SpotOrderOptimizer;
+import com.bujirun.bujirun.domain.itinerary.generate.service.SubwayScheduleMappingService;
 import com.bujirun.bujirun.domain.itinerary.generate.service.TransitRouteService;
 import com.bujirun.bujirun.domain.itinerary.optimize.dto.request.ItineraryOptimizeRequest;
 import com.bujirun.bujirun.domain.itinerary.optimize.dto.response.ItineraryOptimizeResponse;
@@ -37,6 +39,7 @@ public class ItineraryOptimizeService {
     private final ItineraryDayRepository itineraryDayRepository;
     private final GroupMemberRepository groupMemberRepository;
     private final TransitRouteService transitRouteService;
+    private final SubwayScheduleMappingService subwayScheduleMappingService;
     private final OpenAiClient openAiClient;
     private final ObjectMapper objectMapper;
 
@@ -116,6 +119,7 @@ public class ItineraryOptimizeService {
                     .startStationName(item != null ? item.getStartStationName() : null)
                     .endStationName(item != null ? item.getEndStationName() : null)
                     .startArsId(item != null ? item.getStartArsId() : null)
+                    .transitDetail(item != null ? item.getTransitDetail() : null)
                     .build());
         }
 
@@ -246,6 +250,10 @@ public class ItineraryOptimizeService {
                     ? TransitRouteUtils.findFirstTransitSubPath(leg.subPaths())
                     : null;
 
+            TransitDetail transitDetail = leg != null
+                    ? TransitDetail.from(leg, subwayScheduleMappingService.mapSubwaySegments(leg))
+                    : TransitDetail.EMPTY;
+
             // 순서/도착시각/체류시간/메모 갱신
             item.update(i + 1, arrivalTimes.get(i), item.getDurationMin(),
                     leg != null ? toTravelMode(leg.type()) : null,
@@ -261,7 +269,8 @@ public class ItineraryOptimizeService {
                     firstTransitSubPath != null ? firstTransitSubPath.routeNo() : null,
                     firstTransitSubPath != null ? firstTransitSubPath.startName() : null,
                     firstTransitSubPath != null ? firstTransitSubPath.endName() : null,
-                    firstTransitSubPath != null ? firstTransitSubPath.startArsId() : null
+                    firstTransitSubPath != null ? firstTransitSubPath.startArsId() : null,
+                    transitDetail
             );
         }
     }
