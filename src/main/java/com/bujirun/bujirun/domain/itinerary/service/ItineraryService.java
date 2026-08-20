@@ -43,6 +43,9 @@ import java.util.stream.Stream;
 @Transactional(readOnly = true)
 public class ItineraryService {
 
+    // 하루 일정에 추가할 수 있는 관광지(방문 항목) 최대 개수
+    private static final int MAX_ITEMS_PER_DAY = 10;
+
     private final ItineraryRepository        itineraryRepository;
     private final ItineraryDayRepository     itineraryDayRepository;
     private final ItineraryItemRepository    itineraryItemRepository;
@@ -187,10 +190,18 @@ public class ItineraryService {
 
     @Transactional
     public ItineraryItemResponse addItem(UUID itineraryId, UUID dayId, AddItemRequest req, UUID userId) {
-        ItineraryDay day = itineraryDayRepository.findById(dayId)
+        // 정원 체크(size() >= MAX)와 삽입 사이의 레이스를 막기 위해 day 행을 잠그고 조회한다.
+        // 실시간 협업 편집이 이탈/합류 시 같은 day에 여러 항목을 동시에(Promise.allSettled)
+        // addItem으로 flush하는 경우, 잠금 없이는 여러 트랜잭션이 동시에 "9개니까 추가 가능"을
+        // 통과해 정원을 넘겨 저장하는 문제가 실제로 재현됨 — 같은 day에 대한 addItem을 직렬화.
+        ItineraryDay day = itineraryDayRepository.findByIdForUpdate(dayId)
                 .filter(d -> d.getItinerary().getId().equals(itineraryId))
                 .orElseThrow(() -> new EntityNotFoundException("Day를 찾을 수 없습니다. id=" + dayId));
         validateAccess(day.getItinerary(), userId);
+
+        if (day.getItems().size() >= MAX_ITEMS_PER_DAY) {
+            throw new IllegalArgumentException("하루 일정에는 관광지를 최대 " + MAX_ITEMS_PER_DAY + "개까지만 추가할 수 있습니다.");
+        }
 
         TourSpot spot = tourSpotRepository.findById(req.spotId())
                 .orElseThrow(() -> new EntityNotFoundException("관광지를 찾을 수 없습니다. id=" + req.spotId()));
