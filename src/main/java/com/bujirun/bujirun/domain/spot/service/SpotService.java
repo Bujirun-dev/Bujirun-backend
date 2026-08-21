@@ -44,10 +44,15 @@ public class SpotService {
         List<TourSpot> spots = tourSpotRepository.searchSpots(keyword, sigunguId, category);
 
         if (!"NAME".equalsIgnoreCase(sort)) {
-            // 추천순 — 미수집 먼저
+            // 추천순 — ①도감 대상 + 미수집 + 최다방문 카테고리 → ②도감 대상 + 미수집 → ③도감 대상(이미 수집) → ④일반 관광지
+            String topCategory = visitRepository.findMostVisitedCategories(userId)
+                    .stream()
+                    .findFirst()
+                    .orElse(null);
+
             spots = spots.stream()
-                    .sorted(Comparator.comparing(
-                            spot -> collectedIds.contains(spot.getId()) ? 1 : 0))
+                    .sorted(Comparator.comparingInt(
+                            spot -> recommendTier(spot, collectedIds, topCategory)))
                     .toList();
         }
         // NAME이면 쿼리에서 이미 name asc로 나오니까 그대로
@@ -74,6 +79,22 @@ public class SpotService {
         boolean isVisited = visitRepository.existsByUserIdAndSpotIdAndVerifiedTrue(userId, spotId);
 
         return SpotDetailResponse.of(spot, apiDetail.orElse(null), isCollected, isVisited);
+    }
+
+    // 추천순 정렬 우선순위 — 값이 작을수록 먼저 노출
+    // 0: 도감 대상 + 미수집 + 사용자 최다방문 카테고리
+    // 1: 도감 대상 + 미수집 (카테고리 무관)
+    // 2: 도감 대상이지만 이미 수집 완료
+    // 3: 도감 대상이 아닌 일반 관광지
+    private int recommendTier(TourSpot spot, Set<UUID> collectedIds, String topCategory) {
+        if (!spot.isCollection()) {
+            return 3;
+        }
+        boolean collected = collectedIds.contains(spot.getId());
+        if (collected) {
+            return 2;
+        }
+        return (topCategory != null && topCategory.equals(spot.getCategory())) ? 0 : 1;
     }
 
     private boolean collectedByUser(UUID userId, UUID spotId) {
