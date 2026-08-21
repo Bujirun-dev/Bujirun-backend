@@ -152,6 +152,12 @@ public class VisitService {
         };
     }
 
+    // 회원탈퇴 30일 경과 후 개인정보(GPS 위치정보) 완전 삭제 — UserService의 계정 정리 배치에서 호출
+    @Transactional
+    public void deleteAllByUser(UUID userId) {
+        visitRepository.deleteAllByUserId(userId);
+    }
+
     // Haversine 공식 — 두 좌표 간 거리(미터)
     private double haversine(double lat1, double lng1, double lat2, double lng2) {
         final double R = 6_371_000.0; // 지구 반지름(미터)

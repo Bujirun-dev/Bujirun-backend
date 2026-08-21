@@ -255,11 +255,18 @@ public class TravelLogService {
         validateLogOwner(log, userId);
         travelLogRepository.delete(log);
     }
-    // 회원탈퇴 시 본인의 모든 로그 비공개 처리
+    // 회원탈퇴 시 본인의 모든 로그 비공개 처리 — 30일 유예기간 동안(계정 완전 삭제 전) 다른 유저에게
+    // 노출되지 않도록 즉시 처리. 실제 삭제는 deleteAllByUser()가 유예기간 경과 후 별도로 수행
     @Transactional
     public void setUserLogsPrivate(UUID userId) {
         travelLogRepository.findByUserIdOrderByCreatedAtDesc(userId)
                 .forEach(log -> log.updateVisibility(false));
+    }
+
+    // 회원탈퇴 30일 경과 후 여행 기록 완전 삭제 — UserService의 계정 정리 배치에서 호출
+    @Transactional
+    public void deleteAllByUser(UUID userId) {
+        travelLogRepository.deleteAllByUserId(userId);
     }
 
     // ── 사진 ────────────────────────────────────────────────────────

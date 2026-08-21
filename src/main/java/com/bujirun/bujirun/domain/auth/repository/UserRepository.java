@@ -3,6 +3,8 @@ package com.bujirun.bujirun.domain.auth.repository;
 import com.bujirun.bujirun.domain.auth.entity.User;
 import org.springframework.data.jpa.repository.JpaRepository;
 
+import java.time.LocalDateTime;
+import java.util.List;
 import java.util.Optional;
 
 public interface UserRepository extends JpaRepository<User, java.util.UUID> {
@@ -19,4 +21,7 @@ public interface UserRepository extends JpaRepository<User, java.util.UUID> {
 
     // 닉네임 중복 검사용 (탈퇴하지 않은 유저 기준)
     boolean existsByNicknameAndDeletedAtIsNull(String nickname);
+
+    // 탈퇴 후 유예기간(30일)이 지난 계정 조회 — 개인정보(방문 인증/GPS, 여행 기록) 완전 삭제 배치용
+    List<User> findByDeletedAtIsNotNullAndDeletedAtBefore(LocalDateTime threshold);
 }
