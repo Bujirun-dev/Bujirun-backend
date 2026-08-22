@@ -97,8 +97,11 @@ public class GroupService {
         return groupMemberRepository.findById_GroupId(groupId).stream()
                 .map(gm -> {
                     UUID memberId = gm.getId().getUserId();
-                    String nickname = userRepository.findById(memberId).map(User::getNickname).orElse(null);
-                    return new GroupMemberResponse(memberId, nickname, gm.getJoinedAt(), memberId.equals(leaderId));
+                    User member = userRepository.findById(memberId).orElse(null);
+                    String nickname = member != null ? member.getNickname() : null;
+                    String profileImageUrl = member != null ? member.getProfileImageUrl() : null;
+                    return new GroupMemberResponse(
+                            memberId, nickname, profileImageUrl, gm.getJoinedAt(), memberId.equals(leaderId));
                 })
                 .toList();
     }
