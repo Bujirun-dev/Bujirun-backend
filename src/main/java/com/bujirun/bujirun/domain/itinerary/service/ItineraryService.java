@@ -142,7 +142,9 @@ public class ItineraryService {
         if (req.accommodationName() != null || req.accommodationAddress() != null) {
             String name = blankToNull(req.accommodationName());
             String address = blankToNull(req.accommodationAddress());
-            itinerary.updateAccommodation(name, address);
+            Double lat = name == null ? null : req.accommodationLat();
+            Double lng = name == null ? null : req.accommodationLng();
+            itinerary.updateAccommodation(name, address, lat, lng);
         }
         if ("confirmed".equals(req.status())) itinerary.confirm();
         return ItineraryDetailResponse.from(itinerary, fetchCollectedSpotIds(userId), fetchVisitedSpotIds(userId));
