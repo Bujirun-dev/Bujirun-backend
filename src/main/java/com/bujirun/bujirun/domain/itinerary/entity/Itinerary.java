@@ -55,6 +55,12 @@ public class Itinerary {
     @Column(name = "end_time")
     private LocalTime endTime;
 
+    @Column(name = "accommodation_name")
+    private String accommodationName;
+
+    @Column(name = "accommodation_address")
+    private String accommodationAddress;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
 
@@ -91,5 +97,11 @@ public class Itinerary {
 
     public void confirm() {
         this.status = "confirmed";
+    }
+
+    // 둘 다 null이면 숙소 정보를 지운다(입력창에서 X로 지운 경우).
+    public void updateAccommodation(String accommodationName, String accommodationAddress) {
+        this.accommodationName = accommodationName;
+        this.accommodationAddress = accommodationAddress;
     }
 }

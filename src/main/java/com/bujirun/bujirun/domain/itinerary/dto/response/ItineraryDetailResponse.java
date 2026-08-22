@@ -21,6 +21,8 @@ public record ItineraryDetailResponse(
         LocalTime startTime,
         LocalDate endAt,
         LocalTime endTime,
+        String accommodationName,
+        String accommodationAddress,
         LocalDateTime createdAt,
         LocalDateTime updatedAt,
         List<ItineraryDayResponse> days
@@ -38,6 +40,8 @@ public record ItineraryDetailResponse(
                 itinerary.getStartTime(),
                 itinerary.getEndAt(),
                 itinerary.getEndTime(),
+                itinerary.getAccommodationName(),
+                itinerary.getAccommodationAddress(),
                 itinerary.getCreatedAt(),
                 itinerary.getUpdatedAt(),
                 itinerary.getDays().stream().map(d -> ItineraryDayResponse.from(d, collectedSpotIds, visitedSpotIds)).toList()
