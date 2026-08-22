@@ -61,6 +61,12 @@ public class Itinerary {
     @Column(name = "accommodation_address")
     private String accommodationAddress;
 
+    @Column(name = "accommodation_lat")
+    private Double accommodationLat;
+
+    @Column(name = "accommodation_lng")
+    private Double accommodationLng;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
 
@@ -100,8 +106,10 @@ public class Itinerary {
     }
 
     // 둘 다 null이면 숙소 정보를 지운다(입력창에서 X로 지운 경우).
-    public void updateAccommodation(String accommodationName, String accommodationAddress) {
+    public void updateAccommodation(String accommodationName, String accommodationAddress, Double accommodationLat, Double accommodationLng) {
         this.accommodationName = accommodationName;
         this.accommodationAddress = accommodationAddress;
+        this.accommodationLat = accommodationLat;
+        this.accommodationLng = accommodationLng;
     }
 }
