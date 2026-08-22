@@ -16,6 +16,8 @@ public record UpdateItineraryRequest(
         LocalTime endTime,
         String accommodationName,
         String accommodationAddress,
+        Double accommodationLat,
+        Double accommodationLng,
         @Pattern(regexp = "draft|confirmed", message = "status는 draft 또는 confirmed여야 합니다.")
         String status
 ) {}
