@@ -62,11 +62,12 @@ public interface SwipeResultRepository extends JpaRepository<SwipeResult, UUID> 
 
     // 유저-카테고리 좋아요 쌍(중복 제거). 한 유저가 같은 카테고리를 여러 번 좋아요해도
     // categoryScore 집계 시 해당 유저의 selectivity가 1회만 반영되도록 DISTINCT로 조회한다
+    // collectionCategory(도감 4분류: 바다/자연/문화/체험) 기준 — spot.category(TourAPI cat1 기반 6분류)와는 다른 필드이니 혼동 주의
     @Query("""
-            SELECT DISTINCT sr.session.userId AS userId, sr.spot.category AS category
+            SELECT DISTINCT sr.session.userId AS userId, sr.spot.collectionCategory AS category
             FROM SwipeResult sr
             WHERE sr.liked = true
-              AND sr.spot.category IS NOT NULL
+              AND sr.spot.collectionCategory IS NOT NULL
               AND sr.session.id IN (
                   SELECT s.id FROM SwipeSession s
                   WHERE s.groupId = :groupId
