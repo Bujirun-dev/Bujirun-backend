@@ -43,6 +43,9 @@ import java.util.stream.Stream;
 @Transactional(readOnly = true)
 public class ItineraryService {
 
+    // 하루 일정에 추가할 수 있는 관광지(방문 항목) 최대 개수
+    private static final int MAX_ITEMS_PER_DAY = 10;
+
     private final ItineraryRepository        itineraryRepository;
     private final ItineraryDayRepository     itineraryDayRepository;
     private final ItineraryItemRepository    itineraryItemRepository;
@@ -187,10 +190,18 @@ public class ItineraryService {
 
     @Transactional
     public ItineraryItemResponse addItem(UUID itineraryId, UUID dayId, AddItemRequest req, UUID userId) {
-        ItineraryDay day = itineraryDayRepository.findById(dayId)
+        // 정원 체크(size() >= MAX)와 삽입 사이의 레이스를 막기 위해 day 행을 잠그고 조회한다.
+        // 실시간 협업 편집이 이탈/합류 시 같은 day에 여러 항목을 동시에(Promise.allSettled)
+        // addItem으로 flush하는 경우, 잠금 없이는 여러 트랜잭션이 동시에 "9개니까 추가 가능"을
+        // 통과해 정원을 넘겨 저장하는 문제가 실제로 재현됨 — 같은 day에 대한 addItem을 직렬화.
+        ItineraryDay day = itineraryDayRepository.findByIdForUpdate(dayId)
                 .filter(d -> d.getItinerary().getId().equals(itineraryId))
                 .orElseThrow(() -> new EntityNotFoundException("Day를 찾을 수 없습니다. id=" + dayId));
         validateAccess(day.getItinerary(), userId);
+
+        if (day.getItems().size() >= MAX_ITEMS_PER_DAY) {
+            throw new IllegalArgumentException("하루 일정에는 관광지를 최대 " + MAX_ITEMS_PER_DAY + "개까지만 추가할 수 있습니다.");
+        }
 
         TourSpot spot = tourSpotRepository.findById(req.spotId())
                 .orElseThrow(() -> new EntityNotFoundException("관광지를 찾을 수 없습니다. id=" + req.spotId()));
@@ -226,7 +237,7 @@ public class ItineraryService {
                 String requestedMode = travelMode;
                 TransitOption leg = requestedMode != null
                         ? options.stream()
-                                .filter(opt -> requestedMode.equals(toTravelMode(opt.type())))
+                                .filter(opt -> matchesRequestedMode(requestedMode, opt))
                                 .findFirst()
                                 .orElse(options.get(0))
                         : options.get(0);
@@ -286,6 +297,23 @@ public class ItineraryService {
         };
     }
 
+    // 요청받은 travelMode(walk/transit/taxi/bus/subway/combo, 또는 옵션 목록에서 받은 원본 타입
+    // 라벨을 그대로 돌려보낸 값)가 이 옵션과 일치하는지 판단한다. bus/subway/combo는 OPT=1로 받은
+    // ODsay pathType별 후보(지하철 전용/버스 전용/버스+지하철 조합)를 정확히 선택하기 위한 것이고,
+    // transit은 하위호환용 — 셋 중 정렬상 가장 빠른 옵션이 선택된다.
+    private boolean matchesRequestedMode(String preferredMode, TransitOption option) {
+        String type = option.type();
+        return switch (preferredMode) {
+            case "walk" -> "도보".equals(type);
+            case "taxi" -> "택시".equals(type);
+            case "bus" -> "버스".equals(type);
+            case "subway" -> "지하철".equals(type);
+            case "combo" -> "버스+지하철".equals(type);
+            case "transit" -> !"도보".equals(type) && !"택시".equals(type);
+            default -> preferredMode.equals(type);
+        };
+    }
+
     @Transactional
     public ItineraryItemResponse updateItem(UUID itineraryId, UUID dayId, UUID itemId, UpdateItemRequest req, UUID userId) {
         ItineraryItem item = findItem(itineraryId, dayId, itemId);
@@ -340,12 +368,12 @@ public class ItineraryService {
 
         List<TransitOption> options = fetchLegOptions(dayItems.get(idx - 1), item);
         TransitOption matched = options.stream()
-                .filter(opt -> preferredMode.equals(toTravelMode(opt.type())))
+                .filter(opt -> matchesRequestedMode(preferredMode, opt))
                 .findFirst()
                 .orElseThrow(() -> new IllegalArgumentException(
                         "요청한 이동수단(" + preferredMode + ")의 경로를 찾을 수 없습니다."));
 
-        applyMatchedOption(item, preferredMode, matched);
+        applyMatchedOption(item, matched);
     }
 
     // 엄격한 버전: updateTravelMode()에서 호출. 사용자의 명시적 요청이므로 실패 시 명확한 예외를 던진다.
@@ -363,12 +391,12 @@ public class ItineraryService {
         }
 
         TransitOption matched = options.stream()
-                .filter(opt -> preferredMode.equals(toTravelMode(opt.type())))
+                .filter(opt -> matchesRequestedMode(preferredMode, opt))
                 .findFirst()
                 .orElseThrow(() -> new IllegalArgumentException(
                         "요청한 이동수단(" + preferredMode + ")의 경로를 찾을 수 없습니다."));
 
-        applyMatchedOption(item, preferredMode, matched);
+        applyMatchedOption(item, matched);
     }
 
     // 직전 항목과의 구간에 대한 이동수단 옵션 목록을 조회한다 (없으면 빈 리스트)
@@ -379,13 +407,15 @@ public class ItineraryService {
     }
 
     // 선택된 옵션의 경로 상세(노선번호·정류장명 등)를 항목에 반영한다
-    private void applyMatchedOption(ItineraryItem item, String preferredMode, TransitOption matched) {
+    private void applyMatchedOption(ItineraryItem item, TransitOption matched) {
         SubPath firstSubPath = TransitRouteUtils.findFirstTransitSubPath(matched.subPaths());
         TransitDetail transitDetail = TransitDetail.from(matched, subwayScheduleMappingService.mapSubwaySegments(matched));
 
         // routeType: subPath 실측 타입(버스/지하철) 우선, 없으면(도보/택시 옵션) 옵션 타입 그대로
+        // travel_mode DB 컬럼은 walk/transit/taxi 3종만 허용(CHECK 제약) — preferredMode가
+        // bus/subway/combo여도 여기선 matched.type() 기준으로 안전하게 축약해서 저장한다.
         item.updateRoute(
-                preferredMode,
+                toTravelMode(matched.type()),
                 matched.totalTime(),
                 firstSubPath != null ? firstSubPath.type() : matched.type(),
                 firstSubPath != null ? firstSubPath.routeNo() : null,

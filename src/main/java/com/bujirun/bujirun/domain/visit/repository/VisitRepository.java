@@ -2,6 +2,7 @@ package com.bujirun.bujirun.domain.visit.repository;
 
 import com.bujirun.bujirun.domain.visit.entity.Visit;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -26,4 +27,20 @@ public interface VisitRepository extends JpaRepository<Visit, UUID> {
     // 인증 시 itineraryItemId를 넘기지 않은 경우를 대비한 스팟 기준 폴백 조회
     // 같은 스팟을 여러 번(다른 일정에서도) 방문 인증했을 수 있어 최신순으로 정렬 — 호출부에서 첫 건만 사용
     List<Visit> findByUserIdAndSpotIdInAndVerifiedTrueOrderByVisitedAtDesc(UUID userId, Collection<UUID> spotIds);
+
+    // 관광지 추천순 정렬용 — 사용자가 방문 인증을 많이 한 순서로 카테고리 조회 (1위가 필요하면 첫 건만 사용)
+    @Query("""
+            select v.spot.category
+            from Visit v
+            where v.userId = :userId and v.verified = true and v.spot.category is not null
+            group by v.spot.category
+            order by count(v) desc
+            """)
+    List<String> findMostVisitedCategories(@Param("userId") UUID userId);
+
+    // 회원탈퇴 30일 경과 후 개인정보(GPS 위치정보) 완전 삭제용 — visit_photos는
+    // DB의 ON DELETE CASCADE(visits FK)로 함께 삭제된다
+    @Modifying
+    @Query("delete from Visit v where v.userId = :userId")
+    void deleteAllByUserId(@Param("userId") UUID userId);
 }
