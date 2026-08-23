@@ -12,6 +12,9 @@ public record TransitDetailSegment(
         String endName,
         String routeNo,
         int sectionTime,
+        // 버스 실시간 도착정보 폴링(GET /api/transit/arrival/bus)에 필요한 arsId.
+        // SubPath.startArsId()를 그대로 옮긴 것 — 버스 구간에만 값이 있고, 지하철/도보/마을버스는 빈 문자열일 수 있음
+        String startArsId,
         SubwaySegmentTimetable subwaySchedule // trafficType=="지하철"일 때만 non-null
 ) {
     public static TransitDetailSegment from(int index, SubPath subPath, SubwaySegmentTimetable subwaySchedule) {
@@ -22,6 +25,7 @@ public record TransitDetailSegment(
                 subPath.endName(),
                 subPath.routeNo(),
                 subPath.sectionTime(),
+                subPath.startArsId(),
                 subwaySchedule
         );
     }
