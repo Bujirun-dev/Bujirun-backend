@@ -82,6 +82,15 @@ public class ItineraryItem {
         if (memo          != null) this.memo          = memo;
     }
 
+    // 여행 시작/종료 시간이 통째로 밀렸을 때(TripEditModal) 이미 저장된 방문 시각도
+    // 같은 만큼 밀어주기 위한 용도. 자정을 넘어가지 않도록 00:00~23:59 범위로 clamp한다.
+    public void shiftArrivalTime(long deltaMinutes) {
+        if (this.arrivalTime == null || deltaMinutes == 0) return;
+        long shifted = this.arrivalTime.toSecondOfDay() / 60 + deltaMinutes;
+        shifted = Math.max(0, Math.min(23 * 60 + 59, shifted));
+        this.arrivalTime = LocalTime.of((int) (shifted / 60), (int) (shifted % 60));
+    }
+
     // day 전체 순서를 한 번의 트랜잭션으로 원자적으로 반영할 때만 사용(reorderItems 전용)
     public void updateOrder(int orderIndex) {
         this.orderIndex = orderIndex;

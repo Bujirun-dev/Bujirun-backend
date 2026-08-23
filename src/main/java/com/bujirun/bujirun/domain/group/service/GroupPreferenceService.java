@@ -39,10 +39,12 @@ public class GroupPreferenceService {
                 .stream()
                 .collect(Collectors.toMap(TourSpot::getId, s -> s));
 
+        // categoryScore(findLikedCategoriesByGroup)와 같은 분류 체계(collectionCategory)를 써야
+        // AI 추천 이유 문구에서 두 지표가 어긋나지 않는다
         Map<String, Long> categoryCounts = aggregates.stream()
-                .filter(a -> spotMap.get(a.getSpotId()) != null && spotMap.get(a.getSpotId()).getCategory() != null)
+                .filter(a -> spotMap.get(a.getSpotId()) != null && spotMap.get(a.getSpotId()).getCollectionCategory() != null)
                 .collect(Collectors.groupingBy(
-                        a -> spotMap.get(a.getSpotId()).getCategory(),
+                        a -> spotMap.get(a.getSpotId()).getCollectionCategory(),
                         Collectors.summingLong(SpotSwipeAggregate::getLikedCount)));
 
         long participantCount = swipeSessionRepository.countDistinctCompletedUsersByGroupId(groupId);
