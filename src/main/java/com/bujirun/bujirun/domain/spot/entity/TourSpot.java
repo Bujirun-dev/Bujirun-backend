@@ -22,9 +22,6 @@ public class TourSpot {
     @Column(name = "content_id", nullable = false, unique = true)
     private String contentId;
 
-    @Column(name = "content_type_id")
-    private Integer contentTypeId;
-
     @Column(nullable = false)
     private String name;
 
@@ -92,8 +89,7 @@ public class TourSpot {
 
     public void update(String name, String category, Sigungu sigungu,
                        BigDecimal lat, BigDecimal lng, String address,
-                       String thumbnailUrl, String operatingHours,
-                       Integer contentTypeId) {
+                       String thumbnailUrl, String operatingHours) {
         this.name           = name;
         this.category       = category;
         this.sigungu        = sigungu;
@@ -102,7 +98,6 @@ public class TourSpot {
         this.address        = address;
         this.thumbnailUrl   = thumbnailUrl;
         this.operatingHours = operatingHours;
-        this.contentTypeId  = contentTypeId;
         this.syncedAt       = LocalDateTime.now();
     }
 
