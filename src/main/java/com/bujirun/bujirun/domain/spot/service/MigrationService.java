@@ -7,10 +7,8 @@ import com.bujirun.bujirun.domain.spot.dto.response.BusanAttractionApiResponse;
 import com.bujirun.bujirun.domain.spot.dto.response.TourApiResponse.*;
 import com.bujirun.bujirun.domain.spot.entity.Sigungu;
 import com.bujirun.bujirun.domain.spot.entity.TourSpot;
-import com.bujirun.bujirun.domain.spot.entity.TourSpotTag;
 import com.bujirun.bujirun.domain.spot.repository.SigunguRepository;
 import com.bujirun.bujirun.domain.spot.repository.TourSpotRepository;
-import com.bujirun.bujirun.domain.spot.repository.TourSpotTagRepository;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
@@ -32,7 +30,6 @@ public class MigrationService {
     private final BusanAttractionApiClient  busanAttractionApiClient;
     private final OpenAiClient              openAiClient;
     private final TourSpotRepository        tourSpotRepository;
-    private final TourSpotTagRepository     tourSpotTagRepository;
     private final SigunguRepository         sigunguRepository;
     // 항목 단위 재시도 격리를 위한 자가주입 프록시(@Lazy로 순환참조 회피) — enrichSingleBusanItem()을
     // 이 프록시로 호출해야 REQUIRES_NEW가 실제로 새 트랜잭션을 열어준다(self-invocation은 프록시를 안 거침).
@@ -44,14 +41,12 @@ public class MigrationService {
                              BusanAttractionApiClient busanAttractionApiClient,
                              OpenAiClient openAiClient,
                              TourSpotRepository tourSpotRepository,
-                             TourSpotTagRepository tourSpotTagRepository,
                              SigunguRepository sigunguRepository,
                              @Lazy MigrationService self) {
         this.tourApiClient = tourApiClient;
         this.busanAttractionApiClient = busanAttractionApiClient;
         this.openAiClient = openAiClient;
         this.tourSpotRepository = tourSpotRepository;
-        this.tourSpotTagRepository = tourSpotTagRepository;
         this.sigunguRepository = sigunguRepository;
         this.self = self;
     }
@@ -412,37 +407,15 @@ public class MigrationService {
                     .address(item.getAddr1())
                     .thumbnailUrl(item.getFirstimage())
                     .operatingHours(operatingHours)
-                    .contentTypeId(contentTypeId)
                     .build());
         } else {
             spot = existing.get();
             spot.update(item.getTitle(), category, sigungu,
                     parseBigDecimal(item.getMapy()), parseBigDecimal(item.getMapx()),
-                    item.getAddr1(), item.getFirstimage(), operatingHours,
-                    contentTypeId);
+                    item.getAddr1(), item.getFirstimage(), operatingHours);
         }
 
-        tourSpotTagRepository.deleteBySpotId(spot.getId());
-        buildTags(item).forEach(tag ->
-                tourSpotTagRepository.save(TourSpotTag.builder().spot(spot).tag(tag).build())
-        );
-
         return isNew;
-    }
-
-    private List<String> buildTags(AreaListResponse.AreaItem item) {
-        List<String> tags = new ArrayList<>();
-        tags.add(CATEGORY_MAP.getOrDefault(item.getContenttypeid(), "기타"));
-        tags.add(SIGUNGU_MAP.getOrDefault(item.getSigungucode(), "기타"));
-
-        String t = item.getTitle().toLowerCase();
-        if (t.contains("해수욕장") || t.contains("해변") || t.contains("바다")) tags.add("바다");
-        if (t.contains("산")      || t.contains("숲")   || t.contains("공원")) tags.add("자연");
-        if (t.contains("박물관")  || t.contains("역사")  || t.contains("문화")) tags.add("역사");
-        if (t.contains("시장")    || t.contains("먹거리"))                       tags.add("맛집");
-        if (t.contains("카페")    || t.contains("루프탑"))                       tags.add("카페");
-
-        return tags;
     }
 
     private String resolveCategory(String cat1) {
