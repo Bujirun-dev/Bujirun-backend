@@ -125,6 +125,10 @@ public class TravelLogService {
 
         Itinerary original = findItinerary(log.getItineraryId());
 
+        // added_count(인기순 정렬 idx_travel_logs_popular 기준)가 이 메서드에서 한 번도 증가된 적이
+        // 없어서 항상 0이던 버그(2026-08-25 발견, 2026-08-27 수정) — 이 로그가 실제로 복사될 때 증가시켜야 함
+        log.incrementAddedCount();
+
         Itinerary copy = Itinerary.builder()
                 .userId(userId)
                 .groupId(groupId)
