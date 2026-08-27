@@ -176,9 +176,12 @@ public class ItineraryVoteService {
                 .build();
 
         for (FinalizeItineraryRequest.DayInput dayInput : days) {
+            // startDate는 @NotNull이라 항상 있음 — dayNumber 기준으로 날짜 계산해서 채워야 함.
+            // 이걸 빠뜨려서 date가 계속 null로 저장되던 버그(영수증 등에서 day별 날짜 미노출, 2026-08-27 발견)
             ItineraryDay day = ItineraryDay.builder()
                     .itinerary(itinerary)
                     .dayNumber(dayInput.getDay())
+                    .date(itinerary.getStartAt().plusDays(dayInput.getDay() - 1))
                     .build();
 
             List<TourSpot> spots = dayInput.getSpotContentIds().stream()
