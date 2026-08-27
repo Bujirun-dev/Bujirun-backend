@@ -11,6 +11,9 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
+import java.time.DayOfWeek;
+import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
@@ -31,6 +34,14 @@ public class TransitRouteService {
     private static final double ROAD_DISTANCE_FACTOR = 1.3;  // 차량용
     private static final double WALK_DISTANCE_FACTOR = 1.4;  // 도보용 (골목/계단 등 우회 반영)
     private static final int WALK_DISTANCE_THRESHOLD_M = 1000; // 이 거리(하버사인) 이상이면 도보 옵션 자체를 후보에서 제외
+
+    private static final ZoneId KST = ZoneId.of("Asia/Seoul");
+
+    // 택시 혼잡 배율 (KST 기준, 요일/시간대별로 시간·요금에 동일 적용)
+    private static final double WEEKDAY_RUSH_HOUR_FACTOR = 1.4; // 평일 07~09시, 18~20시
+    private static final double WEEKDAY_DAYTIME_FACTOR = 1.1;   // 평일 09~18시
+    private static final double WEEKDAY_NIGHT_FACTOR = 0.9;     // 평일 22~06시
+    private static final double WEEKEND_DAYTIME_FACTOR = 1.2;   // 토·일 11~19시
 
     public List<TransitRouteResponse> getRoutesForDay(List<SpotInfo> spots, String optimizationType) {
         List<TransitRouteResponse> routes = new ArrayList<>();
@@ -121,7 +132,7 @@ public class TransitRouteService {
     }
 
     // ODsay 응답이 전 구간 도보(trafficType 3)로만 구성된 경우 그 sectionTime 합을
-    // 도보 소요시간으로 재사용한다. ODsay 응답이 없거나 도보 전용 매칭이 아니면 calcWalk()로 폴백.
+    // 도보 소요시간으로 재사용한다. ODsay 응답이 없거나 도보 전용 매칭이 아니면 calcWalk()로 폴백
     private TransitOption resolveWalkOption(double distanceM, TransitOption transitOption) {
         List<SubPath> subPaths = transitOption != null ? transitOption.subPaths() : List.of();
         boolean isWalkOnlyRoute = !subPaths.isEmpty()
@@ -145,7 +156,36 @@ public class TransitRouteService {
             fare = TAXI_BASE_FARE + (int) ((roadDistanceM - TAXI_BASE_METER) * TAXI_EXTRA_FARE_PER_M);
         }
         int timeMin = (int) Math.ceil(roadDistanceM / 1000 / 30 * 60);
+
+        double congestionFactor = resolveCongestionFactor(LocalDateTime.now(KST));
+        timeMin = (int) Math.ceil(timeMin * congestionFactor);
+        fare = (int) Math.round(fare * congestionFactor);
+
         return new TransitOption("택시", timeMin, fare, 0, true, List.of());
+    }
+
+    // KST 기준 요일/시간대별 택시 혼잡 배율
+    // 정체 구간엔 실제로 더 걸리고(+시간요금제로 요금도 오르는 경향 반영),
+    // 심야엔 기본 근사식보다 빠르다고 가정
+    private double resolveCongestionFactor(LocalDateTime now) {
+        DayOfWeek day = now.getDayOfWeek();
+        int hour = now.getHour();
+        boolean isWeekend = day == DayOfWeek.SATURDAY || day == DayOfWeek.SUNDAY;
+
+        if (isWeekend) {
+            return (hour >= 11 && hour < 19) ? WEEKEND_DAYTIME_FACTOR : 1.0;
+        }
+
+        if ((hour >= 7 && hour < 9) || (hour >= 18 && hour < 20)) {
+            return WEEKDAY_RUSH_HOUR_FACTOR;
+        }
+        if (hour >= 9 && hour < 18) {
+            return WEEKDAY_DAYTIME_FACTOR;
+        }
+        if (hour >= 22 || hour < 6) {
+            return WEEKDAY_NIGHT_FACTOR;
+        }
+        return 1.0;
     }
 
 }
