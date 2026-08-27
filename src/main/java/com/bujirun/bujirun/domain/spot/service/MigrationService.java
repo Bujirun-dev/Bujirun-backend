@@ -257,9 +257,25 @@ public class MigrationService {
     // SUMMARIZE_MIN_LENGTH 이하는 이미 짧다고 보고 건너뜀. 실패한 건은 원문을 그대로 두고 다음 건 계속 진행.
     @Transactional
     public SummarizeResult summarizeBusanDescriptions() {
-        log.info("========== 부산명소정보 소개글 요약 시작 ==========");
-
         List<TourSpot> targets = tourSpotRepository.findByBusanUcSeqIsNotNullAndDescriptionIsNotNull();
+        // 부산명소정보 쪽은 처음부터 description 자체를 요약본으로 덮어써왔음(원문 미보존, 기존 방식 유지)
+        return summarizeDescriptions(targets, "부산명소정보", TourSpot::updateDescription);
+    }
+
+    // TourAPI 자체 개요(overview)로 채워진 소개글도 같은 기준으로 재요약(2026-08-27, 사용자 요청).
+    // 부산명소정보 매칭분(busanUcSeq 있는 것)은 위 메서드가 이미 처리하므로 제외.
+    // 부산명소정보 때와 달리 원문 description은 보존하고 요약본은 summary_description 컬럼에 별도 저장.
+    @Transactional
+    public SummarizeResult summarizeTourApiOverviewDescriptions() {
+        List<TourSpot> targets =
+                tourSpotRepository.findByBusanUcSeqIsNullAndDescriptionIsNotNullAndSummaryDescriptionIsNull();
+        return summarizeDescriptions(targets, "TourAPI 개요", TourSpot::updateSummaryDescription);
+    }
+
+    private SummarizeResult summarizeDescriptions(List<TourSpot> targets, String sourceLabel,
+                                                   java.util.function.BiConsumer<TourSpot, String> applySummary) {
+        log.info("========== {} 소개글 요약 시작 ==========", sourceLabel);
+
         int summarized = 0, skipped = 0, failed = 0;
 
         for (TourSpot spot : targets) {
@@ -275,7 +291,7 @@ public class MigrationService {
                     failed++;
                     continue;
                 }
-                spot.updateDescription(summary);
+                applySummary.accept(spot, summary);
                 tourSpotRepository.save(spot);
                 summarized++;
                 Thread.sleep(300);
@@ -286,7 +302,7 @@ public class MigrationService {
         }
 
         SummarizeResult result = new SummarizeResult(targets.size(), summarized, skipped, failed);
-        log.info("========== 부산명소정보 소개글 요약 완료: {} ==========", result);
+        log.info("========== {} 소개글 요약 완료: {} ==========", sourceLabel, result);
         return result;
     }
 

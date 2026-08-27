@@ -58,8 +58,11 @@ public class SpotDetailResponse {
                 .tel("등록된 정보 없음")
                 .homepage("등록된 정보 없음");
 
-        // 부산명소정보 API로 보완된 상세내용이 TourAPI 개요보다 풍부하므로 우선 사용
-        if (spot.getDescription() != null && !spot.getDescription().isBlank()) {
+        // 요약본(summaryDescription)이 있으면 최우선, 없으면 description(부산명소정보 보완/TourAPI 개요),
+        // 그마저 없으면 TourAPI 실시간 조회 개요 순으로 노출
+        if (spot.getSummaryDescription() != null && !spot.getSummaryDescription().isBlank()) {
+            builder.overview(spot.getSummaryDescription());
+        } else if (spot.getDescription() != null && !spot.getDescription().isBlank()) {
             builder.overview(spot.getDescription());
         } else if (apiDetail != null) {
             builder.overview(defaultIfBlank(apiDetail.getOverview(), "등록된 정보 없음"));

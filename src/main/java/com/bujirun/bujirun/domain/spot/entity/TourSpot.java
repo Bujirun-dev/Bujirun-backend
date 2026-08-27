@@ -82,6 +82,11 @@ public class TourSpot {
     @Column(name = "busan_uc_seq")
     private String busanUcSeq;
 
+    // TourAPI 자체 개요(overview)로 채워진 description을 OpenAI로 재요약한 결과. 부산명소정보와 달리
+    // 원문 description은 보존하고 이 컬럼에 별도 저장(화면은 이 값이 있으면 이걸 우선 노출)
+    @Column(name = "summary_description", columnDefinition = "TEXT")
+    private String summaryDescription;
+
     @PrePersist
     public void prePersist() {
         this.syncedAt = LocalDateTime.now();
@@ -120,5 +125,9 @@ public class TourSpot {
 
     public void updateDescription(String description) {
         this.description = description;
+    }
+
+    public void updateSummaryDescription(String summaryDescription) {
+        this.summaryDescription = summaryDescription;
     }
 }
