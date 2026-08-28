@@ -173,6 +173,12 @@ public class ItineraryVoteService {
                 .title(request.getTitle())
                 .startAt(request.getStartDate())
                 .endAt(request.getEndDate())
+                .startTime(request.getStartTime())
+                .endTime(request.getEndTime())
+                .accommodationName(request.getAccommodationName())
+                .accommodationAddress(request.getAccommodationAddress())
+                .accommodationLat(request.getAccommodationLat())
+                .accommodationLng(request.getAccommodationLng())
                 .build();
 
         for (FinalizeItineraryRequest.DayInput dayInput : days) {
