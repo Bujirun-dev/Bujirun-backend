@@ -67,6 +67,9 @@ public class TravelLogController {
             데이터가 유실되지 않도록 하기 위함(2026-08-30 결정). 그 결과 hasLog는 이후 계속 true가 되며,
             프론트는 반환된 logId로 PATCH /api/logs/{id}를 호출해 mood/theme/공개여부만 채우면 됩니다
             (이미 자동 생성됐기 때문에 POST /api/logs는 다시 호출할 수 없습니다).
+
+            영수증 팝업을 다시 띄울지는 hasLog가 아니라 receiptCompleted(mood까지 채워 실제로 발행을
+            마쳤는지)로 판단해야 합니다 — hasLog는 자동 생성 직후부터 항상 true이기 때문입니다.
             """)
     @GetMapping("/exists")
     public Mono<ResponseEntity<ApiResponse<List<LogExistenceResponse>>>> checkLogExists(
