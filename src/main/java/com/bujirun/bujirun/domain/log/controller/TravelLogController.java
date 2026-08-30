@@ -61,6 +61,12 @@ public class TravelLogController {
     @Operation(summary = "일정별 여행 기록 존재 여부 확인", description = """
             주어진 itineraryId 목록에 대해 로그인한 사용자가 이미 여행 기록(영수증)을 작성했는지 배치로 확인합니다.
             아직 기록이 없는 일정(예: 다음 날 일정)을 찾아 영수증 발행 화면을 노출하는 용도로 사용합니다.
+
+            이미 종료된(endAt이 오늘 이전) 일정 중 로그가 없는 것은 이 호출 시점에 기본값(비공개, mood/theme 없음)으로
+            자동 생성됩니다 — 사용자가 영수증 발행 팝업에서 실제로 "발행"을 누르지 않아도 방문 인증 사진 등
+            데이터가 유실되지 않도록 하기 위함(2026-08-30 결정). 그 결과 hasLog는 이후 계속 true가 되며,
+            프론트는 반환된 logId로 PATCH /api/logs/{id}를 호출해 mood/theme/공개여부만 채우면 됩니다
+            (이미 자동 생성됐기 때문에 POST /api/logs는 다시 호출할 수 없습니다).
             """)
     @GetMapping("/exists")
     public Mono<ResponseEntity<ApiResponse<List<LogExistenceResponse>>>> checkLogExists(
@@ -68,6 +74,32 @@ public class TravelLogController {
             @AuthenticationPrincipal UUID userId) {
         return blocking(() -> travelLogService.checkLogExists(itineraryIds, userId))
                 .map(r -> ResponseEntity.ok(ApiResponse.ok(r)));
+    }
+
+    @Operation(summary = "영수증 발행 팝업 '다시 묻지 않음'", description = """
+            완료된 일정의 영수증 발행(여행 기록 작성) 유도 팝업에서 '다시 묻지 않음'을 선택했을 때 호출합니다.
+            이후 GET /api/logs/exists 응답에서 해당 일정의 promptDismissed가 true가 되어 프론트가 팝업을 띄우지 않습니다.
+            일정 소유자 또는 그룹원만 호출할 수 있고, 같은 일정에 여러 번 호출해도 안전합니다(idempotent).
+            """)
+    @PostMapping("/receipt-prompt/{itineraryId}/dismiss")
+    public Mono<ResponseEntity<Void>> dismissReceiptPrompt(
+            @PathVariable UUID itineraryId,
+            @AuthenticationPrincipal UUID userId) {
+        return Mono.fromRunnable(() -> travelLogService.dismissReceiptPrompt(itineraryId, userId))
+                .subscribeOn(Schedulers.boundedElastic())
+                .thenReturn(ResponseEntity.noContent().<Void>build());
+    }
+
+    @Operation(summary = "영수증 발행 팝업 '다시 묻지 않음' 해제", description = """
+            '다시 묻지 않음'을 취소해 다시 영수증 발행 팝업을 받도록 되돌립니다. 기록이 없으면 아무 일도 하지 않습니다.
+            """)
+    @DeleteMapping("/receipt-prompt/{itineraryId}/dismiss")
+    public Mono<ResponseEntity<Void>> restoreReceiptPrompt(
+            @PathVariable UUID itineraryId,
+            @AuthenticationPrincipal UUID userId) {
+        return Mono.fromRunnable(() -> travelLogService.restoreReceiptPrompt(itineraryId, userId))
+                .subscribeOn(Schedulers.boundedElastic())
+                .thenReturn(ResponseEntity.noContent().<Void>build());
     }
 
     @Operation(summary = "공개 여행 기록 목록 조회", description = "다른 사용자들에게 공개된 여행 기록을 카테고리, 정렬 기준으로 조회합니다.")
