@@ -29,7 +29,9 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDate;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -53,6 +55,7 @@ public class TravelLogService {
     private final CollectionEntryRepository  collectionEntryRepository;
     private final VisitRepository            visitRepository;
     private final VisitPhotoRepository       visitPhotoRepository;
+    private final ReceiptPromptDismissalRepository receiptPromptDismissalRepository;
 
     // ── 로그 CRUD ──────────────────────────────────────────────────
 
@@ -65,12 +68,24 @@ public class TravelLogService {
             throw new IllegalArgumentException("이미 이 일정에 대한 여행 기록을 작성했습니다. itineraryId=" + req.itineraryId());
         }
 
+        TravelLog log = createLogEntity(itinerary, userId, req.isPublic(), req.mood(), req.theme());
+
+        Map<UUID, TravelLogItem> logItemMap = buildLogItemMap(log.getId());
+        Set<UUID> visitedItemIds = buildVisitedItemMap(allItineraryItems(itinerary), userId).keySet();
+
+        return TravelLogDetailResponse.of(log, itinerary, logItemMap, visitedItemIds, fetchGroupMembers(itinerary),
+                countCollectedSpots(itinerary, log.getUserId()));
+    }
+
+    // TravelLog 생성의 공통 로직 — 직접 호출하는 create()와, 일정 종료 시 자동 생성하는
+    // checkLogExists() 양쪽에서 재사용한다. 호출부에서 접근 권한/중복 여부는 이미 확인했다고 가정한다.
+    private TravelLog createLogEntity(Itinerary itinerary, UUID userId, boolean isPublic, Integer mood, String theme) {
         TravelLog log = TravelLog.builder()
-                .itineraryId(req.itineraryId())
+                .itineraryId(itinerary.getId())
                 .userId(userId)
-                .isPublic(req.isPublic())
-                .mood(req.mood())
-                .theme(req.theme())
+                .isPublic(isPublic)
+                .mood(mood)
+                .theme(theme)
                 .travelNumber((int) travelLogRepository.countByUserId(userId) + 1)
                 .build();
         travelLogRepository.save(log);
@@ -93,8 +108,7 @@ public class TravelLogService {
         Map<UUID, Visit> visitedItemMap = buildVisitedItemMap(allItineraryItems(itinerary), userId);
         copyVisitPhotos(logItemMap, visitedItemMap);
 
-        return TravelLogDetailResponse.of(log, itinerary, logItemMap, visitedItemMap.keySet(), fetchGroupMembers(itinerary),
-                countCollectedSpots(itinerary, log.getUserId()));
+        return log;
     }
 
     public TravelLogDetailResponse getDetail(UUID logId, UUID userId) {
@@ -177,17 +191,79 @@ public class TravelLogService {
                 .toList();
     }
 
-    // 여러 일정에 대해 로그인한 사용자의 여행 기록(영수증) 존재 여부를 배치로 확인
+    // 여러 일정에 대해 로그인한 사용자의 여행 기록(영수증) 존재 여부를 배치로 확인.
+    // "다시 묻지 않음"(promptDismissed) 여부도 함께 반환해, 프론트가 영수증 발행 팝업 노출을 판단하게 한다.
+    //
+    // 2026-08-30 팀 회의 결정: 영수증을 실제로 "발행"(mood/theme/공개여부 확정)했는지와 무관하게,
+    // 종료된 일정이면 로그 자체는 항상 자동 생성해둔다. 그래야 사용자가 팝업을 무시하거나
+    // "다시 묻지 않음"을 눌러도 방문 인증 사진 등 데이터가 유실되지 않는다. 그 결과 hasLog는 종료된
+    // 일정이면 이 API를 한 번만 호출해도 계속 true가 되므로, "영수증 팝업을 다시 띄워야 하는지"는
+    // hasLog가 아니라 receiptCompleted(mood를 채워 실제로 발행까지 마쳤는지)로 판단해야 한다.
+    // 프론트는 자동 생성된 logId로 PATCH /api/logs/{id}를 호출해 mood/theme/공개여부만 채우면 된다
+    // (POST /api/logs는 이미 존재해 호출할 수 없다).
+    @Transactional
     public List<LogExistenceResponse> checkLogExists(List<UUID> itineraryIds, UUID userId) {
-        Map<UUID, UUID> logIdByItineraryId = travelLogRepository.findByItineraryIdInAndUserId(itineraryIds, userId)
-                .stream().collect(Collectors.toMap(TravelLog::getItineraryId, TravelLog::getId));
+        Map<UUID, TravelLog> logByItineraryId = new HashMap<>(
+                travelLogRepository.findByItineraryIdInAndUserId(itineraryIds, userId)
+                        .stream().collect(Collectors.toMap(TravelLog::getItineraryId, l -> l)));
+        Set<UUID> dismissedItineraryIds = new HashSet<>(
+                receiptPromptDismissalRepository.findDismissedItineraryIds(userId, itineraryIds));
+
+        List<UUID> missingIds = itineraryIds.stream()
+                .filter(id -> !logByItineraryId.containsKey(id))
+                .toList();
+        if (!missingIds.isEmpty()) {
+            autoCreateLogsForEndedItineraries(missingIds, userId, logByItineraryId);
+        }
 
         return itineraryIds.stream()
                 .map(itineraryId -> {
-                    UUID logId = logIdByItineraryId.get(itineraryId);
-                    return new LogExistenceResponse(itineraryId, logId != null, logId);
+                    TravelLog log = logByItineraryId.get(itineraryId);
+                    return new LogExistenceResponse(itineraryId, log != null, log != null ? log.getId() : null,
+                            dismissedItineraryIds.contains(itineraryId), log != null && log.getMood() != null);
                 })
                 .toList();
+    }
+
+    // 아직 로그가 없는 일정 중 이미 종료된(endAt이 오늘 이전인) 것만 골라 기본값(비공개, mood/theme 없음)으로
+    // 로그를 자동 생성한다. 접근 권한이 없거나 아직 끝나지 않은 일정은 조용히 건너뛴다 — 배치 조회 하나가
+    // 잘못된 itineraryId 때문에 통째로 에러 나면 안 되기 때문(기존 checkLogExists도 권한 검사 없이 동작했음).
+    private void autoCreateLogsForEndedItineraries(List<UUID> itineraryIds, UUID userId, Map<UUID, TravelLog> logByItineraryId) {
+        LocalDate today = LocalDate.now();
+        Map<UUID, Itinerary> itinerariesById = itineraryRepository.findAllById(itineraryIds)
+                .stream().collect(Collectors.toMap(Itinerary::getId, i -> i));
+
+        for (UUID itineraryId : itineraryIds) {
+            Itinerary itinerary = itinerariesById.get(itineraryId);
+            if (itinerary == null || itinerary.getEndAt() == null || itinerary.getEndAt().isAfter(today)) {
+                continue;
+            }
+            try {
+                validateItineraryAccess(itinerary, userId);
+            } catch (IllegalArgumentException e) {
+                continue;
+            }
+            TravelLog log = createLogEntity(itinerary, userId, false, null, null);
+            logByItineraryId.put(itineraryId, log);
+        }
+    }
+
+    // 영수증 발행 팝업 "다시 묻지 않음" — 이후 이 일정에 대해 팝업을 띄우지 않도록 기록(idempotent).
+    // 일정 소유자 또는 그룹원만 호출 가능. 이미 여행 기록을 작성했는지와 무관하게 동작한다.
+    @Transactional
+    public void dismissReceiptPrompt(UUID itineraryId, UUID userId) {
+        validateItineraryAccess(findItinerary(itineraryId), userId);
+        if (receiptPromptDismissalRepository.existsByUserIdAndItineraryId(userId, itineraryId)) {
+            return;
+        }
+        receiptPromptDismissalRepository.save(
+                ReceiptPromptDismissal.builder().userId(userId).itineraryId(itineraryId).build());
+    }
+
+    // "다시 묻지 않음" 해제 — 사용자가 마음을 바꿔 다시 팝업을 받고 싶을 때. 기록이 없으면 무시.
+    @Transactional
+    public void restoreReceiptPrompt(UUID itineraryId, UUID userId) {
+        receiptPromptDismissalRepository.deleteByUserIdAndItineraryId(userId, itineraryId);
     }
 
     public List<TravelLogSummaryResponse> getPublicLogs(String category, String sort) {
@@ -271,6 +347,7 @@ public class TravelLogService {
     @Transactional
     public void deleteAllByUser(UUID userId) {
         travelLogRepository.deleteAllByUserId(userId);
+        receiptPromptDismissalRepository.deleteAllByUserId(userId);
     }
 
     // ── 사진 ────────────────────────────────────────────────────────

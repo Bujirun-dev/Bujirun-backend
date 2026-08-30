@@ -7,6 +7,7 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 
 import java.time.LocalDate;
+import java.time.LocalTime;
 import java.util.List;
 import java.util.UUID;
 
@@ -28,6 +29,18 @@ public class FinalizeItineraryRequest {
     @NotNull
     @FutureOrPresent(message = "지난 날짜로는 일정을 확정할 수 없습니다.")
     private LocalDate endDate;
+
+    private LocalTime startTime;
+
+    private LocalTime endTime;
+
+    private String accommodationName;
+
+    private String accommodationAddress;
+
+    private Double accommodationLat;
+
+    private Double accommodationLng;
 
     // C안(직접 편집) 또는 최종 편집 결과. null이면 세션에 저장된 plansJson에서 selectedPlan 그대로 사용
     private List<DayInput> days;
