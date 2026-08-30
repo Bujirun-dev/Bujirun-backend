@@ -19,6 +19,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.security.SecureRandom;
 import java.util.List;
+import java.util.Locale;
 import java.util.UUID;
 
 @Service
@@ -38,8 +39,22 @@ public class GroupService {
 
     @Transactional
     public GroupResponse create(CreateGroupRequest req, UUID userId) {
+        String normalizedName = req.name() == null ? "" : req.name().trim();
+        if (normalizedName.isEmpty()) {
+            throw new IllegalArgumentException("여행명을 입력해주세요.");
+        }
+
+        boolean duplicateName = groupMemberRepository.findById_UserId(userId).stream()
+                .map(member -> groupRepository.findById(member.getId().getGroupId()).orElse(null))
+                .filter(group -> group != null && group.getName() != null)
+                .anyMatch(group -> group.getName().trim().toLowerCase(Locale.ROOT)
+                        .equals(normalizedName.toLowerCase(Locale.ROOT)));
+        if (duplicateName) {
+            throw new IllegalStateException("이미 사용 중인 여행명이에요.");
+        }
+
         Group group = groupRepository.save(Group.builder()
-                .name(req.name())
+                .name(normalizedName)
                 .inviteCode(generateUniqueInviteCode())
                 .createdBy(userId)
                 .build());
