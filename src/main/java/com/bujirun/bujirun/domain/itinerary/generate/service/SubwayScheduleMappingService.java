@@ -53,7 +53,7 @@ public class SubwayScheduleMappingService {
         if (subPath.startId() == 0) {
             log.info("지하철 역코드 없음 — {} 구간(index={}) 시각표 매핑 스킵", subPath.startName(), index);
             return new SubwaySegmentTimetable(index, subPath.startName(), subPath.endName(),
-                    subPath.routeNo(), subPath.wayCode(), List.of(), null, null);
+                    subPath.routeNo(), subPath.startId(), subPath.wayCode(), List.of(), null, null);
         }
 
         List<SubwayDeparture> upcoming;
@@ -72,7 +72,7 @@ public class SubwayScheduleMappingService {
         SubwayTransitInfo transferInfo = isTransferBoarding ? fetchTransferInfo(subPath.startId()) : null;
 
         return new SubwaySegmentTimetable(index, subPath.startName(), subPath.endName(),
-                subPath.routeNo(), subPath.wayCode(), upcoming, nextMinutes, transferInfo);
+                subPath.routeNo(), subPath.startId(), subPath.wayCode(), upcoming, nextMinutes, transferInfo);
     }
 
     private SubwayTransitInfo fetchTransferInfo(int stationId) {
