@@ -9,6 +9,7 @@ import java.util.UUID;
 
 public record TravelLogSummaryResponse(
         UUID id,
+        UUID itineraryId,
         String title,
         String thumbnailPhotoUrl,
         boolean isPublic,
@@ -35,6 +36,7 @@ public record TravelLogSummaryResponse(
 
         return new TravelLogSummaryResponse(
                 log.getId(),
+                log.getItineraryId(),
                 itinerary.getTitle(),
                 log.getThumbnailPhotoUrl(),
                 log.isPublic(),
