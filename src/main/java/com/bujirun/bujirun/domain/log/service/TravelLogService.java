@@ -26,7 +26,11 @@ import com.bujirun.bujirun.domain.visit.repository.VisitPhotoRepository;
 import com.bujirun.bujirun.domain.visit.repository.VisitRepository;
 import jakarta.persistence.EntityNotFoundException;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.annotation.Lazy;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
@@ -56,6 +60,11 @@ public class TravelLogService {
     private final VisitRepository            visitRepository;
     private final VisitPhotoRepository       visitPhotoRepository;
     private final ReceiptPromptDismissalRepository receiptPromptDismissalRepository;
+
+    // 로그 자동 생성을 REQUIRES_NEW 트랜잭션으로 호출하기 위한 자기 참조(프록시 경유 필요).
+    @Lazy
+    @Autowired
+    private TravelLogService self;
 
     // ── 로그 CRUD ──────────────────────────────────────────────────
 
@@ -201,7 +210,7 @@ public class TravelLogService {
     // hasLog가 아니라 receiptCompleted(mood를 채워 실제로 발행까지 마쳤는지)로 판단해야 한다.
     // 프론트는 자동 생성된 logId로 PATCH /api/logs/{id}를 호출해 mood/theme/공개여부만 채우면 된다
     // (POST /api/logs는 이미 존재해 호출할 수 없다).
-    @Transactional
+    @Transactional(readOnly = true)
     public List<LogExistenceResponse> checkLogExists(List<UUID> itineraryIds, UUID userId) {
         Map<UUID, TravelLog> logByItineraryId = new HashMap<>(
                 travelLogRepository.findByItineraryIdInAndUserId(itineraryIds, userId)
@@ -213,7 +222,17 @@ public class TravelLogService {
                 .filter(id -> !logByItineraryId.containsKey(id))
                 .toList();
         if (!missingIds.isEmpty()) {
-            autoCreateLogsForEndedItineraries(missingIds, userId, logByItineraryId);
+            for (UUID itineraryId : missingIds) {
+                try {
+                    TravelLog created = self.autoCreateLogForEndedItinerary(itineraryId, userId);
+                    if (created != null) logByItineraryId.put(itineraryId, created);
+                } catch (DataIntegrityViolationException e) {
+                    // 동시에 들어온 다른 요청이 먼저 만든 경우 — 아래 재조회에서 주워담는다.
+                }
+            }
+            // 동시 요청이 REQUIRES_NEW 트랜잭션으로 방금 커밋한 로그까지 반영 (READ COMMITTED)
+            travelLogRepository.findByItineraryIdInAndUserId(missingIds, userId)
+                    .forEach(l -> logByItineraryId.putIfAbsent(l.getItineraryId(), l));
         }
 
         return itineraryIds.stream()
@@ -225,27 +244,29 @@ public class TravelLogService {
                 .toList();
     }
 
-    // 아직 로그가 없는 일정 중 이미 종료된(endAt이 오늘 이전인) 것만 골라 기본값(비공개, mood/theme 없음)으로
-    // 로그를 자동 생성한다. 접근 권한이 없거나 아직 끝나지 않은 일정은 조용히 건너뛴다 — 배치 조회 하나가
-    // 잘못된 itineraryId 때문에 통째로 에러 나면 안 되기 때문(기존 checkLogExists도 권한 검사 없이 동작했음).
-    private void autoCreateLogsForEndedItineraries(List<UUID> itineraryIds, UUID userId, Map<UUID, TravelLog> logByItineraryId) {
-        LocalDate today = LocalDate.now();
-        Map<UUID, Itinerary> itinerariesById = itineraryRepository.findAllById(itineraryIds)
-                .stream().collect(Collectors.toMap(Itinerary::getId, i -> i));
-
-        for (UUID itineraryId : itineraryIds) {
-            Itinerary itinerary = itinerariesById.get(itineraryId);
-            if (itinerary == null || itinerary.getEndAt() == null || itinerary.getEndAt().isAfter(today)) {
-                continue;
-            }
-            try {
-                validateItineraryAccess(itinerary, userId);
-            } catch (IllegalArgumentException e) {
-                continue;
-            }
-            TravelLog log = createLogEntity(itinerary, userId, false, null, null);
-            logByItineraryId.put(itineraryId, log);
+    // 아직 로그가 없는 일정이 이미 종료됐으면(endAt이 오늘 이전) 기본값(비공개, mood/theme 없음)으로
+    // 로그를 자동 생성한다. 조건에 안 맞거나(미종료/미존재) 접근 권한이 없으면 null을 반환해 조용히 건너뛴다.
+    //
+    // 별도(REQUIRES_NEW) 트랜잭션에서 실행한다 — 동시에 들어온 두 요청이 애플리케이션 레벨 중복 체크를
+    // 함께 통과해 uq_travel_logs_itinerary_id_user_id 를 위반하면, 그 건만 롤백되고(호출부에서
+    // DataIntegrityViolationException 캐치) 나머지 배치와 바깥 조회 트랜잭션은 살아남는다.
+    // 예전엔 바깥 트랜잭션이 통째로 rollback-only가 되어 /api/logs/exists 가 409로 떨어졌다.
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public TravelLog autoCreateLogForEndedItinerary(UUID itineraryId, UUID userId) {
+        Itinerary itinerary = itineraryRepository.findById(itineraryId).orElse(null);
+        if (itinerary == null || itinerary.getEndAt() == null || itinerary.getEndAt().isAfter(LocalDate.now())) {
+            return null;
         }
+        try {
+            validateItineraryAccess(itinerary, userId);
+        } catch (IllegalArgumentException e) {
+            return null;
+        }
+        if (travelLogRepository.existsByItineraryIdAndUserId(itineraryId, userId)) {
+            return travelLogRepository.findByItineraryIdInAndUserId(List.of(itineraryId), userId)
+                    .stream().findFirst().orElse(null);
+        }
+        return createLogEntity(itinerary, userId, false, null, null);
     }
 
     // 영수증 발행 팝업 "다시 묻지 않음" — 이후 이 일정에 대해 팝업을 띄우지 않도록 기록(idempotent).
