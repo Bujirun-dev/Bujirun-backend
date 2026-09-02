@@ -22,9 +22,13 @@ import com.bujirun.bujirun.global.util.TransitRouteUtils;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Duration;
+import java.time.Instant;
 import java.util.*;
 import java.util.stream.Collectors;
 
@@ -46,6 +50,10 @@ public class ItineraryVoteService {
 
     private static final int DEFAULT_VISIT_DURATION_MINUTES = 60;
 
+    // 프론트 axios 타임아웃(60초)보다 여유를 두고 대기를 포기한다.
+    private static final Duration GENERATION_WAIT_TIMEOUT = Duration.ofSeconds(55);
+    private static final Duration GENERATION_POLL_INTERVAL = Duration.ofMillis(1000);
+
     public Optional<GroupItineraryGenerateResponse> findActiveSession(UUID groupId) {
         return sessionRepository.findFirstByGroupIdAndStatusOrderByCreatedAtDesc(groupId, "voting")
                 .map(session -> {
@@ -62,23 +70,73 @@ public class ItineraryVoteService {
                 });
     }
 
-    // 그룹당 진행 중(voting) 세션은 DB 유니크 인덱스(V26)로 하나만 허용됨.
-    // 동시에 여러 멤버가 투표를 시작하면 먼저 커밋된 쪽만 성공하고 나머지는
-    // DataIntegrityViolationException이 그대로 던져지니, 호출부(컨트롤러)에서
-    // 이를 잡아 새로 만들지 않고 기존 세션을 재조회해서 합류시켜야 한다.
-    public UUID startVoteSession(UUID groupId, ItineraryGenerateResponse generated) {
+    // 그룹당 "생성 중(generating)" + "투표 중(voting)" 자리는 합쳐서 하나만 허용됨
+    // (DB 유니크 인덱스, V26 → V36에서 generating까지 확장). AI 호출(최대 60초) 전에
+    // 이 자리를 먼저 선점해서, 한 그룹에서 OpenAI 생성이 동시에 여러 번 실행되어
+    // 멤버마다 관광지 조합이 달라지는 문제(2026-09-02 발견)를 막는다.
+    // 선점에 실패하면(다른 멤버가 이미 선점/완료함) empty를 반환하고,
+    // 호출부(컨트롤러)는 waitForActiveSession()으로 그 결과를 기다려 합류해야 한다.
+    public Optional<UUID> tryReserveGeneration(UUID groupId) {
+        try {
+            // ID가 DB 시퀀스가 아니라 Hibernate에서 UUID로 미리 채번되므로, save()만 호출하면
+            // 실제 INSERT(및 유니크 제약 검사)가 트랜잭션 커밋 시점(이 메서드가 리턴한 뒤)까지
+            // 미뤄질 수 있다. 그러면 여기 catch가 위반을 못 잡으므로 saveAndFlush로 즉시 반영한다.
+            ItineraryVoteSession session = sessionRepository.saveAndFlush(ItineraryVoteSession.builder()
+                    .groupId(groupId)
+                    .status("generating")
+                    .build());
+            return Optional.of(session.getId());
+        } catch (DataIntegrityViolationException e) {
+            return Optional.empty();
+        }
+    }
+
+    // 선점한 요청이 AI 생성을 마쳤을 때 결과를 채워 "voting"으로 전이한다.
+    public void completeGeneration(UUID sessionId, ItineraryGenerateResponse generated) {
         String plansJson;
         try {
             plansJson = objectMapper.writeValueAsString(generated);
         } catch (Exception e) {
             throw new RuntimeException("투표 세션 생성 실패", e);
         }
-        ItineraryVoteSession session = sessionRepository.save(ItineraryVoteSession.builder()
-                .groupId(groupId)
-                .plansJson(plansJson)
-                .status("voting")
-                .build());
-        return session.getId();
+        findSession(sessionId).completeGeneration(plansJson);
+    }
+
+    // 선점한 요청이 생성 중 실패했을 때 자리를 비워서, 다음 요청이 처음부터 다시 생성할 수 있게 한다.
+    public void abandonGeneration(UUID sessionId) {
+        sessionRepository.deleteById(sessionId);
+    }
+
+    // 선점에 실패한 요청이 선점한 쪽의 생성 완료를 기다린다. 프론트 타임아웃(60초)보다
+    // 여유를 두고 폴링하며, 그 사이 선점한 쪽이 실패해서 자리를 비워버리면(abandonGeneration)
+    // 더 기다릴 필요가 없으므로 즉시 empty를 반환해 컨트롤러가 재시도하게 한다.
+    // 폴링 도중 커넥션을 계속 붙잡지 않도록 트랜잭션 밖에서 동작한다.
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
+    public Optional<GroupItineraryGenerateResponse> waitForActiveSession(UUID groupId) {
+        Instant deadline = Instant.now().plus(GENERATION_WAIT_TIMEOUT);
+        while (Instant.now().isBefore(deadline)) {
+            Optional<GroupItineraryGenerateResponse> active = findActiveSession(groupId);
+            if (active.isPresent()) {
+                return active;
+            }
+            boolean stillGenerating = sessionRepository
+                    .findFirstByGroupIdAndStatusOrderByCreatedAtDesc(groupId, "generating")
+                    .isPresent();
+            if (!stillGenerating) {
+                return Optional.empty();
+            }
+            sleep(GENERATION_POLL_INTERVAL);
+        }
+        throw new IllegalStateException("그룹 일정 생성 대기 시간이 초과되었습니다. 잠시 후 다시 시도해주세요.");
+    }
+
+    private void sleep(Duration duration) {
+        try {
+            Thread.sleep(duration.toMillis());
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("그룹 일정 생성 대기 중 인터럽트가 발생했습니다.", e);
+        }
     }
 
     public VoteStatusResponse castVote(UUID sessionId, CastVoteRequest request, UUID userId) {
