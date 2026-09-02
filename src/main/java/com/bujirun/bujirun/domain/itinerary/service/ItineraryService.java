@@ -247,9 +247,17 @@ public class ItineraryService {
         String startArsId = null;
         TransitDetail transitDetail = TransitDetail.EMPTY;
 
-        ItineraryItem prevItem = day.getItems().stream()
-                .max(Comparator.comparing(ItineraryItem::getOrderIndex))
-                .orElse(null);
+        // 새 항목의 "직전 스팟"은 요청된 삽입 위치(orderIndex) 기준으로 잡는다 — 기존 항목을
+        // orderIndex 순으로 정렬했을 때 (orderIndex - 1)번째 항목이 직전 스팟이다.
+        // 단순히 max(orderIndex)로 잡으면 ①중간에 끼워 넣을 때 맨 뒤 항목을 직전으로 착각하고,
+        // ②실시간 협업 편집에서 여러 항목을 거의 동시에 addItem 할 때 뒤쪽 항목이 먼저 저장되며
+        // 앞 항목의 구간을 뒤 항목 기준으로 계산해, 프론트에서 교통수단 배너가 안 뜨거나 잘못
+        // 뜨는 문제가 있었다. (맨 앞에 추가면 직전 스팟 없음)
+        List<ItineraryItem> orderedItems = day.getItems().stream()
+                .sorted(Comparator.comparing(ItineraryItem::getOrderIndex))
+                .toList();
+        int prevPos = Math.min(req.orderIndex() - 1, orderedItems.size() - 1);
+        ItineraryItem prevItem = prevPos >= 0 ? orderedItems.get(prevPos) : null;
 
         if (prevItem != null) {
             List<SpotInfo> pair = List.of(toSpotInfo(prevItem.getSpot()), toSpotInfo(spot));
