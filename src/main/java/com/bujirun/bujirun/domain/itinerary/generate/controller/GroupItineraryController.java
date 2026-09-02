@@ -12,13 +12,13 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
-import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
 
+import java.util.Optional;
 import java.util.UUID;
 
 @Tag(name = "그룹 일정 자동생성", description = "그룹 멤버들의 스와이프 결과를 취합한 그룹 일정 자동 생성 API")
@@ -41,32 +41,43 @@ public class GroupItineraryController {
                 .map(r -> ResponseEntity.ok(ApiResponse.ok(r)));
     }
 
-    // 그룹 멤버 여러 명이 거의 동시에 투표를 시작하면 findActiveSession()에서
-    // 서로 "아직 세션 없음"을 보고 각자 startVoteSession()을 시도할 수 있다.
-    // DB 유니크 인덱스(V26)가 하나만 통과시키므로, 진 쪽은 새로 만들지 않고
-    // 이긴 쪽 세션을 재조회해서 그대로 합류한다.
+    // 그룹 멤버 여러 명이 거의 동시에 투표를 시작하면, AI 호출(최대 60초) 전에
+    // "생성 중" 자리를 먼저 선점 시도한다. DB 유니크 인덱스(V36)가 그룹당 하나만
+    // 통과시키므로, 선점에 이긴 요청만 실제로 OpenAI를 호출하고 나머지는 그 결과가
+    // 나올 때까지 기다렸다가 그대로 합류한다 — 그룹원마다 관광지 조합이 달라지던
+    // 문제(2026-09-02 발견)는 AI 호출 자체가 그룹당 한 번만 일어나야 막을 수 있다.
     private GroupItineraryGenerateResponse resolveVoteSession(UUID groupId, GroupItineraryRequest req, UUID userId) {
         // 추가: 그룹원 취향 집계는 매 요청마다 최신 상태로 계산해 응답에 함께 내려준다 (AI 호출 없는 순수 집계)
         GroupPreferenceSummary groupSummary = groupPreferenceService.summarize(groupId);
 
-        return itineraryVoteService.findActiveSession(groupId)
-                .map(existing -> existing.toBuilder().groupSummary(groupSummary).build()) // 추가
-                .orElseGet(() -> {
-                    ItineraryGenerateResponse generated =
-                            groupItineraryGenerateService.generateGroupItinerary(groupId, req, userId, groupSummary); // 추가: groupSummary 전달
-                    try {
-                        UUID voteSessionId = itineraryVoteService.startVoteSession(groupId, generated);
-                        return GroupItineraryGenerateResponse.builder()
-                                .voteSessionId(voteSessionId)
-                                .plans(generated)
-                                .groupSummary(groupSummary) // 추가
-                                .build();
-                    } catch (DataIntegrityViolationException e) {
-                        return itineraryVoteService.findActiveSession(groupId)
-                                .map(existing -> existing.toBuilder().groupSummary(groupSummary).build()) // 추가
-                                .orElseThrow(() -> new IllegalStateException("투표 세션 생성 경합 처리 실패", e));
-                    }
-                });
+        Optional<GroupItineraryGenerateResponse> alreadyDone = itineraryVoteService.findActiveSession(groupId);
+        if (alreadyDone.isPresent()) {
+            return alreadyDone.get().toBuilder().groupSummary(groupSummary).build();
+        }
+
+        Optional<UUID> reserved = itineraryVoteService.tryReserveGeneration(groupId);
+        if (reserved.isPresent()) {
+            UUID sessionId = reserved.get();
+            try {
+                ItineraryGenerateResponse generated =
+                        groupItineraryGenerateService.generateGroupItinerary(groupId, req, userId, groupSummary); // 추가: groupSummary 전달
+                itineraryVoteService.completeGeneration(sessionId, generated);
+                return GroupItineraryGenerateResponse.builder()
+                        .voteSessionId(sessionId)
+                        .plans(generated)
+                        .groupSummary(groupSummary) // 추가
+                        .build();
+            } catch (RuntimeException e) {
+                // 생성 실패 시 선점한 자리를 비워서 다음 요청이 처음부터 다시 시도할 수 있게 한다
+                itineraryVoteService.abandonGeneration(sessionId);
+                throw e;
+            }
+        }
+
+        // 선점 실패 → 다른 멤버가 이미 생성 중이거나 막 완료함. 그 결과가 나올 때까지 대기 후 합류.
+        return itineraryVoteService.waitForActiveSession(groupId)
+                .map(existing -> existing.toBuilder().groupSummary(groupSummary).build())
+                .orElseGet(() -> resolveVoteSession(groupId, req, userId)); // 선점한 쪽이 실패해서 자리가 비었으면 처음부터 재시도
     }
 
 
