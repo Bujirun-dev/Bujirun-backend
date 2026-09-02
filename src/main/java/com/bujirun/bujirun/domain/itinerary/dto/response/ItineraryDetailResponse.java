@@ -29,7 +29,7 @@ public record ItineraryDetailResponse(
         LocalDateTime updatedAt,
         List<ItineraryDayResponse> days
 ) {
-    public static ItineraryDetailResponse from(Itinerary itinerary, Set<UUID> collectedSpotIds, Set<UUID> visitedSpotIds) {
+    public static ItineraryDetailResponse from(Itinerary itinerary, Set<UUID> collectedSpotIds, Set<UUID> visitedItemIds) {
         return new ItineraryDetailResponse(
                 itinerary.getId(),
                 itinerary.getUserId(),
@@ -48,7 +48,7 @@ public record ItineraryDetailResponse(
                 itinerary.getAccommodationLng(),
                 itinerary.getCreatedAt(),
                 itinerary.getUpdatedAt(),
-                itinerary.getDays().stream().map(d -> ItineraryDayResponse.from(d, collectedSpotIds, visitedSpotIds)).toList()
+                itinerary.getDays().stream().map(d -> ItineraryDayResponse.from(d, collectedSpotIds, visitedItemIds)).toList()
         );
     }
 }

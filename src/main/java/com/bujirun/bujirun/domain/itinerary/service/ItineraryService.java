@@ -31,6 +31,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
 import java.time.LocalTime;
+import java.util.Collection;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
@@ -98,7 +99,7 @@ public class ItineraryService {
     public ItineraryDetailResponse getById(UUID id, UUID userId) {
         Itinerary itinerary = findWithDetails(id);
         validateAccess(itinerary, userId);
-        return ItineraryDetailResponse.from(itinerary, fetchCollectedSpotIds(userId), fetchVisitedSpotIds(userId));
+        return ItineraryDetailResponse.from(itinerary, fetchCollectedSpotIds(userId), fetchVisitedItemIds(userId, itemIdsOf(itinerary)));
     }
 
     // 내 소유 일정 + 내가 속한 그룹의 공유 일정을 함께 반환
@@ -147,7 +148,7 @@ public class ItineraryService {
             itinerary.updateAccommodation(name, address, lat, lng);
         }
         if ("confirmed".equals(req.status())) itinerary.confirm();
-        return ItineraryDetailResponse.from(itinerary, fetchCollectedSpotIds(userId), fetchVisitedSpotIds(userId));
+        return ItineraryDetailResponse.from(itinerary, fetchCollectedSpotIds(userId), fetchVisitedItemIds(userId, itemIdsOf(itinerary)));
     }
 
     // 일정 삭제는 개인 일정 전용. 그룹 일정은 나가기(leave)로만 정리 가능 (공유 일정을 통째로 지울 수 없도록)
@@ -195,7 +196,8 @@ public class ItineraryService {
                 .dayNumber(req.dayNumber())
                 .date(date)
                 .build();
-        return ItineraryDayResponse.from(itineraryDayRepository.save(day), fetchCollectedSpotIds(userId), fetchVisitedSpotIds(userId));
+        // 새로 만든 day는 항목이 없으므로 인증 항목 집합도 비어 있다.
+        return ItineraryDayResponse.from(itineraryDayRepository.save(day), fetchCollectedSpotIds(userId), Set.of());
     }
 
     @Transactional
@@ -293,7 +295,9 @@ public class ItineraryService {
                 .memo(req.memo())
                 .build();
 
-        return ItineraryItemResponse.from(itineraryItemRepository.save(item), fetchCollectedSpotIds(userId), fetchVisitedSpotIds(userId));
+        // 방금 추가한 항목은 아직 인증 기록이 있을 수 없다.
+        ItineraryItem saved = itineraryItemRepository.save(item);
+        return ItineraryItemResponse.from(saved, fetchCollectedSpotIds(userId), Set.of());
     }
 
     private SpotInfo toSpotInfo(TourSpot spot) {
@@ -350,7 +354,7 @@ public class ItineraryService {
                     req.travelMode(), req.travelTimeMin(), req.memo());
         }
 
-        return ItineraryItemResponse.from(item, fetchCollectedSpotIds(userId), fetchVisitedSpotIds(userId));
+        return ItineraryItemResponse.from(item, fetchCollectedSpotIds(userId), fetchVisitedItemIds(userId, List.of(item.getId())));
     }
 
     @Transactional
@@ -359,7 +363,7 @@ public class ItineraryService {
         ItineraryItem item = findItem(itineraryId, dayId, itemId);
         validateAccess(item.getDay().getItinerary(), userId);
         applyPreferredTravelModeStrict(item, req.travelMode());
-        return ItineraryItemResponse.from(item, fetchCollectedSpotIds(userId), fetchVisitedSpotIds(userId));
+        return ItineraryItemResponse.from(item, fetchCollectedSpotIds(userId), fetchVisitedItemIds(userId, List.of(item.getId())));
     }
 
     // 이동수단 변경 화면에서 확정 전 버스/지하철/택시/도보 후보의 실제 소요시간·요금을 미리 보여주기 위한 조회 API
@@ -489,8 +493,19 @@ public class ItineraryService {
                 .collect(Collectors.toSet());
     }
 
-    private Set<UUID> fetchVisitedSpotIds(UUID userId) {
-        return Set.copyOf(visitRepository.findVerifiedSpotIdsByUserId(userId));
+    // 이 일정의 어떤 방문 항목을 인증했는지 항목 id 집합으로 반환한다.
+    // 같은 관광지를 다른 일정에서 인증했더라도, 인증 기록이 이 항목(itineraryItemId)에 연결돼
+    // 있지 않으면 이 일정에서는 "미인증"으로 본다 — 일정마다 다시 인증하는 정책.
+    private Set<UUID> fetchVisitedItemIds(UUID userId, Collection<UUID> itemIds) {
+        if (itemIds.isEmpty()) return Set.of();
+        return Set.copyOf(visitRepository.findVerifiedItineraryItemIds(userId, itemIds));
+    }
+
+    private List<UUID> itemIdsOf(Itinerary itinerary) {
+        return itinerary.getDays().stream()
+                .flatMap(d -> d.getItems().stream())
+                .map(ItineraryItem::getId)
+                .toList();
     }
 
     // 개인 일정은 소유자만, 그룹 일정은 현재 그룹 멤버만 접근 허용 (읽기/수정/Day·Item 편집용)
