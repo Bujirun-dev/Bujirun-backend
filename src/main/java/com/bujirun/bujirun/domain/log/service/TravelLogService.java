@@ -20,13 +20,19 @@ import com.bujirun.bujirun.domain.log.dto.request.UpdateLogRequest;
 import com.bujirun.bujirun.domain.log.dto.response.*;
 import com.bujirun.bujirun.domain.log.entity.*;
 import com.bujirun.bujirun.domain.log.repository.*;
+import com.bujirun.bujirun.domain.spot.entity.TourSpot;
+import com.bujirun.bujirun.domain.spot.repository.TourSpotRepository;
 import com.bujirun.bujirun.domain.visit.entity.Visit;
 import com.bujirun.bujirun.domain.visit.entity.VisitPhoto;
 import com.bujirun.bujirun.domain.visit.repository.VisitPhotoRepository;
 import com.bujirun.bujirun.domain.visit.repository.VisitRepository;
 import jakarta.persistence.EntityNotFoundException;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.annotation.Lazy;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
@@ -55,7 +61,13 @@ public class TravelLogService {
     private final CollectionEntryRepository  collectionEntryRepository;
     private final VisitRepository            visitRepository;
     private final VisitPhotoRepository       visitPhotoRepository;
+    private final TourSpotRepository         tourSpotRepository;
     private final ReceiptPromptDismissalRepository receiptPromptDismissalRepository;
+
+    // 로그 자동 생성을 REQUIRES_NEW 트랜잭션으로 호출하기 위한 자기 참조(프록시 경유 필요).
+    @Lazy
+    @Autowired
+    private TravelLogService self;
 
     // ── 로그 CRUD ──────────────────────────────────────────────────
 
@@ -108,7 +120,26 @@ public class TravelLogService {
         Map<UUID, Visit> visitedItemMap = buildVisitedItemMap(allItineraryItems(itinerary), userId);
         copyVisitPhotos(logItemMap, visitedItemMap);
 
+        // 대표 사진(=로그 썸네일)이 아직 없으면, 일정 순서상 첫 번째 인증 사진을 대표로 지정한다.
+        // 사용자가 나중에 다른 사진을 대표로 바꾸면 그 값이 유지된다(setRepresentativePhoto).
+        assignDefaultThumbnail(log, itinerary, logItemMap);
+
         return log;
+    }
+
+    // 로그 생성 시 대표 사진 자동 지정 — 일정에 담긴 순서대로 스캔해 가장 먼저 나오는 인증 사진을 쓴다.
+    private void assignDefaultThumbnail(TravelLog log, Itinerary itinerary, Map<UUID, TravelLogItem> logItemMap) {
+        if (log.getThumbnailPhotoUrl() != null) return;
+        for (var day : itinerary.getDays()) {
+            for (ItineraryItem item : day.getItems()) {
+                TravelLogItem logItem = logItemMap.get(item.getId());
+                if (logItem == null || logItem.getPhotos().isEmpty()) continue;
+                TravelLogPhoto first = logItem.getPhotos().get(0);
+                first.setRepresentative(true);
+                log.updateThumbnail(first.getPhotoUrl());
+                return;
+            }
+        }
     }
 
     public TravelLogDetailResponse getDetail(UUID logId, UUID userId) {
@@ -180,6 +211,19 @@ public class TravelLogService {
         return ItineraryDetailResponse.from(itineraryRepository.save(copy), Set.of(), Set.of());
     }
 
+    // "일정 담기"(로그를 편집 중인 내 일정에 불러오기)는 프론트가 Yjs로 반영 후 항목별 addItem으로
+    // 저장하는 흐름이라 이 서비스를 안 거친다 — 그래서 added_count(목록 카운트 배지·인기순 정렬 기준)가
+    // 안 올라가던 버그가 있었다. 프론트가 불러오기 성공 직후 이 API를 호출해 카운트를 올린다.
+    // copyToItinerary(새 일정으로 통째 복제)는 별도 흐름이라 거기서 이미 올리고 있음.
+    @Transactional
+    public void recordImport(UUID logId, UUID userId) {
+        TravelLog log = findLog(logId);
+        if (!log.isPublic() && !log.getUserId().equals(userId)) {
+            throw new IllegalArgumentException("접근 권한이 없습니다.");
+        }
+        log.incrementAddedCount();
+    }
+
     public List<TravelLogSummaryResponse> getMyLogs(UUID userId) {
         String myNickname = userRepository.findById(userId).map(User::getNickname).orElse(null);
         return travelLogRepository.findByUserIdOrderByCreatedAtDesc(userId).stream()
@@ -201,7 +245,7 @@ public class TravelLogService {
     // hasLog가 아니라 receiptCompleted(mood를 채워 실제로 발행까지 마쳤는지)로 판단해야 한다.
     // 프론트는 자동 생성된 logId로 PATCH /api/logs/{id}를 호출해 mood/theme/공개여부만 채우면 된다
     // (POST /api/logs는 이미 존재해 호출할 수 없다).
-    @Transactional
+    @Transactional(readOnly = true)
     public List<LogExistenceResponse> checkLogExists(List<UUID> itineraryIds, UUID userId) {
         Map<UUID, TravelLog> logByItineraryId = new HashMap<>(
                 travelLogRepository.findByItineraryIdInAndUserId(itineraryIds, userId)
@@ -213,7 +257,17 @@ public class TravelLogService {
                 .filter(id -> !logByItineraryId.containsKey(id))
                 .toList();
         if (!missingIds.isEmpty()) {
-            autoCreateLogsForEndedItineraries(missingIds, userId, logByItineraryId);
+            for (UUID itineraryId : missingIds) {
+                try {
+                    TravelLog created = self.autoCreateLogForEndedItinerary(itineraryId, userId);
+                    if (created != null) logByItineraryId.put(itineraryId, created);
+                } catch (DataIntegrityViolationException e) {
+                    // 동시에 들어온 다른 요청이 먼저 만든 경우 — 아래 재조회에서 주워담는다.
+                }
+            }
+            // 동시 요청이 REQUIRES_NEW 트랜잭션으로 방금 커밋한 로그까지 반영 (READ COMMITTED)
+            travelLogRepository.findByItineraryIdInAndUserId(missingIds, userId)
+                    .forEach(l -> logByItineraryId.putIfAbsent(l.getItineraryId(), l));
         }
 
         return itineraryIds.stream()
@@ -225,27 +279,29 @@ public class TravelLogService {
                 .toList();
     }
 
-    // 아직 로그가 없는 일정 중 이미 종료된(endAt이 오늘 이전인) 것만 골라 기본값(비공개, mood/theme 없음)으로
-    // 로그를 자동 생성한다. 접근 권한이 없거나 아직 끝나지 않은 일정은 조용히 건너뛴다 — 배치 조회 하나가
-    // 잘못된 itineraryId 때문에 통째로 에러 나면 안 되기 때문(기존 checkLogExists도 권한 검사 없이 동작했음).
-    private void autoCreateLogsForEndedItineraries(List<UUID> itineraryIds, UUID userId, Map<UUID, TravelLog> logByItineraryId) {
-        LocalDate today = LocalDate.now();
-        Map<UUID, Itinerary> itinerariesById = itineraryRepository.findAllById(itineraryIds)
-                .stream().collect(Collectors.toMap(Itinerary::getId, i -> i));
-
-        for (UUID itineraryId : itineraryIds) {
-            Itinerary itinerary = itinerariesById.get(itineraryId);
-            if (itinerary == null || itinerary.getEndAt() == null || itinerary.getEndAt().isAfter(today)) {
-                continue;
-            }
-            try {
-                validateItineraryAccess(itinerary, userId);
-            } catch (IllegalArgumentException e) {
-                continue;
-            }
-            TravelLog log = createLogEntity(itinerary, userId, false, null, null);
-            logByItineraryId.put(itineraryId, log);
+    // 아직 로그가 없는 일정이 이미 종료됐으면(endAt이 오늘 이전) 기본값(비공개, mood/theme 없음)으로
+    // 로그를 자동 생성한다. 조건에 안 맞거나(미종료/미존재) 접근 권한이 없으면 null을 반환해 조용히 건너뛴다.
+    //
+    // 별도(REQUIRES_NEW) 트랜잭션에서 실행한다 — 동시에 들어온 두 요청이 애플리케이션 레벨 중복 체크를
+    // 함께 통과해 uq_travel_logs_itinerary_id_user_id 를 위반하면, 그 건만 롤백되고(호출부에서
+    // DataIntegrityViolationException 캐치) 나머지 배치와 바깥 조회 트랜잭션은 살아남는다.
+    // 예전엔 바깥 트랜잭션이 통째로 rollback-only가 되어 /api/logs/exists 가 409로 떨어졌다.
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public TravelLog autoCreateLogForEndedItinerary(UUID itineraryId, UUID userId) {
+        Itinerary itinerary = itineraryRepository.findById(itineraryId).orElse(null);
+        if (itinerary == null || itinerary.getEndAt() == null || itinerary.getEndAt().isAfter(LocalDate.now())) {
+            return null;
         }
+        try {
+            validateItineraryAccess(itinerary, userId);
+        } catch (IllegalArgumentException e) {
+            return null;
+        }
+        if (travelLogRepository.existsByItineraryIdAndUserId(itineraryId, userId)) {
+            return travelLogRepository.findByItineraryIdInAndUserId(List.of(itineraryId), userId)
+                    .stream().findFirst().orElse(null);
+        }
+        return createLogEntity(itinerary, userId, false, null, null);
     }
 
     // 영수증 발행 팝업 "다시 묻지 않음" — 이후 이 일정에 대해 팝업을 띄우지 않도록 기록(idempotent).
@@ -299,14 +355,43 @@ public class TravelLogService {
         List<UUID> logIds = travelLogItemRepository.findDistinctTravelLogIdsByItineraryItemIdIn(itemIds);
         if (logIds.isEmpty()) return List.of();
 
+        // 관광지 둘러보기 화면 썸네일 폴백용 — 이 관광지의 대표 이미지(TourAPI 썸네일, 없으면 스와이프 큐레이션 이미지)
+        String spotFallbackImage = tourSpotRepository.findById(spotId)
+                .map(s -> s.getThumbnailUrl() != null ? s.getThumbnailUrl() : s.getSwipeImageUrl())
+                .orElse(null);
+        Set<UUID> thisSpotItineraryItemIds = new HashSet<>(itemIds);
+
         return travelLogRepository.findByIdInAndIsPublicTrueOrderByCreatedAtDesc(logIds).stream()
                 .map(log -> {
                     String nickname = userRepository.findById(log.getUserId()).map(User::getNickname).orElse(null);
                     Itinerary itinerary = findItinerary(log.getItineraryId());
+                    String thumbnail = resolveSpotBrowseThumbnail(log, thisSpotItineraryItemIds, spotFallbackImage);
                     return TravelLogSummaryResponse.of(log, itinerary, nickname,
-                            countCollectedSpots(itinerary, log.getUserId()));
+                            countCollectedSpots(itinerary, log.getUserId()), thumbnail);
                 })
                 .toList();
+    }
+
+    // 관광지 둘러보기(getLogsBySpotId) 화면의 로그 카드 썸네일을 정한다:
+    //  ① 이 관광지에서 작성자가 찍은 인증 사진   (기본)
+    //  ② 없으면 로그의 다른 인증 사진(대표 사진 우선, 없으면 아무 사진)
+    //  ③ 그것도 없으면 관광지 대표 이미지(여행지 이미지)
+    private String resolveSpotBrowseThumbnail(TravelLog log, Set<UUID> thisSpotItineraryItemIds, String spotFallbackImage) {
+        String spotPhoto = null;
+        String anyPhoto = null;
+        for (TravelLogItem logItem : log.getItems()) {
+            if (logItem.getPhotos().isEmpty()) continue;
+            String url = logItem.getPhotos().get(0).getPhotoUrl();
+            if (anyPhoto == null) anyPhoto = url;
+            if (thisSpotItineraryItemIds.contains(logItem.getItineraryItemId())) {
+                spotPhoto = url;
+                break;
+            }
+        }
+        if (spotPhoto != null) return spotPhoto;
+        if (log.getThumbnailPhotoUrl() != null) return log.getThumbnailPhotoUrl();
+        if (anyPhoto != null) return anyPhoto;
+        return spotFallbackImage;
     }
 
     @Transactional
