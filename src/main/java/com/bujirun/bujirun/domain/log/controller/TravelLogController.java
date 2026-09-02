@@ -141,6 +141,22 @@ public class TravelLogController {
                 .map(r -> ResponseEntity.status(201).body(ApiResponse.ok(r)));
     }
 
+    @Operation(summary = "여행 기록 불러오기 카운트 증가", description = """
+            다른 사용자의(또는 본인의) 여행 기록을 편집 중인 내 일정에 불러왔을 때(로그 상세의 "일정 담기")
+            호출해 해당 기록의 담긴 횟수(added_count)를 1 증가시킵니다. 이 값은 로그 목록 카운트 배지와
+            공개 로그 인기순 정렬의 기준입니다. 공개 기록이거나 본인 기록일 때만 허용됩니다.
+            '일정으로 복사'(POST /api/logs/{id}/copy)는 새 일정을 통째로 만드는 별도 흐름이라 그쪽에서
+            이미 카운트를 올리므로, 이 API는 편집 중 일정에 항목을 불러오는 경우에만 호출하세요.
+            """)
+    @PostMapping("/{id}/imports")
+    public Mono<ResponseEntity<Void>> recordImport(
+            @PathVariable UUID id,
+            @AuthenticationPrincipal UUID userId) {
+        return Mono.fromRunnable(() -> travelLogService.recordImport(id, userId))
+                .subscribeOn(Schedulers.boundedElastic())
+                .thenReturn(ResponseEntity.noContent().<Void>build());
+    }
+
     @Operation(summary = "여행 기록 수정", description = "여행 기록의 내용을 수정합니다.")
     @PatchMapping("/{id}")
     public Mono<ResponseEntity<ApiResponse<TravelLogDetailResponse>>> update(
