@@ -189,6 +189,19 @@ public class TravelLogService {
         return ItineraryDetailResponse.from(itineraryRepository.save(copy), Set.of(), Set.of());
     }
 
+    // "일정 담기"(로그를 편집 중인 내 일정에 불러오기)는 프론트가 Yjs로 반영 후 항목별 addItem으로
+    // 저장하는 흐름이라 이 서비스를 안 거친다 — 그래서 added_count(목록 카운트 배지·인기순 정렬 기준)가
+    // 안 올라가던 버그가 있었다. 프론트가 불러오기 성공 직후 이 API를 호출해 카운트를 올린다.
+    // copyToItinerary(새 일정으로 통째 복제)는 별도 흐름이라 거기서 이미 올리고 있음.
+    @Transactional
+    public void recordImport(UUID logId, UUID userId) {
+        TravelLog log = findLog(logId);
+        if (!log.isPublic() && !log.getUserId().equals(userId)) {
+            throw new IllegalArgumentException("접근 권한이 없습니다.");
+        }
+        log.incrementAddedCount();
+    }
+
     public List<TravelLogSummaryResponse> getMyLogs(UUID userId) {
         String myNickname = userRepository.findById(userId).map(User::getNickname).orElse(null);
         return travelLogRepository.findByUserIdOrderByCreatedAtDesc(userId).stream()
