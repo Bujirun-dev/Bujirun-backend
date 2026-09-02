@@ -20,6 +20,8 @@ import com.bujirun.bujirun.domain.log.dto.request.UpdateLogRequest;
 import com.bujirun.bujirun.domain.log.dto.response.*;
 import com.bujirun.bujirun.domain.log.entity.*;
 import com.bujirun.bujirun.domain.log.repository.*;
+import com.bujirun.bujirun.domain.spot.entity.TourSpot;
+import com.bujirun.bujirun.domain.spot.repository.TourSpotRepository;
 import com.bujirun.bujirun.domain.visit.entity.Visit;
 import com.bujirun.bujirun.domain.visit.entity.VisitPhoto;
 import com.bujirun.bujirun.domain.visit.repository.VisitPhotoRepository;
@@ -59,6 +61,7 @@ public class TravelLogService {
     private final CollectionEntryRepository  collectionEntryRepository;
     private final VisitRepository            visitRepository;
     private final VisitPhotoRepository       visitPhotoRepository;
+    private final TourSpotRepository         tourSpotRepository;
     private final ReceiptPromptDismissalRepository receiptPromptDismissalRepository;
 
     // 로그 자동 생성을 REQUIRES_NEW 트랜잭션으로 호출하기 위한 자기 참조(프록시 경유 필요).
@@ -117,7 +120,26 @@ public class TravelLogService {
         Map<UUID, Visit> visitedItemMap = buildVisitedItemMap(allItineraryItems(itinerary), userId);
         copyVisitPhotos(logItemMap, visitedItemMap);
 
+        // 대표 사진(=로그 썸네일)이 아직 없으면, 일정 순서상 첫 번째 인증 사진을 대표로 지정한다.
+        // 사용자가 나중에 다른 사진을 대표로 바꾸면 그 값이 유지된다(setRepresentativePhoto).
+        assignDefaultThumbnail(log, itinerary, logItemMap);
+
         return log;
+    }
+
+    // 로그 생성 시 대표 사진 자동 지정 — 일정에 담긴 순서대로 스캔해 가장 먼저 나오는 인증 사진을 쓴다.
+    private void assignDefaultThumbnail(TravelLog log, Itinerary itinerary, Map<UUID, TravelLogItem> logItemMap) {
+        if (log.getThumbnailPhotoUrl() != null) return;
+        for (var day : itinerary.getDays()) {
+            for (ItineraryItem item : day.getItems()) {
+                TravelLogItem logItem = logItemMap.get(item.getId());
+                if (logItem == null || logItem.getPhotos().isEmpty()) continue;
+                TravelLogPhoto first = logItem.getPhotos().get(0);
+                first.setRepresentative(true);
+                log.updateThumbnail(first.getPhotoUrl());
+                return;
+            }
+        }
     }
 
     public TravelLogDetailResponse getDetail(UUID logId, UUID userId) {
@@ -333,14 +355,43 @@ public class TravelLogService {
         List<UUID> logIds = travelLogItemRepository.findDistinctTravelLogIdsByItineraryItemIdIn(itemIds);
         if (logIds.isEmpty()) return List.of();
 
+        // 관광지 둘러보기 화면 썸네일 폴백용 — 이 관광지의 대표 이미지(TourAPI 썸네일, 없으면 스와이프 큐레이션 이미지)
+        String spotFallbackImage = tourSpotRepository.findById(spotId)
+                .map(s -> s.getThumbnailUrl() != null ? s.getThumbnailUrl() : s.getSwipeImageUrl())
+                .orElse(null);
+        Set<UUID> thisSpotItineraryItemIds = new HashSet<>(itemIds);
+
         return travelLogRepository.findByIdInAndIsPublicTrueOrderByCreatedAtDesc(logIds).stream()
                 .map(log -> {
                     String nickname = userRepository.findById(log.getUserId()).map(User::getNickname).orElse(null);
                     Itinerary itinerary = findItinerary(log.getItineraryId());
+                    String thumbnail = resolveSpotBrowseThumbnail(log, thisSpotItineraryItemIds, spotFallbackImage);
                     return TravelLogSummaryResponse.of(log, itinerary, nickname,
-                            countCollectedSpots(itinerary, log.getUserId()));
+                            countCollectedSpots(itinerary, log.getUserId()), thumbnail);
                 })
                 .toList();
+    }
+
+    // 관광지 둘러보기(getLogsBySpotId) 화면의 로그 카드 썸네일을 정한다:
+    //  ① 이 관광지에서 작성자가 찍은 인증 사진   (기본)
+    //  ② 없으면 로그의 다른 인증 사진(대표 사진 우선, 없으면 아무 사진)
+    //  ③ 그것도 없으면 관광지 대표 이미지(여행지 이미지)
+    private String resolveSpotBrowseThumbnail(TravelLog log, Set<UUID> thisSpotItineraryItemIds, String spotFallbackImage) {
+        String spotPhoto = null;
+        String anyPhoto = null;
+        for (TravelLogItem logItem : log.getItems()) {
+            if (logItem.getPhotos().isEmpty()) continue;
+            String url = logItem.getPhotos().get(0).getPhotoUrl();
+            if (anyPhoto == null) anyPhoto = url;
+            if (thisSpotItineraryItemIds.contains(logItem.getItineraryItemId())) {
+                spotPhoto = url;
+                break;
+            }
+        }
+        if (spotPhoto != null) return spotPhoto;
+        if (log.getThumbnailPhotoUrl() != null) return log.getThumbnailPhotoUrl();
+        if (anyPhoto != null) return anyPhoto;
+        return spotFallbackImage;
     }
 
     @Transactional

@@ -25,6 +25,13 @@ public record TravelLogSummaryResponse(
         LocalDateTime createdAt
 ) {
     public static TravelLogSummaryResponse of(TravelLog log, Itinerary itinerary, String authorNickname, int collectedSpots) {
+        return of(log, itinerary, authorNickname, collectedSpots, log.getThumbnailPhotoUrl());
+    }
+
+    // thumbnailPhotoUrl을 호출부에서 지정하는 버전 — 관광지 둘러보기 화면처럼 문맥에 따라
+    // 로그의 대표 사진이 아닌 다른 사진(그 관광지 사진 등)을 썸네일로 써야 할 때 사용한다.
+    public static TravelLogSummaryResponse of(TravelLog log, Itinerary itinerary, String authorNickname,
+                                              int collectedSpots, String thumbnailPhotoUrl) {
         int totalSpots = itinerary.getDays().stream()
                 .mapToInt(d -> d.getItems().size())
                 .sum();
@@ -38,7 +45,7 @@ public record TravelLogSummaryResponse(
                 log.getId(),
                 log.getItineraryId(),
                 itinerary.getTitle(),
-                log.getThumbnailPhotoUrl(),
+                thumbnailPhotoUrl,
                 log.isPublic(),
                 startDate,
                 endDate,
