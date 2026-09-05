@@ -4,6 +4,7 @@ import jakarta.persistence.*;
 import lombok.*;
 
 import java.time.LocalDateTime;
+import java.time.LocalTime;
 import java.util.UUID;
 
 @Entity
@@ -37,6 +38,15 @@ public class ItineraryVoteSession {
     @Column(name = "itinerary_id")
     private UUID itineraryId;
 
+    // AI 생성을 실제로 수행한 요청의 startTime/endTime. 방장이 입력한 값과 팀원 화면에
+    // 표시되는 값이 달라지는 문제(2026-09-05 발견)를 막기 위해, 프론트 URL 파라미터가 아니라
+    // 이 컬럼을 시작/종료 시각의 단일 source of truth로 삼는다.
+    @Column(name = "start_time")
+    private LocalTime startTime;
+
+    @Column(name = "end_time")
+    private LocalTime endTime;
+
     @Column(name = "created_at", nullable = false)
     private LocalDateTime createdAt;
 
@@ -50,8 +60,10 @@ public class ItineraryVoteSession {
     }
 
     // "generating" 자리를 선점한 요청이 AI 생성을 마쳤을 때 결과를 채워 "voting"으로 전이한다.
-    public void completeGeneration(String plansJson) {
+    public void completeGeneration(String plansJson, LocalTime startTime, LocalTime endTime) {
         this.plansJson = plansJson;
+        this.startTime = startTime;
+        this.endTime = endTime;
         this.status = "voting";
     }
 }
