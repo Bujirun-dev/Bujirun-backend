@@ -4,6 +4,7 @@ import com.bujirun.bujirun.domain.itinerary.entity.Itinerary;
 import org.springframework.data.jpa.repository.JpaRepository;
 
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 public interface ItineraryRepository extends JpaRepository<Itinerary, UUID> {
@@ -16,6 +17,8 @@ public interface ItineraryRepository extends JpaRepository<Itinerary, UUID> {
     List<Itinerary> findByGroupIdInOrderByCreatedAtDesc(List<UUID> groupIds);
 
     List<Itinerary> findByGroupId(UUID groupId);
+
+    Optional<Itinerary> findFirstByGroupIdAndStatusOrderByCreatedAtDesc(UUID groupId, String status);
 
     boolean existsByGroupId(UUID groupId);
 }
