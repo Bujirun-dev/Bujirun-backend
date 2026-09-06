@@ -29,6 +29,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Duration;
 import java.time.Instant;
+import java.time.LocalTime;
 import java.util.*;
 import java.util.stream.Collectors;
 
@@ -63,6 +64,10 @@ public class ItineraryVoteService {
                         return GroupItineraryGenerateResponse.builder()
                                 .voteSessionId(session.getId())
                                 .plans(plans)
+                                // AI 생성을 실제로 수행한 요청의 시각을 그대로 내려준다 — 팀원이
+                                // 자기 화면의 startTime을 별도로 들고 있을 필요가 없게 하기 위함.
+                                .startTime(session.getStartTime())
+                                .endTime(session.getEndTime())
                                 .build();
                     } catch (Exception e) {
                         throw new RuntimeException("일정 데이터 파싱 실패", e);
@@ -92,14 +97,17 @@ public class ItineraryVoteService {
     }
 
     // 선점한 요청이 AI 생성을 마쳤을 때 결과를 채워 "voting"으로 전이한다.
-    public void completeGeneration(UUID sessionId, ItineraryGenerateResponse generated) {
+    // startTime/endTime은 실제로 AI 생성에 사용된 값을 그대로 세션에 저장해서, 이후 이
+    // 세션을 조회하는 모든 멤버가 동일한 시각을 보게 한다.
+    public void completeGeneration(UUID sessionId, ItineraryGenerateResponse generated,
+                                    LocalTime startTime, LocalTime endTime) {
         String plansJson;
         try {
             plansJson = objectMapper.writeValueAsString(generated);
         } catch (Exception e) {
             throw new RuntimeException("투표 세션 생성 실패", e);
         }
-        findSession(sessionId).completeGeneration(plansJson);
+        findSession(sessionId).completeGeneration(plansJson, startTime, endTime);
     }
 
     // 선점한 요청이 생성 중 실패했을 때 자리를 비워서, 다음 요청이 처음부터 다시 생성할 수 있게 한다.

@@ -132,7 +132,15 @@ public class ItineraryService {
         // TripEditModal은 항상 기간(길이)을 그대로 유지한 채 시작 시간만 옮기고 종료 시간도
         // 똑같은 만큼 같이 이동시키므로, 시작 시간 델타 하나만으로 전체 항목을 밀어도 안전하다.
         LocalTime oldStartTime = itinerary.getStartTime();
+        LocalDate oldStartAt = itinerary.getStartAt();
         if (req.startAt() != null || req.endAt() != null) itinerary.updatePeriod(req.startAt(), req.startTime(), req.endAt(), req.endTime());
+        // 기간을 옮겼는데 Day의 날짜를 그대로 두면, 일정 목록엔 새 기간이 보이지만 일정
+        // 상세(타임라인)와 홈의 "오늘의 일정"은 수정 전 날짜를 계속 보여준다. 여행 일수는
+        // 수정해도 유지되므로(TripEditModal) Day 날짜는 항상 새 시작일 + (dayNumber - 1)이다.
+        LocalDate newStartAt = itinerary.getStartAt();
+        if (newStartAt != null && !newStartAt.equals(oldStartAt)) {
+            itinerary.getDays().forEach(day -> day.updateDate(newStartAt.plusDays(day.getDayNumber() - 1L)));
+        }
         if (req.startTime() != null && oldStartTime != null && !req.startTime().equals(oldStartTime)) {
             long deltaMinutes = java.time.Duration.between(oldStartTime, req.startTime()).toMinutes();
             itinerary.getDays().forEach(day ->
@@ -225,6 +233,8 @@ public class ItineraryService {
         if (day.getItems().size() >= MAX_ITEMS_PER_DAY) {
             throw new IllegalArgumentException("하루 일정에는 관광지를 최대 " + MAX_ITEMS_PER_DAY + "개까지만 추가할 수 있습니다.");
         }
+
+        validateArrivalTimeAvailable(day, req.arrivalTime(), null);
 
         TourSpot spot = tourSpotRepository.findById(req.spotId())
                 .orElseThrow(() -> new EntityNotFoundException("관광지를 찾을 수 없습니다. id=" + req.spotId()));
@@ -349,8 +359,19 @@ public class ItineraryService {
 
     @Transactional
     public ItineraryItemResponse updateItem(UUID itineraryId, UUID dayId, UUID itemId, UpdateItemRequest req, UUID userId) {
-        ItineraryItem item = findItem(itineraryId, dayId, itemId);
-        validateAccess(item.getDay().getItinerary(), userId);
+        // 같은 날짜의 추가/시간 변경을 직렬화해, 동시 편집으로 같은 시각이
+        // 두 번 저장되는 check-then-act 레이스를 막는다.
+        ItineraryDay day = itineraryDayRepository.findByIdForUpdate(dayId)
+                .filter(d -> d.getItinerary().getId().equals(itineraryId))
+                .orElseThrow(() -> new EntityNotFoundException("Day를 찾을 수 없습니다. id=" + dayId));
+        validateAccess(day.getItinerary(), userId);
+
+        ItineraryItem item = day.getItems().stream()
+                .filter(existing -> existing.getId().equals(itemId))
+                .findFirst()
+                .orElseThrow(() -> new EntityNotFoundException("Item을 찾을 수 없습니다. id=" + itemId));
+
+        validateArrivalTimeAvailable(day, req.arrivalTime(), itemId);
 
         // travelMode만 오고 travelTimeMin이 없으면 = 사용자가 이동수단만 선택 → 재계산
         if (req.travelMode() != null && req.travelTimeMin() == null) {
@@ -363,6 +384,17 @@ public class ItineraryService {
         }
 
         return ItineraryItemResponse.from(item, fetchCollectedSpotIds(userId), fetchVisitedItemIds(userId, List.of(item.getId())));
+    }
+
+    private void validateArrivalTimeAvailable(ItineraryDay day, LocalTime arrivalTime, UUID excludedItemId) {
+        if (arrivalTime == null) return;
+
+        boolean alreadyUsed = day.getItems().stream()
+                .filter(existing -> excludedItemId == null || !existing.getId().equals(excludedItemId))
+                .anyMatch(existing -> arrivalTime.equals(existing.getArrivalTime()));
+        if (alreadyUsed) {
+            throw new IllegalArgumentException("같은 날짜와 시간에는 일정을 하나만 추가할 수 있습니다. arrivalTime=" + arrivalTime);
+        }
     }
 
     @Transactional

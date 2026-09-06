@@ -61,11 +61,15 @@ public class GroupItineraryController {
             try {
                 ItineraryGenerateResponse generated =
                         groupItineraryGenerateService.generateGroupItinerary(groupId, req, userId, groupSummary); // 추가: groupSummary 전달
-                itineraryVoteService.completeGeneration(sessionId, generated);
+                // 실제로 AI 생성에 쓰인 startTime/endTime을 세션에 함께 저장한다 — 이후 이
+                // 세션을 조회하는 모든 멤버가 각자의 화면 상태가 아니라 이 값을 보게 하기 위함.
+                itineraryVoteService.completeGeneration(sessionId, generated, req.getStartTime(), req.getEndTime());
                 return GroupItineraryGenerateResponse.builder()
                         .voteSessionId(sessionId)
                         .plans(generated)
                         .groupSummary(groupSummary) // 추가
+                        .startTime(req.getStartTime())
+                        .endTime(req.getEndTime())
                         .build();
             } catch (RuntimeException e) {
                 // 생성 실패 시 선점한 자리를 비워서 다음 요청이 처음부터 다시 시도할 수 있게 한다
