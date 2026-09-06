@@ -12,6 +12,7 @@ import com.bujirun.bujirun.domain.group.entity.GroupMember;
 import com.bujirun.bujirun.domain.group.repository.GroupMemberRepository;
 import com.bujirun.bujirun.domain.group.repository.GroupRepository;
 import com.bujirun.bujirun.domain.itinerary.repository.ItineraryRepository;
+import com.bujirun.bujirun.domain.itinerary.entity.Itinerary;
 import jakarta.persistence.EntityNotFoundException;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -57,6 +58,10 @@ public class GroupService {
         Group group = groupRepository.findByInviteCode(req.inviteCode())
                 .orElseThrow(() -> new EntityNotFoundException("초대 코드를 찾을 수 없습니다."));
 
+        if (findCompletedItinerary(group.getId()) != null) {
+            throw new IllegalStateException("이미 완성되어 참여가 종료된 일정입니다.");
+        }
+
         if (!groupMemberRepository.existsById_GroupIdAndId_UserId(group.getId(), userId)) {
             groupMemberRepository.save(GroupMember.builder()
                     .groupId(group.getId())
@@ -76,8 +81,15 @@ public class GroupService {
                 .orElse(null);
 
         long memberCount = groupMemberRepository.countById_GroupId(group.getId());
+        Itinerary completedItinerary = findCompletedItinerary(group.getId());
 
-        return new GroupInvitePreviewResponse(group.getName(), inviterNickname, memberCount);
+        return new GroupInvitePreviewResponse(
+                group.getName(),
+                inviterNickname,
+                memberCount,
+                completedItinerary != null,
+                completedItinerary != null ? completedItinerary.getId() : null
+        );
     }
 
     public List<GroupResponse> getMyGroups(UUID userId) {
@@ -134,6 +146,12 @@ public class GroupService {
             }
         }
         throw new IllegalStateException("초대 코드 생성에 실패했습니다. 다시 시도해주세요.");
+    }
+
+    private Itinerary findCompletedItinerary(UUID groupId) {
+        return itineraryRepository
+                .findFirstByGroupIdAndStatusOrderByCreatedAtDesc(groupId, "confirmed")
+                .orElse(null);
     }
 
     private String generateInviteCode() {
