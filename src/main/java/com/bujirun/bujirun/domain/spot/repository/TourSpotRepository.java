@@ -74,6 +74,10 @@ public interface TourSpotRepository extends JpaRepository<TourSpot, UUID> {
     // 부산명소정보 API로 보완된 소개글(description) 요약 대상 조회
     List<TourSpot> findByBusanUcSeqIsNotNullAndDescriptionIsNotNull();
 
+    // TourAPI 자체 개요(overview)로 채워진 소개글(description) 요약 대상 조회
+    // (부산명소정보 매칭분 제외, 이미 요약된 것도 제외해서 재실행 시 중복 호출 안 되게)
+    List<TourSpot> findByBusanUcSeqIsNullAndDescriptionIsNotNullAndSummaryDescriptionIsNull();
+
     // 소개글(description)이 아직 없는 관광지 — TourAPI 자체 개요(overview)로 백필할 대상 조회
     @Query("select ts from TourSpot ts where ts.description is null or ts.description = ''")
     List<TourSpot> findWithoutDescription();

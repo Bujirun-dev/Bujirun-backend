@@ -20,6 +20,16 @@ public interface VisitRepository extends JpaRepository<Visit, UUID> {
     @Query("select distinct v.spot.id from Visit v where v.userId = :userId and v.verified = true")
     List<UUID> findVerifiedSpotIdsByUserId(@Param("userId") UUID userId);
 
+    // 일정 상세 조회 시 "이 일정의 이 방문 항목"을 인증했는지 항목 단위로 매핑하기 위한 조회.
+    // 같은 관광지라도 일정마다 다시 인증해야 하므로 spotId가 아니라 itineraryItemId 기준으로 본다.
+    @Query("""
+            select distinct v.itineraryItemId
+            from Visit v
+            where v.userId = :userId and v.verified = true and v.itineraryItemId in :itemIds
+            """)
+    List<UUID> findVerifiedItineraryItemIds(@Param("userId") UUID userId,
+                                            @Param("itemIds") Collection<UUID> itemIds);
+
     // 여행 기록 생성 시 일정 항목별 인증 기록을 매칭하기 위한 조회 (itineraryItemId로 직접 연결된 경우)
     // 같은 항목에 대해 재인증 등으로 여러 건이 쌓였을 수 있어 최신순으로 정렬 — 호출부에서 첫 건만 사용
     List<Visit> findByUserIdAndItineraryItemIdInAndVerifiedTrueOrderByVisitedAtDesc(UUID userId, Collection<UUID> itineraryItemIds);

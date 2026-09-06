@@ -38,11 +38,15 @@ public class SubwayArrivalService implements ArrivalInfoProvider {
             log.info("지하철 역코드 없음 — {}", subPath.startName());
             return null;
         }
+        return getArrivalByStationId(subPath.startId(), subPath.wayCode());
+    }
+
+    public Integer getArrivalByStationId(int stationId, int wayCode) {
         try {
-            SubwaySchedule schedule = odsayClient.searchSubwaySchedule(subPath.startId(), subPath.wayCode());
-            return parseNextArrival(schedule, subPath.wayCode());
+            SubwaySchedule schedule = odsayClient.searchSubwaySchedule(stationId, wayCode);
+            return parseNextArrival(schedule, wayCode);
         } catch (Exception e) {
-            log.warn("지하철 시각표 조회 실패 stationId={}: {}", subPath.startId(), e.getMessage());
+            log.warn("지하철 시각표 조회 실패 stationId={}: {}", stationId, e.getMessage());
             return null;
         }
     }

@@ -37,6 +37,18 @@ public class ItineraryGenerateService {
     private static final List<Double> RADIUS_STEPS_M = List.of(15_000.0, 25_000.0, 40_000.0); // 15km → 25km → 40km
     private static final int MIN_CANDIDATES = 20; // 후보 장소 최소 개수
     private static final int MAX_TRIP_DAYS = 4; // 최대 3박 4일
+
+    private static final Map<String, List<String>> CATEGORY_REASON_PHRASES = Map.of(
+            "바다", List.of("바다 전망이 좋은 곳들 위주로 반응하셔서 추천했어요"),
+            "체험", List.of("직접 체험할 수 있는 활동적인 스팟을 선호하셔서 추천했어요"),
+            "자연", List.of("탁 트인 자연 경관에 반응이 많으셔서 추천했어요"),
+            "문화", List.of("그 지역만의 이야기가 담긴 문화 스팟을 선호하셔서 추천했어요")
+    );
+
+    private static final List<String> UNIFORM_REASON_PHRASES = List.of(
+            "다양한 카테고리를 고루 좋아하셔서 대표 명소 위주로 구성했어요",
+            "폭넓게 관심을 보이셔서 부산 대표 명소로 구성했어요"
+    );
     private static final int MIN_ACTIVITY_HOURS = 1; // 하루 최소 활동시간
     private static final int MAX_ACTIVITY_HOURS = 16; // 하루 최대 활동시간 상한
     private static final int DEFAULT_ACTIVITY_HOURS = 12; // 추가: activityHours 미입력 시 기본값 (09:00~21:00 기준)
@@ -280,16 +292,19 @@ public class ItineraryGenerateService {
                 + "planA와 planB는 스팟 구성이 최소 " + MIN_PLAN_DIFF_SPOTS + "곳 이상 서로 달라야 합니다. "
                 + "두 플랜을 동일하거나 거의 동일한 관광지 목록으로 채우지 마세요.\n";
 
-        // isUniformPreference 여부에 따라 summaryReason/spotReasons 작성 지침을 분기한다
+        // isUniformPreference 여부에 따라 summaryReason/spotReasons 작성 지침을 분기한다.
+        // AI가 존재하지 않는 스팟 속성을 지어내지 않도록, 자유 생성이 아니라 유저 프롬프트에 제공되는
+        // 후보 문구 목록에서만 그대로 골라 쓰도록 강제한다.
         String reasonGuidance = groupPreferenceSummary.isUniformPreference()
                 ? "\n## 추천 이유 작성 지침 (편중 없는 취향)\n"
                         + "그룹원들의 선호가 특정 카테고리에 뚜렷하게 쏠리지 않고 폭넓게 분산되어 있습니다. "
-                        + "summaryReason과 spotReasons에서 특정 카테고리를 근거로 들지 말고, "
-                        + "\"그룹원들이 폭넓게 선호를 표시해 대표 명소 위주로 구성했습니다\"와 같이 일반화된 이유를 사용하세요.\n"
+                        + "summaryReason과 spotReasons는 반드시 유저 프롬프트의 \"편중 없는 취향용 후보 문구\" 목록에서 "
+                        + "그대로 골라 쓰세요. 새 문장을 지어내거나 표현을 바꾸지 마세요.\n"
                 : "\n## 추천 이유 작성 지침 (뚜렷한 취향)\n"
                         + "그룹원들의 선호가 특정 카테고리에 뚜렷하게 쏠려 있습니다. "
-                        + "summaryReason과 spotReasons에서는 유저 프롬프트에 제공되는 그룹원 취향 집계(categoryScore) 상위 카테고리를 "
-                        + "구체적인 근거로 사용하세요.\n";
+                        + "summaryReason과 spotReasons는 반드시 유저 프롬프트의 \"카테고리별 후보 문구\" 목록에서, "
+                        + "그룹원 취향 집계(categoryScore) 상위 카테고리에 해당하는 문구만 그대로 골라 쓰세요. "
+                        + "새 문장을 지어내거나 표현을 바꾸지 마세요.\n";
 
         return base + diversityRule + reasonGuidance;
     }
@@ -329,8 +344,21 @@ public class ItineraryGenerateService {
                     sb.append("- ").append(category).append(": ").append(String.format("%.2f", score)).append("점\n"));
 
             sb.append("\n## 편중도(isUniformPreference): ").append(groupPreferenceSummary.isUniformPreference()).append("\n");
-            sb.append("\n위 그룹원 취향 집계를 근거로 각 플랜의 summaryReason과 각 관광지의 spotReasons를 구체적으로 작성하세요. ")
-                    .append("isUniformPreference와 categoryScore에 따른 작성 지침은 시스템 프롬프트를 따르세요.");
+
+            if (groupPreferenceSummary.isUniformPreference()) {
+                sb.append("\n## 편중 없는 취향용 후보 문구 (이 중에서만 골라 사용)\n");
+                UNIFORM_REASON_PHRASES.forEach(phrase ->
+                        sb.append("- \"").append(phrase).append("\"\n"));
+            } else {
+                sb.append("\n## 카테고리별 후보 문구 (categoryScore 상위 카테고리에 해당하는 것만 골라 사용)\n");
+                CATEGORY_REASON_PHRASES.forEach((category, phrases) -> {
+                    sb.append("- ").append(category).append(":\n");
+                    phrases.forEach(phrase ->
+                            sb.append("  - \"").append(phrase).append("\"\n"));
+                });
+            }
+
+            sb.append("\n반드시 위 후보 문구 목록에서 그대로 골라 쓰고, 새로운 문장을 지어내지 마세요.");
         }
 
         sb.append("\n## 이동 최적화 기준: ").append(

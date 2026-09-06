@@ -38,10 +38,6 @@ public class User {
     @Column(name = "provider_id", length = 255)
     private String providerId;
 
-    // 자체 회원가입(local) 시에만 사용. 카카오 로그인 사용자는 비워둠
-    @Column(name = "password_hash", length = 255)
-    private String passwordHash;
-
     // 탈퇴 시각. null이면 정상 유저, 값이 있으면 탈퇴한 유저
     @Column(name = "deleted_at")
     private LocalDateTime deletedAt;
@@ -51,7 +47,6 @@ public class User {
         this.profileImageUrl = null;
         this.email = null;
         // this.providerId = null;  // 30일 유예기간 동안 재가입 방지용으로 유지
-        this.passwordHash = null;
         // this.nickname = null; 제거
         this.deletedAt = LocalDateTime.now();
     }
@@ -70,7 +65,6 @@ public class User {
         this.providerId = null;
     }
     // 카카오 로그인 회원가입 시 사용하는 생성자
-    // passwordHash는 의도적으로 제외 (카카오 로그인은 비밀번호가 없음)
     @Builder
     public User(String nickname, String profileImageUrl, String email, String authProvider, String providerId) {
         this.nickname = nickname;

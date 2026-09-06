@@ -38,9 +38,6 @@ public class SwipeSession {
     @Column(name = "created_at", nullable = false)
     private LocalDateTime createdAt;
 
-    @Column(name = "deleted_at")
-    private LocalDateTime deletedAt;
-
     @Builder
     public SwipeSession(UUID userId, UUID groupId, String status) {
         this.userId = userId;

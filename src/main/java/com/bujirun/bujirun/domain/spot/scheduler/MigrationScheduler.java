@@ -17,8 +17,9 @@ public class MigrationScheduler {
 
     private final MigrationService migrationService;
 
+    // 자동 마이그레이션 임시 중단 (2026-08-27)
     // 목요일 새벽 3시
-    @Scheduled(cron = "0 0 3 * * THU")
+    // @Scheduled(cron = "0 0 3 * * THU")
     public void scheduledMigration() {
         log.info("[Scheduler] 주간 관광지 데이터 갱신 시작" );
         migrationService.runFullMigration();

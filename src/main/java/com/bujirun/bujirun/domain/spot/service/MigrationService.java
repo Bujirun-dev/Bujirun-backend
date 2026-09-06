@@ -7,10 +7,8 @@ import com.bujirun.bujirun.domain.spot.dto.response.BusanAttractionApiResponse;
 import com.bujirun.bujirun.domain.spot.dto.response.TourApiResponse.*;
 import com.bujirun.bujirun.domain.spot.entity.Sigungu;
 import com.bujirun.bujirun.domain.spot.entity.TourSpot;
-import com.bujirun.bujirun.domain.spot.entity.TourSpotTag;
 import com.bujirun.bujirun.domain.spot.repository.SigunguRepository;
 import com.bujirun.bujirun.domain.spot.repository.TourSpotRepository;
-import com.bujirun.bujirun.domain.spot.repository.TourSpotTagRepository;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
@@ -32,7 +30,6 @@ public class MigrationService {
     private final BusanAttractionApiClient  busanAttractionApiClient;
     private final OpenAiClient              openAiClient;
     private final TourSpotRepository        tourSpotRepository;
-    private final TourSpotTagRepository     tourSpotTagRepository;
     private final SigunguRepository         sigunguRepository;
     // 항목 단위 재시도 격리를 위한 자가주입 프록시(@Lazy로 순환참조 회피) — enrichSingleBusanItem()을
     // 이 프록시로 호출해야 REQUIRES_NEW가 실제로 새 트랜잭션을 열어준다(self-invocation은 프록시를 안 거침).
@@ -44,14 +41,12 @@ public class MigrationService {
                              BusanAttractionApiClient busanAttractionApiClient,
                              OpenAiClient openAiClient,
                              TourSpotRepository tourSpotRepository,
-                             TourSpotTagRepository tourSpotTagRepository,
                              SigunguRepository sigunguRepository,
                              @Lazy MigrationService self) {
         this.tourApiClient = tourApiClient;
         this.busanAttractionApiClient = busanAttractionApiClient;
         this.openAiClient = openAiClient;
         this.tourSpotRepository = tourSpotRepository;
-        this.tourSpotTagRepository = tourSpotTagRepository;
         this.sigunguRepository = sigunguRepository;
         this.self = self;
     }
@@ -262,9 +257,25 @@ public class MigrationService {
     // SUMMARIZE_MIN_LENGTH 이하는 이미 짧다고 보고 건너뜀. 실패한 건은 원문을 그대로 두고 다음 건 계속 진행.
     @Transactional
     public SummarizeResult summarizeBusanDescriptions() {
-        log.info("========== 부산명소정보 소개글 요약 시작 ==========");
-
         List<TourSpot> targets = tourSpotRepository.findByBusanUcSeqIsNotNullAndDescriptionIsNotNull();
+        // 부산명소정보 쪽은 처음부터 description 자체를 요약본으로 덮어써왔음(원문 미보존, 기존 방식 유지)
+        return summarizeDescriptions(targets, "부산명소정보", TourSpot::updateDescription);
+    }
+
+    // TourAPI 자체 개요(overview)로 채워진 소개글도 같은 기준으로 재요약(2026-08-27, 사용자 요청).
+    // 부산명소정보 매칭분(busanUcSeq 있는 것)은 위 메서드가 이미 처리하므로 제외.
+    // 부산명소정보 때와 달리 원문 description은 보존하고 요약본은 summary_description 컬럼에 별도 저장.
+    @Transactional
+    public SummarizeResult summarizeTourApiOverviewDescriptions() {
+        List<TourSpot> targets =
+                tourSpotRepository.findByBusanUcSeqIsNullAndDescriptionIsNotNullAndSummaryDescriptionIsNull();
+        return summarizeDescriptions(targets, "TourAPI 개요", TourSpot::updateSummaryDescription);
+    }
+
+    private SummarizeResult summarizeDescriptions(List<TourSpot> targets, String sourceLabel,
+                                                   java.util.function.BiConsumer<TourSpot, String> applySummary) {
+        log.info("========== {} 소개글 요약 시작 ==========", sourceLabel);
+
         int summarized = 0, skipped = 0, failed = 0;
 
         for (TourSpot spot : targets) {
@@ -280,7 +291,7 @@ public class MigrationService {
                     failed++;
                     continue;
                 }
-                spot.updateDescription(summary);
+                applySummary.accept(spot, summary);
                 tourSpotRepository.save(spot);
                 summarized++;
                 Thread.sleep(300);
@@ -291,7 +302,7 @@ public class MigrationService {
         }
 
         SummarizeResult result = new SummarizeResult(targets.size(), summarized, skipped, failed);
-        log.info("========== 부산명소정보 소개글 요약 완료: {} ==========", result);
+        log.info("========== {} 소개글 요약 완료: {} ==========", sourceLabel, result);
         return result;
     }
 
@@ -412,37 +423,15 @@ public class MigrationService {
                     .address(item.getAddr1())
                     .thumbnailUrl(item.getFirstimage())
                     .operatingHours(operatingHours)
-                    .contentTypeId(contentTypeId)
                     .build());
         } else {
             spot = existing.get();
             spot.update(item.getTitle(), category, sigungu,
                     parseBigDecimal(item.getMapy()), parseBigDecimal(item.getMapx()),
-                    item.getAddr1(), item.getFirstimage(), operatingHours,
-                    contentTypeId);
+                    item.getAddr1(), item.getFirstimage(), operatingHours);
         }
 
-        tourSpotTagRepository.deleteBySpotId(spot.getId());
-        buildTags(item).forEach(tag ->
-                tourSpotTagRepository.save(TourSpotTag.builder().spot(spot).tag(tag).build())
-        );
-
         return isNew;
-    }
-
-    private List<String> buildTags(AreaListResponse.AreaItem item) {
-        List<String> tags = new ArrayList<>();
-        tags.add(CATEGORY_MAP.getOrDefault(item.getContenttypeid(), "기타"));
-        tags.add(SIGUNGU_MAP.getOrDefault(item.getSigungucode(), "기타"));
-
-        String t = item.getTitle().toLowerCase();
-        if (t.contains("해수욕장") || t.contains("해변") || t.contains("바다")) tags.add("바다");
-        if (t.contains("산")      || t.contains("숲")   || t.contains("공원")) tags.add("자연");
-        if (t.contains("박물관")  || t.contains("역사")  || t.contains("문화")) tags.add("역사");
-        if (t.contains("시장")    || t.contains("먹거리"))                       tags.add("맛집");
-        if (t.contains("카페")    || t.contains("루프탑"))                       tags.add("카페");
-
-        return tags;
     }
 
     private String resolveCategory(String cat1) {

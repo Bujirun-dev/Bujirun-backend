@@ -37,7 +37,9 @@ public record ItineraryItemResponse(
             boolean visited
     ) {}
 
-    public static ItineraryItemResponse from(ItineraryItem item, Set<UUID> collectedSpotIds, Set<UUID> visitedSpotIds) {
+    // collectedSpotIds: 도감 수집 여부(관광지 단위, 전역) / visitedItemIds: 이 일정의 이 방문 항목을
+    // 인증했는지(항목 단위) — 같은 관광지라도 일정마다 따로 인증해야 하므로 spotId가 아닌 itemId로 판단한다.
+    public static ItineraryItemResponse from(ItineraryItem item, Set<UUID> collectedSpotIds, Set<UUID> visitedItemIds) {
         TourSpot s = item.getSpot();
         return new ItineraryItemResponse(
                 item.getId(),
@@ -47,7 +49,7 @@ public record ItineraryItemResponse(
                         s.getAddress(), s.getLat(), s.getLng(),
                         s.getThumbnailUrl(),
                         collectedSpotIds.contains(s.getId()),
-                        visitedSpotIds.contains(s.getId())
+                        visitedItemIds.contains(item.getId())
                 ),
                 item.getArrivalTime(),
                 item.getDurationMin(),

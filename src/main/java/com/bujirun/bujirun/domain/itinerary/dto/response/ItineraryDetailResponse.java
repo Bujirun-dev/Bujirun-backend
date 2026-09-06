@@ -23,11 +23,13 @@ public record ItineraryDetailResponse(
         LocalTime endTime,
         String accommodationName,
         String accommodationAddress,
+        Double accommodationLat,
+        Double accommodationLng,
         LocalDateTime createdAt,
         LocalDateTime updatedAt,
         List<ItineraryDayResponse> days
 ) {
-    public static ItineraryDetailResponse from(Itinerary itinerary, Set<UUID> collectedSpotIds, Set<UUID> visitedSpotIds) {
+    public static ItineraryDetailResponse from(Itinerary itinerary, Set<UUID> collectedSpotIds, Set<UUID> visitedItemIds) {
         return new ItineraryDetailResponse(
                 itinerary.getId(),
                 itinerary.getUserId(),
@@ -42,9 +44,11 @@ public record ItineraryDetailResponse(
                 itinerary.getEndTime(),
                 itinerary.getAccommodationName(),
                 itinerary.getAccommodationAddress(),
+                itinerary.getAccommodationLat(),
+                itinerary.getAccommodationLng(),
                 itinerary.getCreatedAt(),
                 itinerary.getUpdatedAt(),
-                itinerary.getDays().stream().map(d -> ItineraryDayResponse.from(d, collectedSpotIds, visitedSpotIds)).toList()
+                itinerary.getDays().stream().map(d -> ItineraryDayResponse.from(d, collectedSpotIds, visitedItemIds)).toList()
         );
     }
 }

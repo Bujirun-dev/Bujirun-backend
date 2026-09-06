@@ -31,6 +31,7 @@ public class MigrationController {
     private final BusanAttractionStatusHolder busanAttractionStatusHolder;
     private final SummarizeStatusHolder summarizeStatusHolder;
     private final TourApiOverviewStatusHolder tourApiOverviewStatusHolder;
+    private final TourApiSummarizeStatusHolder tourApiSummarizeStatusHolder;
 
     @PostMapping("/run")
     public ResponseEntity<Map<String, String>> run() {
@@ -172,6 +173,42 @@ public class MigrationController {
         body.put("finishedAt", tourApiOverviewStatusHolder.getFinishedAt());
         body.put("result", tourApiOverviewStatusHolder.getLastResult());
         body.put("error", tourApiOverviewStatusHolder.getLastError());
+        return ResponseEntity.ok(body);
+    }
+
+    // TourAPI 자체 개요(overview)로 채워진 소개글(description)도 부산명소정보와 같은 기준으로 OpenAI 재요약
+    @PostMapping("/tourapi-overview/summarize")
+    public ResponseEntity<Map<String, String>> summarizeTourApiOverviewDescriptions() {
+        if (!tourApiSummarizeStatusHolder.tryStart()) {
+            return ResponseEntity.status(HttpStatus.CONFLICT)
+                    .body(Map.of("message", "이미 소개글 요약이 진행 중입니다."));
+        }
+
+        Mono.fromCallable(migrationService::summarizeTourApiOverviewDescriptions)
+                .subscribeOn(Schedulers.boundedElastic())
+                .subscribe(
+                        result -> {
+                            tourApiSummarizeStatusHolder.markCompleted(result);
+                            log.info("TourAPI 개요 소개글 요약 완료: {}", result);
+                        },
+                        error -> {
+                            tourApiSummarizeStatusHolder.markFailed(error.getMessage());
+                            log.error("TourAPI 개요 소개글 요약 실패", error);
+                        }
+                );
+
+        return ResponseEntity.accepted()
+                .body(Map.of("message", "소개글 요약이 시작되었습니다. /tourapi-overview/summarize/status 로 진행 상황을 확인하세요."));
+    }
+
+    @GetMapping("/tourapi-overview/summarize/status")
+    public ResponseEntity<Map<String, Object>> tourApiSummarizeStatus() {
+        Map<String, Object> body = new java.util.HashMap<>();
+        body.put("status", tourApiSummarizeStatusHolder.getStatus());
+        body.put("startedAt", tourApiSummarizeStatusHolder.getStartedAt());
+        body.put("finishedAt", tourApiSummarizeStatusHolder.getFinishedAt());
+        body.put("result", tourApiSummarizeStatusHolder.getLastResult());
+        body.put("error", tourApiSummarizeStatusHolder.getLastError());
         return ResponseEntity.ok(body);
     }
 }

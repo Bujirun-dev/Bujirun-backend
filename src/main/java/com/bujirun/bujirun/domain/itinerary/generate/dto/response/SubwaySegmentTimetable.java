@@ -12,6 +12,8 @@ public record SubwaySegmentTimetable(
         String startStationName,
         String endStationName,
         String lineName,                            // routeNo (호선명)
+        int stationId,                              // 승차역 ODsay 역 코드(SubPath.startId 그대로). GET /api/transit/arrival/subway
+                                                      // 폴링에 필요. 역코드를 알 수 없으면 0.
         int wayCode,
         List<SubwayDeparture> upcomingDepartures,   // 시각표 기준 다음 열차 목록 (예정, 최대 N개)
         Integer nextDepartureMinutes,                // 시각표 기준 다음 열차까지 예정 대기시간(분). 실시간 아님.
