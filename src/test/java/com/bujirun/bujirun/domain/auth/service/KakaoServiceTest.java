@@ -32,7 +32,12 @@ class KakaoServiceTest {
     void 기존_회원이면_isNewUser가_false() throws Exception {
         KakaoUserInfoResponse userInfo = kakaoUserInfo(12345L, "홍길동", "http://img", "test@test.com");
         User existing = User.builder().nickname("홍길동").authProvider("kakao").providerId("12345").build();
+        // 탈퇴 여부 확인용 조회와, 정상 유저 조회는 서로 다른 메서드다
+        // (findOrCreateUser가 탈퇴 계정 복구를 처리하면서 후자가 추가됨) — 둘 다 스텁해야
+        // 기존 회원 경로를 탄다.
         when(userRepository.findByProviderIdAndAuthProvider("12345", "kakao"))
+                .thenReturn(Optional.of(existing));
+        when(userRepository.findByProviderIdAndAuthProviderAndDeletedAtIsNull("12345", "kakao"))
                 .thenReturn(Optional.of(existing));
 
         UserAuthResult result = kakaoService.findOrCreateUser(userInfo);
@@ -46,6 +51,8 @@ class KakaoServiceTest {
     void 신규_회원이면_isNewUser가_true이고_카카오_프로필로_생성() throws Exception {
         KakaoUserInfoResponse userInfo = kakaoUserInfo(999L, "새유저", "http://new-img", "new@test.com");
         when(userRepository.findByProviderIdAndAuthProvider("999", "kakao"))
+                .thenReturn(Optional.empty());
+        when(userRepository.findByProviderIdAndAuthProviderAndDeletedAtIsNull("999", "kakao"))
                 .thenReturn(Optional.empty());
         when(userRepository.save(any(User.class))).thenAnswer(inv -> inv.getArgument(0));
 
