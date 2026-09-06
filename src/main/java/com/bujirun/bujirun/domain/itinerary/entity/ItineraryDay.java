@@ -39,4 +39,9 @@ public class ItineraryDay {
     @OrderBy("orderIndex ASC")
     @Fetch(FetchMode.SUBSELECT)
     private List<ItineraryItem> items = new ArrayList<>();
+
+    // 여행 기간이 수정되면 각 Day의 날짜도 새 시작일 기준으로 다시 맞춰야 한다.
+    public void updateDate(LocalDate date) {
+        this.date = date;
+    }
 }
