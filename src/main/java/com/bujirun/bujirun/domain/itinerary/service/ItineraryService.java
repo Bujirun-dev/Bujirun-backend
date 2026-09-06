@@ -234,6 +234,8 @@ public class ItineraryService {
             throw new IllegalArgumentException("하루 일정에는 관광지를 최대 " + MAX_ITEMS_PER_DAY + "개까지만 추가할 수 있습니다.");
         }
 
+        validateArrivalTimeAvailable(day, req.arrivalTime(), null);
+
         TourSpot spot = tourSpotRepository.findById(req.spotId())
                 .orElseThrow(() -> new EntityNotFoundException("관광지를 찾을 수 없습니다. id=" + req.spotId()));
 
@@ -357,8 +359,19 @@ public class ItineraryService {
 
     @Transactional
     public ItineraryItemResponse updateItem(UUID itineraryId, UUID dayId, UUID itemId, UpdateItemRequest req, UUID userId) {
-        ItineraryItem item = findItem(itineraryId, dayId, itemId);
-        validateAccess(item.getDay().getItinerary(), userId);
+        // 같은 날짜의 추가/시간 변경을 직렬화해, 동시 편집으로 같은 시각이
+        // 두 번 저장되는 check-then-act 레이스를 막는다.
+        ItineraryDay day = itineraryDayRepository.findByIdForUpdate(dayId)
+                .filter(d -> d.getItinerary().getId().equals(itineraryId))
+                .orElseThrow(() -> new EntityNotFoundException("Day를 찾을 수 없습니다. id=" + dayId));
+        validateAccess(day.getItinerary(), userId);
+
+        ItineraryItem item = day.getItems().stream()
+                .filter(existing -> existing.getId().equals(itemId))
+                .findFirst()
+                .orElseThrow(() -> new EntityNotFoundException("Item을 찾을 수 없습니다. id=" + itemId));
+
+        validateArrivalTimeAvailable(day, req.arrivalTime(), itemId);
 
         // travelMode만 오고 travelTimeMin이 없으면 = 사용자가 이동수단만 선택 → 재계산
         if (req.travelMode() != null && req.travelTimeMin() == null) {
@@ -371,6 +384,17 @@ public class ItineraryService {
         }
 
         return ItineraryItemResponse.from(item, fetchCollectedSpotIds(userId), fetchVisitedItemIds(userId, List.of(item.getId())));
+    }
+
+    private void validateArrivalTimeAvailable(ItineraryDay day, LocalTime arrivalTime, UUID excludedItemId) {
+        if (arrivalTime == null) return;
+
+        boolean alreadyUsed = day.getItems().stream()
+                .filter(existing -> excludedItemId == null || !existing.getId().equals(excludedItemId))
+                .anyMatch(existing -> arrivalTime.equals(existing.getArrivalTime()));
+        if (alreadyUsed) {
+            throw new IllegalArgumentException("같은 날짜와 시간에는 일정을 하나만 추가할 수 있습니다. arrivalTime=" + arrivalTime);
+        }
     }
 
     @Transactional
