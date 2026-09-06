@@ -132,7 +132,15 @@ public class ItineraryService {
         // TripEditModal은 항상 기간(길이)을 그대로 유지한 채 시작 시간만 옮기고 종료 시간도
         // 똑같은 만큼 같이 이동시키므로, 시작 시간 델타 하나만으로 전체 항목을 밀어도 안전하다.
         LocalTime oldStartTime = itinerary.getStartTime();
+        LocalDate oldStartAt = itinerary.getStartAt();
         if (req.startAt() != null || req.endAt() != null) itinerary.updatePeriod(req.startAt(), req.startTime(), req.endAt(), req.endTime());
+        // 기간을 옮겼는데 Day의 날짜를 그대로 두면, 일정 목록엔 새 기간이 보이지만 일정
+        // 상세(타임라인)와 홈의 "오늘의 일정"은 수정 전 날짜를 계속 보여준다. 여행 일수는
+        // 수정해도 유지되므로(TripEditModal) Day 날짜는 항상 새 시작일 + (dayNumber - 1)이다.
+        LocalDate newStartAt = itinerary.getStartAt();
+        if (newStartAt != null && !newStartAt.equals(oldStartAt)) {
+            itinerary.getDays().forEach(day -> day.updateDate(newStartAt.plusDays(day.getDayNumber() - 1L)));
+        }
         if (req.startTime() != null && oldStartTime != null && !req.startTime().equals(oldStartTime)) {
             long deltaMinutes = java.time.Duration.between(oldStartTime, req.startTime()).toMinutes();
             itinerary.getDays().forEach(day ->
