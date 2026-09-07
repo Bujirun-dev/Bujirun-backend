@@ -11,6 +11,7 @@ public record TravelLogSummaryResponse(
         UUID id,
         UUID itineraryId,
         String title,
+        String firstSpotName,
         String thumbnailPhotoUrl,
         boolean isPublic,
         LocalDate startDate,
@@ -36,6 +37,13 @@ public record TravelLogSummaryResponse(
                 .mapToInt(d -> d.getItems().size())
                 .sum();
 
+        // 목록 카드의 "관광지명 외 N곳" 표기는 일정 제목(title)이 아니라 첫 방문 관광지명을 써야 하므로 별도로 계산
+        String firstSpotName = itinerary.getDays().stream()
+                .flatMap(d -> d.getItems().stream())
+                .findFirst()
+                .map(item -> item.getSpot().getName())
+                .orElse(null);
+
         LocalDate startDate = itinerary.getStartAt() != null ? itinerary.getStartAt()
                 : (itinerary.getDays().isEmpty() ? null : itinerary.getDays().get(0).getDate());
         LocalDate endDate = itinerary.getEndAt() != null ? itinerary.getEndAt()
@@ -45,6 +53,7 @@ public record TravelLogSummaryResponse(
                 log.getId(),
                 log.getItineraryId(),
                 itinerary.getTitle(),
+                firstSpotName,
                 thumbnailPhotoUrl,
                 log.isPublic(),
                 startDate,
