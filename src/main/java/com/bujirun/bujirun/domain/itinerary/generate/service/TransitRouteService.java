@@ -33,7 +33,6 @@ public class TransitRouteService {
 
     private static final double ROAD_DISTANCE_FACTOR = 1.3;  // 차량용
     private static final double WALK_DISTANCE_FACTOR = 1.4;  // 도보용 (골목/계단 등 우회 반영)
-    private static final int WALK_DISTANCE_THRESHOLD_M = 1000; // 이 거리(하버사인) 이상이면 도보 옵션 자체를 후보에서 제외
 
     private static final ZoneId KST = ZoneId.of("Asia/Seoul");
 
@@ -83,10 +82,9 @@ public class TransitRouteService {
             double distanceM = GeoUtils.haversineDistance(from.getLat(), from.getLng(), to.getLat(), to.getLng());
 
             // 도보 전용 여부 판단은 ODsay가 준 첫 번째(추천) 대중교통 후보만 대표로 확인한다
+            // 거리가 멀어 오래 걸리더라도 도보 옵션은 항상 후보에 포함한다
             TransitOption representativeOption = transitOptions.isEmpty() ? null : transitOptions.get(0);
-            if (distanceM <= WALK_DISTANCE_THRESHOLD_M) { // 도보 거리 임계값 초과 시 도보 옵션 자체를 후보에서 제외
-                options.add(resolveWalkOption(distanceM, representativeOption)); // ODsay 도보 구간 sectionTime 재사용, 매칭 실패 시 calcWalk 폴백
-            }
+            options.add(resolveWalkOption(distanceM, representativeOption)); // ODsay 도보 구간 sectionTime 재사용, 매칭 실패 시 calcWalk 폴백
 
             options.add(calcTaxi(distanceM));
 
