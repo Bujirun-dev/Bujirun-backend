@@ -284,7 +284,7 @@ public class ItineraryService {
                         : options.get(0);
                 SubPath firstSubPath = TransitRouteUtils.findFirstTransitSubPath(leg.subPaths());
 
-                travelMode = toTravelMode(leg.type());
+                travelMode = TransitRouteUtils.toTravelMode(leg.type());
                 if (travelTimeMin == null) travelTimeMin = leg.totalTime();
                 // routeType: subPath 실측 타입(버스/지하철) 우선, 없으면(도보/택시 옵션) 옵션 타입 그대로
                 routeType = firstSubPath != null ? firstSubPath.type() : leg.type();
@@ -329,15 +329,6 @@ public class ItineraryService {
                 .thumbnailUrl(spot.getThumbnailUrl())
                 .operatingHours(spot.getOperatingHours())
                 .build();
-    }
-
-    // ODsay/자체계산 TransitOption.type()의 한글 값을 DB travel_mode 허용값(walk/transit/taxi)으로 변환
-    private String toTravelMode(String type) {
-        return switch (type) {
-            case "도보" -> "walk";
-            case "택시" -> "taxi";
-            default -> "transit";
-        };
     }
 
     // 요청받은 travelMode(walk/transit/taxi/bus/subway/combo, 또는 옵션 목록에서 받은 원본 타입
@@ -480,7 +471,7 @@ public class ItineraryService {
         // travel_mode DB 컬럼은 walk/transit/taxi 3종만 허용(CHECK 제약) — preferredMode가
         // bus/subway/combo여도 여기선 matched.type() 기준으로 안전하게 축약해서 저장한다.
         item.updateRoute(
-                toTravelMode(matched.type()),
+                TransitRouteUtils.toTravelMode(matched.type()),
                 matched.totalTime(),
                 firstSubPath != null ? firstSubPath.type() : matched.type(),
                 firstSubPath != null ? firstSubPath.routeNo() : null,
