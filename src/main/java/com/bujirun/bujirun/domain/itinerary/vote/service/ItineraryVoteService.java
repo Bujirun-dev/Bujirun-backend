@@ -283,7 +283,7 @@ public class ItineraryVoteService {
                         .spot(spots.get(i))
                         .orderIndex(order++)
                         .durationMin(DEFAULT_VISIT_DURATION_MINUTES)
-                        .travelMode(leg != null ? toTravelMode(leg.type()) : null)
+                        .travelMode(leg != null ? TransitRouteUtils.toTravelMode(leg.type()) : null)
                         .travelTimeMin(leg != null ? leg.totalTime() : null)
                         .routeType(firstTransitSubPath != null ? firstTransitSubPath.type() : (leg != null ? leg.type() : null))
                         .routeNo(firstTransitSubPath != null ? firstTransitSubPath.routeNo() : null)
@@ -299,15 +299,6 @@ public class ItineraryVoteService {
         }
 
         return itineraryRepository.save(itinerary).getId();
-    }
-
-    // ODsay/자체계산 TransitOption.type()의 한글 값을 DB travel_mode 허용값(walk/transit/taxi)으로 변환
-    private String toTravelMode(String type) {
-        return switch (type) {
-            case "도보" -> "walk";
-            case "택시" -> "taxi";
-            default -> "transit"; // "대중교통" 등
-        };
     }
 
     private SpotInfo toSpotInfo(TourSpot spot) {

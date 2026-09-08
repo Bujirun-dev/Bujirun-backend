@@ -256,14 +256,14 @@ public class ItineraryOptimizeService {
 
             // 순서/도착시각/체류시간/메모 갱신
             item.update(i + 1, arrivalTimes.get(i), item.getDurationMin(),
-                    leg != null ? toTravelMode(leg.type()) : null,
+                    leg != null ? TransitRouteUtils.toTravelMode(leg.type()) : null,
                     leg != null ? leg.totalTime() : null,
                     item.getMemo());
 
             // 경로 상세(노선번호·정류장명 등) 갱신
             // routeType: subPath 실측 타입(버스/지하철) 우선, 없으면(도보/택시 옵션) 옵션 타입 그대로
             item.updateRoute(
-                    leg != null ? toTravelMode(leg.type()) : null,
+                    leg != null ? TransitRouteUtils.toTravelMode(leg.type()) : null,
                     leg != null ? leg.totalTime() : null,
                     firstTransitSubPath != null ? firstTransitSubPath.type() : (leg != null ? leg.type() : null),
                     firstTransitSubPath != null ? firstTransitSubPath.routeNo() : null,
@@ -273,15 +273,6 @@ public class ItineraryOptimizeService {
                     transitDetail
             );
         }
-    }
-
-    // ODsay/자체계산 TransitOption.type()의 한글 값을 DB travel_mode 허용값(walk/transit/taxi)으로 변환
-    private String toTravelMode(String type) {
-        return switch (type) {
-            case "도보" -> "walk";
-            case "택시" -> "taxi";
-            default -> "transit"; // "대중교통" 등
-        };
     }
 
     private SpotInfo toSpotInfo(ItineraryItem item) {
