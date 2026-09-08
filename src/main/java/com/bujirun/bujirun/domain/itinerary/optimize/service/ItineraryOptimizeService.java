@@ -70,7 +70,7 @@ public class ItineraryOptimizeService {
         // 1차: 좌표 기반 nearest-neighbor 재정렬
         List<SpotInfo> baseOrder = SpotOrderOptimizer.sortByNearestNeighbor(spots);
 
-        // 2차: 운영시간 고려해서 Groq한테 최종 순서 조정 요청
+        // 2차: 운영시간 고려해서 OpenAI한테 최종 순서 조정 요청
         List<SpotInfo> finalOrder = baseOrder;
         String reason = "이동 거리를 기준으로 동선을 최적화했어요.";
 
@@ -82,13 +82,13 @@ public class ItineraryOptimizeService {
             List<LocalTime> arrivalTimes = calculateArrivalTimes(startTime, travelTimes);
 
             try {
-                GroqAdjustResult adjusted = adjustWithGroq(baseOrder, arrivalTimes);
+                OpenAiAdjustResult adjusted = adjustWithOpenAi(baseOrder, arrivalTimes);
                 if (adjusted != null && !adjusted.order().isEmpty()) {
                     finalOrder = adjusted.order();
                     reason = adjusted.reason();
                 }
             } catch (Exception e) {
-                log.warn("Groq 운영시간 조정 실패, nearest-neighbor 순서 그대로 사용: {}", e.getMessage());
+                log.warn("OpenAI 운영시간 조정 실패, nearest-neighbor 순서 그대로 사용: {}", e.getMessage());
             }
         }
 
@@ -166,7 +166,7 @@ public class ItineraryOptimizeService {
         return arrivals;
     }
 
-    private GroqAdjustResult adjustWithGroq(List<SpotInfo> order, List<LocalTime> arrivalTimes) {
+    private OpenAiAdjustResult adjustWithOpenAi(List<SpotInfo> order, List<LocalTime> arrivalTimes) {
         String systemPrompt = """
                 당신은 여행 일정의 방문 순서를 운영시간 기준으로 점검하는 도우미입니다.
                 반드시 아래 JSON 형식만 출력하세요. 설명이나 마크다운 없이 순수 JSON만 출력하세요.
@@ -194,10 +194,10 @@ public class ItineraryOptimizeService {
         sb.append("\n운영시간 정보가 '정보없음'이거나 '상시 개방'인 곳은 순서 조정 대상이 아닙니다.");
 
         String rawResponse = openAiClient.chat(systemPrompt, sb.toString());
-        return parseGroqAdjustResult(rawResponse, order);
+        return parseOpenAiAdjustResult(rawResponse, order);
     }
 
-    private GroqAdjustResult parseGroqAdjustResult(String rawResponse, List<SpotInfo> original) {
+    private OpenAiAdjustResult parseOpenAiAdjustResult(String rawResponse, List<SpotInfo> original) {
         try {
             String json = rawResponse.trim();
             if (json.contains("```")) {
@@ -217,9 +217,9 @@ public class ItineraryOptimizeService {
                 }
             }
 
-            // 개수가 안 맞으면(Groq가 일부 빠뜨림) 신뢰하지 않고 원본 순서 유지
+            // 개수가 안 맞으면(OpenAI가 일부 빠뜨림) 신뢰하지 않고 원본 순서 유지
             if (order.size() != original.size()) {
-                log.warn("Groq 조정 결과 스팟 개수 불일치({} → {}), 원본 순서 유지", original.size(), order.size());
+                log.warn("OpenAI 조정 결과 스팟 개수 불일치({} → {}), 원본 순서 유지", original.size(), order.size());
                 return null;
             }
 
@@ -228,9 +228,9 @@ public class ItineraryOptimizeService {
                 reason = "이동 거리를 기준으로 동선을 최적화했어요.";
             }
 
-            return new GroqAdjustResult(order, reason);
+            return new OpenAiAdjustResult(order, reason);
         } catch (Exception e) {
-            log.warn("Groq 운영시간 조정 응답 파싱 실패: {}", rawResponse, e);
+            log.warn("OpenAI 운영시간 조정 응답 파싱 실패: {}", rawResponse, e);
             return null;
         }
     }
@@ -290,5 +290,5 @@ public class ItineraryOptimizeService {
                 .build();
     }
 
-    private record GroqAdjustResult(List<SpotInfo> order, String reason) {}
+    private record OpenAiAdjustResult(List<SpotInfo> order, String reason) {}
 }
