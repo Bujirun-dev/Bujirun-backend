@@ -30,4 +30,13 @@ public class TransitRouteUtils {
         }
         return result;
     }
+
+    // ODsay/자체계산 TransitOption.type()의 한글 값을 DB travel_mode 허용값(walk/transit/taxi)으로 변환
+    public static String toTravelMode(String type) {
+        return switch (type) {
+            case "도보" -> "walk";
+            case "택시" -> "taxi";
+            default -> "transit"; // "대중교통" 등
+        };
+    }
 }

@@ -15,6 +15,8 @@ import com.bujirun.bujirun.domain.itinerary.generate.dto.response.TransitOption;
 import com.bujirun.bujirun.domain.itinerary.generate.dto.response.TransitRouteResponse;
 import com.bujirun.bujirun.domain.itinerary.generate.service.SubwayScheduleMappingService;
 import com.bujirun.bujirun.domain.itinerary.generate.service.TransitRouteService;
+import com.bujirun.bujirun.domain.itinerary.optimize.dto.request.ItineraryOptimizeRequest;
+import com.bujirun.bujirun.domain.itinerary.optimize.service.ItineraryOptimizeService;
 import com.bujirun.bujirun.domain.itinerary.repository.ItineraryDayRepository;
 import com.bujirun.bujirun.domain.itinerary.repository.ItineraryItemRepository;
 import com.bujirun.bujirun.domain.itinerary.repository.ItineraryRepository;
@@ -59,6 +61,7 @@ public class ItineraryService {
     private final SwipeSessionRepository     swipeSessionRepository;
     private final TransitRouteService transitRouteService;
     private final SubwayScheduleMappingService subwayScheduleMappingService;
+    private final ItineraryOptimizeService itineraryOptimizeService;
     // ── Itinerary ──────────────────────────────────────────────────
 
     @Transactional
@@ -126,11 +129,6 @@ public class ItineraryService {
         Itinerary itinerary = findWithDetails(id);
         validateAccess(itinerary, userId);
         if (req.title() != null)  itinerary.updateTitle(req.title());
-        // 여행 시작 시간이 통째로 밀리면(예: TripEditModal에서 출발 시간 변경) 이미 저장된
-        // 각 항목의 방문 시각도 같은 만큼 밀어준다 — 그대로 두면 새 시작/종료 시간 범위 밖으로
-        // 밀려난 항목들이 화면에서 clampToTripBounds에 의해 한 시각으로 뭉개져 보이게 된다.
-        // TripEditModal은 항상 기간(길이)을 그대로 유지한 채 시작 시간만 옮기고 종료 시간도
-        // 똑같은 만큼 같이 이동시키므로, 시작 시간 델타 하나만으로 전체 항목을 밀어도 안전하다.
         LocalTime oldStartTime = itinerary.getStartTime();
         LocalDate oldStartAt = itinerary.getStartAt();
         if (req.startAt() != null || req.endAt() != null) itinerary.updatePeriod(req.startAt(), req.startTime(), req.endAt(), req.endTime());
@@ -141,10 +139,20 @@ public class ItineraryService {
         if (newStartAt != null && !newStartAt.equals(oldStartAt)) {
             itinerary.getDays().forEach(day -> day.updateDate(newStartAt.plusDays(day.getDayNumber() - 1L)));
         }
+        // 여행 시작 시간이 통째로 밀리면(예: TripEditModal에서 출발 시간 변경) 각 Day를 새
+        // 시작 시각 기준으로 다시 최적화한다 — 관광지 구성은 그대로 두되 동선/순서는 좌표 기준으로
+        // 다시 정렬하고, 운영시간과 충돌하는 관광지는 마감 전에 방문하도록 OpenAI가 순서를 보정한다.
         if (req.startTime() != null && oldStartTime != null && !req.startTime().equals(oldStartTime)) {
-            long deltaMinutes = java.time.Duration.between(oldStartTime, req.startTime()).toMinutes();
-            itinerary.getDays().forEach(day ->
-                    day.getItems().forEach(item -> item.shiftArrivalTime(deltaMinutes)));
+            ItineraryOptimizeRequest optimizeRequest = new ItineraryOptimizeRequest(null, req.startTime());
+            itinerary.getDays().stream()
+                    .filter(day -> !day.getItems().isEmpty())
+                    .forEach(day -> {
+                        itineraryOptimizeService.optimizeDay(day.getId(), optimizeRequest, userId);
+                        // optimizeDay는 각 항목의 orderIndex만 갱신한다 — day.getItems()는 @OrderBy가
+                        // "DB에서 처음 로드할 때"만 적용되고 같은 트랜잭션 내 필드 변경으로는 자동
+                        // 재정렬되지 않으므로, 이번 응답에 바뀐 순서를 바로 반영하려면 직접 정렬해야 한다.
+                        day.getItems().sort(Comparator.comparing(ItineraryItem::getOrderIndex));
+                    });
         }
         // 필드가 아예 안 온 것(null, 다른 필드만 수정하는 요청)과 "지우기"(빈 문자열)를
         // 구분해야 해서, null 체크를 통과한 경우에만 빈 문자열을 null로 정규화해 저장한다.
@@ -284,7 +292,7 @@ public class ItineraryService {
                         : options.get(0);
                 SubPath firstSubPath = TransitRouteUtils.findFirstTransitSubPath(leg.subPaths());
 
-                travelMode = toTravelMode(leg.type());
+                travelMode = TransitRouteUtils.toTravelMode(leg.type());
                 if (travelTimeMin == null) travelTimeMin = leg.totalTime();
                 // routeType: subPath 실측 타입(버스/지하철) 우선, 없으면(도보/택시 옵션) 옵션 타입 그대로
                 routeType = firstSubPath != null ? firstSubPath.type() : leg.type();
@@ -329,15 +337,6 @@ public class ItineraryService {
                 .thumbnailUrl(spot.getThumbnailUrl())
                 .operatingHours(spot.getOperatingHours())
                 .build();
-    }
-
-    // ODsay/자체계산 TransitOption.type()의 한글 값을 DB travel_mode 허용값(walk/transit/taxi)으로 변환
-    private String toTravelMode(String type) {
-        return switch (type) {
-            case "도보" -> "walk";
-            case "택시" -> "taxi";
-            default -> "transit";
-        };
     }
 
     // 요청받은 travelMode(walk/transit/taxi/bus/subway/combo, 또는 옵션 목록에서 받은 원본 타입
@@ -480,7 +479,7 @@ public class ItineraryService {
         // travel_mode DB 컬럼은 walk/transit/taxi 3종만 허용(CHECK 제약) — preferredMode가
         // bus/subway/combo여도 여기선 matched.type() 기준으로 안전하게 축약해서 저장한다.
         item.updateRoute(
-                toTravelMode(matched.type()),
+                TransitRouteUtils.toTravelMode(matched.type()),
                 matched.totalTime(),
                 firstSubPath != null ? firstSubPath.type() : matched.type(),
                 firstSubPath != null ? firstSubPath.routeNo() : null,
