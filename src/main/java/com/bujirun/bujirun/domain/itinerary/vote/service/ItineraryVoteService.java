@@ -18,6 +18,7 @@ import com.bujirun.bujirun.domain.itinerary.vote.repository.ItineraryVoteReposit
 import com.bujirun.bujirun.domain.itinerary.vote.repository.ItineraryVoteSessionRepository;
 import com.bujirun.bujirun.domain.spot.entity.TourSpot;
 import com.bujirun.bujirun.domain.spot.repository.TourSpotRepository;
+import com.bujirun.bujirun.global.util.ItineraryTimeUtils;
 import com.bujirun.bujirun.global.util.TransitRouteUtils;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
@@ -231,6 +232,12 @@ public class ItineraryVoteService {
 
         validateDays(finalPlan, days);
 
+        // 여행 마지막 날 판단(= 종료 시각 상한을 적용할 날)용. days는 dayNumber가 1부터 시작한다.
+        int totalDays = days.stream()
+                .mapToInt(FinalizeItineraryRequest.DayInput::getDay)
+                .max()
+                .orElse(days.size());
+
         Itinerary itinerary = Itinerary.builder()
                 .userId(request.getRequesterId())
                 .groupId(groupId)
@@ -264,7 +271,25 @@ public class ItineraryVoteService {
             List<TransitRouteResponse> routes = transitRouteService.getRoutesForDay(
                     spots.stream().map(this::toSpotInfo).toList(), null);
 
-            int order = 1;
+            // 확정 시점에 방문 시각(arrival_time)을 실제로 채운다.
+            // 예전엔 durationMin만 넣고 arrivalTime을 비워둬서, 확정 직후 모든 항목의
+            // arrival_time이 null이었다. 그러면 프론트가 매번 화면에서 시각을 합성하는데
+            // 그 값은 저장되지 않아("표시값 == 저장값"으로 착각해 PATCH를 건너뜀) 화면과
+            // DB가 갈리고, 로그/Yjs로도 빈 시각이 그대로 퍼졌다.
+            // 기준 시각: 첫날은 여행 시작 시각, 둘째 날 이후는 기본값(09:00).
+            // 간격: 체류 시간(DEFAULT_VISIT_DURATION_MINUTES) + 직전 구간 이동 시간.
+            List<Integer> gaps = new ArrayList<>();
+            for (int i = 1; i < spots.size(); i++) {
+                TransitOption prevLeg = routes.get(i - 1).options().isEmpty()
+                        ? null
+                        : routes.get(i - 1).options().get(0);
+                gaps.add(DEFAULT_VISIT_DURATION_MINUTES + (prevLeg != null ? prevLeg.totalTime() : 0));
+            }
+            List<LocalTime> arrivalTimes = ItineraryTimeUtils.accumulateArrivalTimes(
+                    ItineraryTimeUtils.resolveDayStartTime(dayInput.getDay(), itinerary.getStartTime()),
+                    gaps,
+                    ItineraryTimeUtils.resolveDayEndLimit(dayInput.getDay(), totalDays, itinerary.getEndTime()));
+
             for (int i = 0; i < spots.size(); i++) {
                 TransitOption leg = (i == 0 || routes.get(i - 1).options().isEmpty())
                         ? null
@@ -281,7 +306,11 @@ public class ItineraryVoteService {
                 ItineraryItem item = ItineraryItem.builder()
                         .day(day)
                         .spot(spots.get(i))
-                        .orderIndex(order++)
+                        // orderIndex는 0부터 시작한다 — reorderItems(순서 일괄 변경)와 프론트
+                        // addItem이 0-based인데 여기만 1부터 넣어서, 확정 직후 순서 기준이
+                        // 두 갈래로 갈렸다(중간 삽입 시 직전 스팟 오인 등).
+                        .orderIndex(i)
+                        .arrivalTime(arrivalTimes.get(i))
                         .durationMin(DEFAULT_VISIT_DURATION_MINUTES)
                         .travelMode(leg != null ? TransitRouteUtils.toTravelMode(leg.type()) : null)
                         .travelTimeMin(leg != null ? leg.totalTime() : null)

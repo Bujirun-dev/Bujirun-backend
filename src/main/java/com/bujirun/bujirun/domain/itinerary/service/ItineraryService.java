@@ -85,6 +85,8 @@ public class ItineraryService {
             sessionId = session.getId();
         }
 
+        validatePeriodOrder(req.startAt(), req.startTime(), req.endAt(), req.endTime());
+
         Itinerary itinerary = Itinerary.builder()
                 .userId(userId)
                 .sessionId(sessionId)
@@ -131,7 +133,23 @@ public class ItineraryService {
         if (req.title() != null)  itinerary.updateTitle(req.title());
         LocalTime oldStartTime = itinerary.getStartTime();
         LocalDate oldStartAt = itinerary.getStartAt();
-        if (req.startAt() != null || req.endAt() != null) itinerary.updatePeriod(req.startAt(), req.startTime(), req.endAt(), req.endTime());
+        // 기간 검증·저장은 "이번 요청이 날짜·시간 필드를 하나라도 보낸 경우"에만 한다.
+        // 프론트는 값이 바뀌지 않은 날짜·시간 필드를 아예 보내지 않으므로, 저장될 최종 상태만
+        // 보고 검증하면 이미 잘못 저장돼 있는 일정(예: 당일치기에 start_time == end_time == 00:00)이
+        // 제목만 바꾸거나 숙소만 저장하는 요청까지 400을 맞고 빠져나갈 방법이 없어진다.
+        // 시각만 바꾸는 요청(startAt/endAt 없이 startTime만)도 반영해야 한다 — 예전 조건은
+        // startAt/endAt 중 하나가 있어야 updatePeriod를 호출해서, 시간만 보낸 요청은 조용히 무시됐다.
+        if (req.startAt() != null || req.startTime() != null || req.endAt() != null || req.endTime() != null) {
+            // 시작 > 종료로 저장되면 그 뒤로는 프론트에서 어떤 시각도 수정할 수 없게 되므로
+            // (TripEditModal의 clamp는 픽커를 직접 건드릴 때만 돌고, 여기까지 오면 막을 곳이 없었다)
+            // 요청값과 기존값을 합친 "저장될 최종 상태"를 기준으로 순서를 검증한다.
+            validatePeriodOrder(
+                    req.startAt()   != null ? req.startAt()   : itinerary.getStartAt(),
+                    req.startTime() != null ? req.startTime() : itinerary.getStartTime(),
+                    req.endAt()     != null ? req.endAt()     : itinerary.getEndAt(),
+                    req.endTime()   != null ? req.endTime()   : itinerary.getEndTime());
+            itinerary.updatePeriod(req.startAt(), req.startTime(), req.endAt(), req.endTime());
+        }
         // 기간을 옮겼는데 Day의 날짜를 그대로 두면, 일정 목록엔 새 기간이 보이지만 일정
         // 상세(타임라인)와 홈의 "오늘의 일정"은 수정 전 날짜를 계속 보여준다. 여행 일수는
         // 수정해도 유지되므로(TripEditModal) Day 날짜는 항상 새 시작일 + (dayNumber - 1)이다.
@@ -525,6 +543,26 @@ public class ItineraryService {
     }
 
     // ── 내부 헬퍼 ──────────────────────────────────────────────────
+
+    // 여행 기간의 시작이 종료보다 뒤면 400. 같은 날짜면 시각까지 비교하고, 날짜가 다르면
+    // 날짜 순서만으로 결정된다(시작일 < 종료일이면 시각은 무엇이든 유효).
+    // 메시지 문구는 같은 도메인의 기존 검증(ItineraryGenerateService.validateTripDuration/
+    // validateActivityTime)과 맞췄다.
+    private void validatePeriodOrder(LocalDate startAt, LocalTime startTime, LocalDate endAt, LocalTime endTime) {
+        if (startAt == null || endAt == null) return;
+        if (endAt.isBefore(startAt)) {
+            throw new IllegalArgumentException(
+                    "종료일이 시작일보다 빠를 수 없습니다. startAt=" + startAt + ", endAt=" + endAt);
+        }
+        // 종료 == 시작은 허용한다. 당일치기 픽커(getMinTripEndDateTime)는 "시작 + 60분"을 그날
+        // 마지막 슬롯(23:50)으로 클램프하므로, 시작을 23:50으로 고르면 종료 하한도 23:50이 된다.
+        // 여기서 같은 값을 거부하면 UI로 고를 수 있는 모든 종료 시각이 400이 되어 저장 자체가 막힌다.
+        // 생성 폼(TripSetupForm)의 종료 픽커 하한도 시작 시각 자체라서 같은 상황이 만들어진다.
+        if (startAt.equals(endAt) && startTime != null && endTime != null && endTime.isBefore(startTime)) {
+            throw new IllegalArgumentException(
+                    "종료 시간은 시작 시간보다 빠를 수 없습니다. startTime=" + startTime + ", endTime=" + endTime);
+        }
+    }
 
     private Set<UUID> fetchCollectedSpotIds(UUID userId) {
         return collectionEntryRepository.findByUserIdAndCollectedTrue(userId).stream()

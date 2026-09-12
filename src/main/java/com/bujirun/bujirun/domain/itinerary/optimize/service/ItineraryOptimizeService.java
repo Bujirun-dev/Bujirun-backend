@@ -16,6 +16,7 @@ import com.bujirun.bujirun.domain.itinerary.generate.service.TransitRouteService
 import com.bujirun.bujirun.domain.itinerary.optimize.dto.request.ItineraryOptimizeRequest;
 import com.bujirun.bujirun.domain.itinerary.optimize.dto.response.ItineraryOptimizeResponse;
 import com.bujirun.bujirun.domain.itinerary.repository.ItineraryDayRepository;
+import com.bujirun.bujirun.global.util.ItineraryTimeUtils;
 import com.bujirun.bujirun.global.util.TransitRouteUtils;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -46,8 +47,6 @@ public class ItineraryOptimizeService {
     @Value("${itinerary.default-visit-duration-minutes:60}")
     private int defaultVisitDurationMinutes;
 
-    private static final LocalTime DEFAULT_START_TIME = LocalTime.of(9, 0);
-
     public ItineraryOptimizeResponse optimizeDay(UUID dayId, ItineraryOptimizeRequest request, UUID userId) {
         ItineraryDay day = itineraryDayRepository.findById(dayId)
                 .orElseThrow(() -> new EntityNotFoundException("일정을 찾을 수 없습니다. dayId=" + dayId));
@@ -63,9 +62,20 @@ public class ItineraryOptimizeService {
                 .map(this::toSpotInfo)
                 .toList();
 
+        // 시작 기준 시각: ①명시적으로 요청된 값 → ②그 day의 기존 첫 항목 시각(사용자가 이미
+        // 정해둔 시각을 최적화가 마음대로 옮기지 않도록 존중) → ③기준 기본값. ③은 첫날이면
+        // 여행 시작 시각, 둘째 날 이후면 09:00이다 — 예전엔 무조건 09:00 하드코딩이라
+        // "20:00 도착" 여행의 첫날도 09:00부터 계산했다.
+        Itinerary itinerary = day.getItinerary();
+        int totalDays = itinerary.getDays().size();
         LocalTime startTime = request.getStartTime() != null
                 ? request.getStartTime()
-                : (items.get(0).getArrivalTime() != null ? items.get(0).getArrivalTime() : DEFAULT_START_TIME);
+                : (items.get(0).getArrivalTime() != null
+                        ? items.get(0).getArrivalTime()
+                        : ItineraryTimeUtils.resolveDayStartTime(day.getDayNumber(), itinerary.getStartTime()));
+        // 도착 시각 상한. 마지막 날에는 여행 종료 시각을, 그 외의 날엔 자정 직전을 상한으로 쓴다.
+        LocalTime dayEndLimit = ItineraryTimeUtils.resolveDayEndLimit(
+                day.getDayNumber(), totalDays, itinerary.getEndTime());
 
         // 1차: 좌표 기반 nearest-neighbor 재정렬
         List<SpotInfo> baseOrder = SpotOrderOptimizer.sortByNearestNeighbor(spots);
@@ -79,7 +89,7 @@ public class ItineraryOptimizeService {
 
         if (hasOperatingHours) {
             List<Integer> travelTimes = calculateTravelTimes(baseOrder, request.getOptimizationType());
-            List<LocalTime> arrivalTimes = calculateArrivalTimes(startTime, travelTimes);
+            List<LocalTime> arrivalTimes = calculateArrivalTimes(startTime, travelTimes, dayEndLimit);
 
             try {
                 OpenAiAdjustResult adjusted = adjustWithOpenAi(baseOrder, arrivalTimes);
@@ -95,7 +105,7 @@ public class ItineraryOptimizeService {
         // 최종 순서로 구간 경로 + 도착시각 재계산
         List<TransitRouteResponse> routes = transitRouteService.getRoutesForDay(finalOrder, request.getOptimizationType());
         List<Integer> finalTravelTimes = extractTravelTimes(routes);
-        List<LocalTime> finalArrivalTimes = calculateArrivalTimes(startTime, finalTravelTimes);
+        List<LocalTime> finalArrivalTimes = calculateArrivalTimes(startTime, finalTravelTimes, dayEndLimit);
 
         // 결과를 ItineraryItem에 반영
         Map<String, ItineraryItem> itemMap = items.stream()
@@ -110,7 +120,9 @@ public class ItineraryOptimizeService {
             optimizedSpots.add(ItineraryOptimizeResponse.OptimizedSpot.builder()
                     .contentId(spot.getContentId())
                     .name(spot.getName())
-                    .order(i + 1)
+                    // 저장되는 order_index와 같은 값(0-based)을 그대로 내려준다 — 프론트는 이
+                    // 값으로 오름차순 정렬만 하므로 기준을 DB와 일치시키는 편이 안전하다.
+                    .order(i)
                     .arrivalTime(finalArrivalTimes.get(i))
                     .travelMode(item != null ? item.getTravelMode() : null)
                     .travelTimeMin(item != null ? item.getTravelTimeMin() : null)
@@ -152,18 +164,19 @@ public class ItineraryOptimizeService {
     }
 
     /**
-     * 시작시각 + (체류시간 60분 + 구간 이동시간) 누적으로 각 스팟 도착 예정시각 계산
+     * 시작시각 + (체류시간 60분 + 구간 이동시간) 누적으로 각 스팟 도착 예정시각 계산.
+     *
+     * 예전엔 여기서 LocalTime.plusMinutes를 그대로 누적했는데, LocalTime은 자정을 넘기면
+     * 00:20처럼 한 바퀴 돌아버려서 늦은 시각 일정이 새벽 시각으로 저장됐다. 종료 시각 상한도
+     * 없었다. 두 규칙(자정 차단 + 종료 시각 상한 + 같은 날 시각 중복 방지)은 투표 확정·시작시각
+     * 변경과 같아야 하므로 ItineraryTimeUtils로 모아서 공유한다.
      */
-    private List<LocalTime> calculateArrivalTimes(LocalTime startTime, List<Integer> travelTimesBetweenSpots) {
-        List<LocalTime> arrivals = new ArrayList<>();
-        LocalTime current = startTime;
-        arrivals.add(current);
-
-        for (int travelMin : travelTimesBetweenSpots) {
-            current = current.plusMinutes(defaultVisitDurationMinutes).plusMinutes(travelMin);
-            arrivals.add(current);
-        }
-        return arrivals;
+    private List<LocalTime> calculateArrivalTimes(LocalTime startTime, List<Integer> travelTimesBetweenSpots,
+                                                  LocalTime dayEndLimit) {
+        List<Integer> gaps = travelTimesBetweenSpots.stream()
+                .map(travelMin -> defaultVisitDurationMinutes + (travelMin == null ? 0 : travelMin))
+                .toList();
+        return ItineraryTimeUtils.accumulateArrivalTimes(startTime, gaps, dayEndLimit);
     }
 
     private OpenAiAdjustResult adjustWithOpenAi(List<SpotInfo> order, List<LocalTime> arrivalTimes) {
@@ -255,7 +268,9 @@ public class ItineraryOptimizeService {
                     : TransitDetail.EMPTY;
 
             // 순서/도착시각/체류시간/메모 갱신
-            item.update(i + 1, arrivalTimes.get(i), item.getDurationMin(),
+            // orderIndex는 0부터 — reorderItems·프론트 addItem이 0-based인데 여기만 1부터
+            // 넣어서, 최적화 직후 순서 기준이 두 갈래로 갈렸다.
+            item.update(i, arrivalTimes.get(i), item.getDurationMin(),
                     leg != null ? TransitRouteUtils.toTravelMode(leg.type()) : null,
                     leg != null ? leg.totalTime() : null,
                     item.getMemo());
