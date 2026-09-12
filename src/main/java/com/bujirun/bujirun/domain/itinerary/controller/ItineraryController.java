@@ -54,7 +54,10 @@ public class ItineraryController {
                 .map(r -> ResponseEntity.ok(ApiResponse.ok(r)));
     }
 
-    @Operation(summary = "일정 수정", description = "일정의 제목, 기간 등 기본 정보를 수정합니다.")
+    @Operation(summary = "일정 수정",
+            description = "일정의 제목, 기간 등 기본 정보를 수정합니다. 여행 시작 시각(startTime)이 바뀌면 첫째 날의 " +
+                    "방문 시각을 같은 간격만큼 평행 이동합니다(순서·체류시간·이동수단은 그대로). 동선 재최적화는 " +
+                    "최적화 API(PATCH /days/{dayId}/optimize)로만 수행합니다. 시작이 종료보다 뒤면 400입니다.")
     @PatchMapping("/{id}")
     public Mono<ResponseEntity<ApiResponse<ItineraryDetailResponse>>> update(
             @PathVariable UUID id,

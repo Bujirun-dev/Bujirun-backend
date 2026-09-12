@@ -15,8 +15,6 @@ import com.bujirun.bujirun.domain.itinerary.generate.dto.response.TransitOption;
 import com.bujirun.bujirun.domain.itinerary.generate.dto.response.TransitRouteResponse;
 import com.bujirun.bujirun.domain.itinerary.generate.service.SubwayScheduleMappingService;
 import com.bujirun.bujirun.domain.itinerary.generate.service.TransitRouteService;
-import com.bujirun.bujirun.domain.itinerary.optimize.dto.request.ItineraryOptimizeRequest;
-import com.bujirun.bujirun.domain.itinerary.optimize.service.ItineraryOptimizeService;
 import com.bujirun.bujirun.domain.itinerary.repository.ItineraryDayRepository;
 import com.bujirun.bujirun.domain.itinerary.repository.ItineraryItemRepository;
 import com.bujirun.bujirun.domain.itinerary.repository.ItineraryRepository;
@@ -25,12 +23,14 @@ import com.bujirun.bujirun.domain.spot.repository.TourSpotRepository;
 import com.bujirun.bujirun.domain.swipe.entity.SwipeSession;
 import com.bujirun.bujirun.domain.swipe.repository.SwipeSessionRepository;
 import com.bujirun.bujirun.domain.visit.repository.VisitRepository;
+import com.bujirun.bujirun.global.util.ItineraryTimeUtils;
 import com.bujirun.bujirun.global.util.TransitRouteUtils;
 import jakarta.persistence.EntityNotFoundException;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Duration;
 import java.time.LocalDate;
 import java.time.LocalTime;
 import java.util.Collection;
@@ -61,7 +61,7 @@ public class ItineraryService {
     private final SwipeSessionRepository     swipeSessionRepository;
     private final TransitRouteService transitRouteService;
     private final SubwayScheduleMappingService subwayScheduleMappingService;
-    private final ItineraryOptimizeService itineraryOptimizeService;
+
     // ── Itinerary ──────────────────────────────────────────────────
 
     @Transactional
@@ -84,6 +84,8 @@ public class ItineraryService {
             }
             sessionId = session.getId();
         }
+
+        validatePeriodOrder(req.startAt(), req.startTime(), req.endAt(), req.endTime());
 
         Itinerary itinerary = Itinerary.builder()
                 .userId(userId)
@@ -131,7 +133,19 @@ public class ItineraryService {
         if (req.title() != null)  itinerary.updateTitle(req.title());
         LocalTime oldStartTime = itinerary.getStartTime();
         LocalDate oldStartAt = itinerary.getStartAt();
-        if (req.startAt() != null || req.endAt() != null) itinerary.updatePeriod(req.startAt(), req.startTime(), req.endAt(), req.endTime());
+        // 시작 > 종료로 저장되면 그 뒤로는 프론트에서 어떤 시각도 수정할 수 없게 되므로
+        // (TripEditModal의 clamp는 픽커를 직접 건드릴 때만 돌고, 여기까지 오면 막을 곳이 없었다)
+        // 요청값과 기존값을 합친 "저장될 최종 상태"를 기준으로 순서를 검증한다.
+        validatePeriodOrder(
+                req.startAt()   != null ? req.startAt()   : itinerary.getStartAt(),
+                req.startTime() != null ? req.startTime() : itinerary.getStartTime(),
+                req.endAt()     != null ? req.endAt()     : itinerary.getEndAt(),
+                req.endTime()   != null ? req.endTime()   : itinerary.getEndTime());
+        // 시각만 바꾸는 요청(startAt/endAt 없이 startTime만)도 반영해야 한다 — 예전 조건은
+        // startAt/endAt 중 하나가 있어야 updatePeriod를 호출해서, 시간만 보낸 요청은 조용히 무시됐다.
+        if (req.startAt() != null || req.startTime() != null || req.endAt() != null || req.endTime() != null) {
+            itinerary.updatePeriod(req.startAt(), req.startTime(), req.endAt(), req.endTime());
+        }
         // 기간을 옮겼는데 Day의 날짜를 그대로 두면, 일정 목록엔 새 기간이 보이지만 일정
         // 상세(타임라인)와 홈의 "오늘의 일정"은 수정 전 날짜를 계속 보여준다. 여행 일수는
         // 수정해도 유지되므로(TripEditModal) Day 날짜는 항상 새 시작일 + (dayNumber - 1)이다.
@@ -139,20 +153,22 @@ public class ItineraryService {
         if (newStartAt != null && !newStartAt.equals(oldStartAt)) {
             itinerary.getDays().forEach(day -> day.updateDate(newStartAt.plusDays(day.getDayNumber() - 1L)));
         }
-        // 여행 시작 시간이 통째로 밀리면(예: TripEditModal에서 출발 시간 변경) 각 Day를 새
-        // 시작 시각 기준으로 다시 최적화한다 — 관광지 구성은 그대로 두되 동선/순서는 좌표 기준으로
-        // 다시 정렬하고, 운영시간과 충돌하는 관광지는 마감 전에 방문하도록 OpenAI가 순서를 보정한다.
-        if (req.startTime() != null && oldStartTime != null && !req.startTime().equals(oldStartTime)) {
-            ItineraryOptimizeRequest optimizeRequest = new ItineraryOptimizeRequest(null, req.startTime());
+        // 여행 시작 시간이 밀리면(예: TripEditModal에서 출발 시간 변경) 그 날의 방문 시각을
+        // 같은 간격만큼 평행 이동만 한다.
+        // 예전엔 항목이 있는 모든 Day를 optimizeDay로 재최적화했는데 두 가지가 문제였다.
+        //  ① 사용자가 손으로 정한 순서·체류시간·이동수단이 전부 덮였다(좌표 기준 재정렬 + OpenAI 보정).
+        //  ② Day 수 × (외부 경로 API + OpenAI) 호출이 한 트랜잭션에서 돌아 프론트 타임아웃(60초)을 넘길 수 있었다.
+        // 재최적화가 필요하면 사용자가 명시적으로 부르는 최적화 API(PATCH /days/{dayId}/optimize)로만 한다.
+        // 평행 이동 대상은 첫째 날뿐이다 — 여행 시작 시각은 "첫날 도착 시각"이라서(프론트
+        // clampToTripBounds도 startTime을 day 0에만 적용) 둘째 날 이후 일정까지 같이 밀면
+        // 09:00 시작이던 다음 날들이 엉뚱한 시각으로 옮겨간다.
+        LocalTime newStartTime = itinerary.getStartTime();
+        if (newStartTime != null && oldStartTime != null && !newStartTime.equals(oldStartTime)) {
+            long shiftMinutes = Duration.between(oldStartTime, newStartTime).toMinutes();
+            int totalDays = itinerary.getDays().size();
             itinerary.getDays().stream()
-                    .filter(day -> !day.getItems().isEmpty())
-                    .forEach(day -> {
-                        itineraryOptimizeService.optimizeDay(day.getId(), optimizeRequest, userId);
-                        // optimizeDay는 각 항목의 orderIndex만 갱신한다 — day.getItems()는 @OrderBy가
-                        // "DB에서 처음 로드할 때"만 적용되고 같은 트랜잭션 내 필드 변경으로는 자동
-                        // 재정렬되지 않으므로, 이번 응답에 바뀐 순서를 바로 반영하려면 직접 정렬해야 한다.
-                        day.getItems().sort(Comparator.comparing(ItineraryItem::getOrderIndex));
-                    });
+                    .filter(day -> day.getDayNumber() <= 1 && !day.getItems().isEmpty())
+                    .forEach(day -> shiftDayArrivalTimes(day, shiftMinutes, totalDays, itinerary.getEndTime()));
         }
         // 필드가 아예 안 온 것(null, 다른 필드만 수정하는 요청)과 "지우기"(빈 문자열)를
         // 구분해야 해서, null 체크를 통과한 경우에만 빈 문자열을 null로 정규화해 저장한다.
@@ -241,8 +257,6 @@ public class ItineraryService {
         if (day.getItems().size() >= MAX_ITEMS_PER_DAY) {
             throw new IllegalArgumentException("하루 일정에는 관광지를 최대 " + MAX_ITEMS_PER_DAY + "개까지만 추가할 수 있습니다.");
         }
-
-        validateArrivalTimeAvailable(day, req.arrivalTime(), null);
 
         TourSpot spot = tourSpotRepository.findById(req.spotId())
                 .orElseThrow(() -> new EntityNotFoundException("관광지를 찾을 수 없습니다. id=" + req.spotId()));
@@ -358,8 +372,9 @@ public class ItineraryService {
 
     @Transactional
     public ItineraryItemResponse updateItem(UUID itineraryId, UUID dayId, UUID itemId, UpdateItemRequest req, UUID userId) {
-        // 같은 날짜의 추가/시간 변경을 직렬화해, 동시 편집으로 같은 시각이
-        // 두 번 저장되는 check-then-act 레이스를 막는다.
+        // 같은 day에 대한 항목 변경을 직렬화하기 위해 day 행을 잠그고 조회한다(addItem과 동일).
+        // 원래 목적은 "같은 시각 두 번 저장" 레이스 차단이었고 그 검증은 아래에서 제거됐지만,
+        // 같은 day의 동시 수정 자체를 직렬화하는 효과는 그대로 필요하므로 잠금은 유지한다.
         ItineraryDay day = itineraryDayRepository.findByIdForUpdate(dayId)
                 .filter(d -> d.getItinerary().getId().equals(itineraryId))
                 .orElseThrow(() -> new EntityNotFoundException("Day를 찾을 수 없습니다. id=" + dayId));
@@ -369,8 +384,6 @@ public class ItineraryService {
                 .filter(existing -> existing.getId().equals(itemId))
                 .findFirst()
                 .orElseThrow(() -> new EntityNotFoundException("Item을 찾을 수 없습니다. id=" + itemId));
-
-        validateArrivalTimeAvailable(day, req.arrivalTime(), itemId);
 
         // travelMode만 오고 travelTimeMin이 없으면 = 사용자가 이동수단만 선택 → 재계산
         if (req.travelMode() != null && req.travelTimeMin() == null) {
@@ -385,16 +398,15 @@ public class ItineraryService {
         return ItineraryItemResponse.from(item, fetchCollectedSpotIds(userId), fetchVisitedItemIds(userId, List.of(item.getId())));
     }
 
-    private void validateArrivalTimeAvailable(ItineraryDay day, LocalTime arrivalTime, UUID excludedItemId) {
-        if (arrivalTime == null) return;
-
-        boolean alreadyUsed = day.getItems().stream()
-                .filter(existing -> excludedItemId == null || !existing.getId().equals(excludedItemId))
-                .anyMatch(existing -> arrivalTime.equals(existing.getArrivalTime()));
-        if (alreadyUsed) {
-            throw new IllegalArgumentException("같은 날짜와 시간에는 일정을 하나만 추가할 수 있습니다. arrivalTime=" + arrivalTime);
-        }
-    }
+    // 같은 날 같은 arrivalTime을 400으로 막던 검증(validateArrivalTimeAvailable)은 제거했다.
+    // 프론트는 항목을 하나씩 PATCH하므로 A(10:00)→12:00 / B(12:00)→14:00처럼 서로 자리를
+    // 밀어내는 변경은 중간 상태에서 반드시 충돌해 먼저 보낸 PATCH가 400을 맞고, 프론트가 그
+    // 실패를 무음 처리해 화면과 DB가 갈렸다(재시도 pass를 둬도 3개 이상이 얽히면 남는다).
+    // 순서 기준은 order_index 하나뿐이고(ItineraryDay.@OrderBy) 시각으로 정렬하는 곳이 없어서
+    // 같은 시각이 저장돼도 조회 순서는 흔들리지 않는다. DB에도 (day_id, arrival_time) 유니크
+    // 제약이 없으므로 스키마 변경 없이 제약만 걷어내면 된다.
+    // 자동 계산 경로(투표 확정·재최적화·시작시각 평행이동)는 ItineraryTimeUtils가 최소 10분
+    // 간격을 보장해 애초에 같은 시각을 만들지 않는다.
 
     @Transactional
     public ItineraryItemResponse updateTravelMode(UUID itineraryId, UUID dayId, UUID itemId,
@@ -525,6 +537,38 @@ public class ItineraryService {
     }
 
     // ── 내부 헬퍼 ──────────────────────────────────────────────────
+
+    // day의 방문 시각 전체를 shiftMinutes만큼 평행 이동한다. 순서·체류시간·이동수단은 그대로 두고,
+    // 자정을 넘기거나 여행 종료 시각을 넘기면 ItineraryTimeUtils가 상한에서 멈추면서 같은 날
+    // 항목들의 시각이 겹치지 않게(최소 10분 간격) 보정한다.
+    private void shiftDayArrivalTimes(ItineraryDay day, long shiftMinutes, int totalDays, LocalTime tripEndTime) {
+        List<ItineraryItem> ordered = day.getItems().stream()
+                .sorted(Comparator.comparing(ItineraryItem::getOrderIndex))
+                .toList();
+        List<LocalTime> shifted = ItineraryTimeUtils.shiftArrivalTimes(
+                ordered.stream().map(ItineraryItem::getArrivalTime).toList(),
+                shiftMinutes,
+                ItineraryTimeUtils.resolveDayEndLimit(day.getDayNumber(), totalDays, tripEndTime));
+        for (int i = 0; i < ordered.size(); i++) {
+            ordered.get(i).updateArrivalTime(shifted.get(i));
+        }
+    }
+
+    // 여행 기간의 시작이 종료보다 뒤면 400. 같은 날짜면 시각까지 비교하고, 날짜가 다르면
+    // 날짜 순서만으로 결정된다(시작일 < 종료일이면 시각은 무엇이든 유효).
+    // 메시지 문구는 같은 도메인의 기존 검증(ItineraryGenerateService.validateTripDuration/
+    // validateActivityTime)과 맞췄다.
+    private void validatePeriodOrder(LocalDate startAt, LocalTime startTime, LocalDate endAt, LocalTime endTime) {
+        if (startAt == null || endAt == null) return;
+        if (endAt.isBefore(startAt)) {
+            throw new IllegalArgumentException(
+                    "종료일이 시작일보다 빠를 수 없습니다. startAt=" + startAt + ", endAt=" + endAt);
+        }
+        if (startAt.equals(endAt) && startTime != null && endTime != null && !endTime.isAfter(startTime)) {
+            throw new IllegalArgumentException(
+                    "종료 시간은 시작 시간보다 늦어야 합니다. startTime=" + startTime + ", endTime=" + endTime);
+        }
+    }
 
     private Set<UUID> fetchCollectedSpotIds(UUID userId) {
         return collectionEntryRepository.findByUserIdAndCollectedTrue(userId).stream()
