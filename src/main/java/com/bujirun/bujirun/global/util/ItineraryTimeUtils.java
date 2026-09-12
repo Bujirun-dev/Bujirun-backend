@@ -2,15 +2,13 @@ package com.bujirun.bujirun.global.util;
 
 import java.time.LocalTime;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.List;
 
 /**
  * 일차(Day)별 방문 시각을 계산·보정하는 공용 유틸.
  *
  * 원래는 투표 확정(ItineraryVoteService)이 시각을 아예 채우지 않았고, 재최적화
- * (ItineraryOptimizeService)는 LocalTime.plusMinutes를 그대로 누적했으며, 여행 시작시각 변경
- * (ItineraryService)은 그 재최적화를 Day마다 다시 돌리는 식이었다. 이 계산엔 문제가 셋 있었다.
+ * (ItineraryOptimizeService)는 LocalTime.plusMinutes를 그대로 누적했다. 이 계산엔 문제가 셋 있었다.
  *  ① LocalTime은 자정을 넘기면 00:20처럼 한 바퀴 돌아서, 늦은 시각 일정이 새벽 시각으로 저장된다.
  *  ② 여행 종료 시각(endTime) 상한이 어디에도 없어서 종료 시각을 훌쩍 넘긴 시각이 저장된다.
  *  ③ 같은 날 같은 시각이 만들어지면 조회 순서가 흔들리고, 프론트가 항목별로 PATCH할 때
@@ -20,6 +18,8 @@ import java.util.List;
  *  - 첫날에만 여행 시작 시각을, 마지막 날에만 여행 종료 시각을 기준으로 쓴다
  *    (프론트 clampToTripBounds와 같은 규칙 — 중간 날에는 여행 시작/종료 시각을 적용하지 않는다).
  *  - 상한에 몰려도 같은 날 항목들의 시각이 겹치지 않도록 최소 간격(10분)을 유지한다(순서는 보존).
+ *    같은 날 같은 시각은 addItem/updateItem에서 400으로 막히므로(ItineraryService
+ *    .validateArrivalTimeAvailable) 자동 계산 경로가 애초에 그런 값을 만들지 않아야 한다.
  *  - 새로 만드는 시각은 10분 단위에 맞춘다 — 프론트가 항목 시각을 표시할 때 10분 단위로
  *    반올림(normalizeTime)하므로, 10분 단위가 아니면 화면값과 저장값이 또 갈린다.
  */
@@ -45,7 +45,7 @@ public final class ItineraryTimeUtils {
      * 여행의 둘째 날이 20:00에 시작해버림). 첫날만 여행 시작 시각, 나머지 날은 기본값(09:00).
      */
     public static LocalTime resolveDayStartTime(int dayNumber, LocalTime tripStartTime) {
-        return (dayNumber <= 1 && tripStartTime != null) ? tripStartTime : DEFAULT_DAY_START;
+        return (dayNumber <= 1 && isSet(tripStartTime)) ? tripStartTime : DEFAULT_DAY_START;
     }
 
     /**
@@ -54,10 +54,21 @@ public final class ItineraryTimeUtils {
      */
     public static LocalTime resolveDayEndLimit(int dayNumber, int totalDays, LocalTime tripEndTime) {
         boolean lastDay = totalDays <= 0 || dayNumber >= totalDays;
-        if (lastDay && tripEndTime != null && tripEndTime.isBefore(LAST_SLOT_OF_DAY)) {
+        if (lastDay && isSet(tripEndTime) && tripEndTime.isBefore(LAST_SLOT_OF_DAY)) {
             return tripEndTime;
         }
         return LAST_SLOT_OF_DAY;
+    }
+
+    /**
+     * 여행 시작/종료 시각이 "실제로 설정된 값"인지. 자정(00:00)은 설정 안 된 것으로 본다 —
+     * 프론트도 같은 규칙이다(scheduleUtils.boundMinutes: 시간이 비어 있는 일정을 여행 수정
+     * 모달에서 저장하면 모달이 빈 시간을 00:00으로 보여주고 그대로 PATCH해서 00:00이 들어온다).
+     * 백엔드만 이걸 진짜 자정으로 읽으면 end_time = 00:00인 기존 일정의 마지막 날 항목이
+     * 전부 00:00/00:10/00:20으로 눌린다.
+     */
+    private static boolean isSet(LocalTime tripBound) {
+        return tripBound != null && !tripBound.equals(LocalTime.MIDNIGHT);
     }
 
     /**
@@ -74,53 +85,22 @@ public final class ItineraryTimeUtils {
             Integer gap = gapMinutes.get(i);
             minutes[i + 1] = minutes[i] + Math.max(gap == null ? 0 : gap, MIN_GAP_MINUTES);
         }
-        return normalize(minutes, dayEndLimit, true);
-    }
-
-    /**
-     * 기존 방문 시각 전체를 같은 간격만큼 평행 이동한다. 순서와 항목 간 간격(사용자가 손으로
-     * 정한 값일 수 있으므로 10분 단위로 다시 맞추지 않는다)을 그대로 유지하고, 자정/종료 시각
-     * 상한만 지킨다. 시각이 없는(null) 항목은 그대로 null로 둔다 — 없는 값을 여기서 지어내면
-     * "언제 정해진 시각인지" 구분이 사라진다.
-     */
-    public static List<LocalTime> shiftArrivalTimes(List<LocalTime> arrivalTimes, long shiftMinutes,
-                                                    LocalTime dayEndLimit) {
-        if (arrivalTimes == null || arrivalTimes.isEmpty()) return List.of();
-
-        List<Integer> positions = new ArrayList<>();
-        for (int i = 0; i < arrivalTimes.size(); i++) {
-            if (arrivalTimes.get(i) != null) positions.add(i);
-        }
-
-        List<LocalTime> result = new ArrayList<>(Collections.nCopies(arrivalTimes.size(), null));
-        if (positions.isEmpty()) return result;
-
-        int[] minutes = new int[positions.size()];
-        for (int k = 0; k < positions.size(); k++) {
-            minutes[k] = toMinuteOfDay(arrivalTimes.get(positions.get(k))) + (int) shiftMinutes;
-        }
-
-        List<LocalTime> shifted = normalize(minutes, dayEndLimit, false);
-        for (int k = 0; k < positions.size(); k++) {
-            result.set(positions.get(k), shifted.get(k));
-        }
-        return result;
+        return normalize(minutes, dayEndLimit);
     }
 
     /**
      * 누적된 분 값을 (a) 하루 안에서 (b) 종료 시각 상한 아래에서 (c) 서로 겹치지 않게 보정한다.
      * 상한에 여러 항목이 몰리면 뒤에서부터 최소 간격으로 당겨서 중복을 없앤다 — 항목 순서는 유지된다.
      */
-    private static List<LocalTime> normalize(int[] minutes, LocalTime dayEndLimit, boolean alignToSlot) {
+    private static List<LocalTime> normalize(int[] minutes, LocalTime dayEndLimit) {
         int limit = toMinuteOfDay(dayEndLimit != null ? dayEndLimit : LAST_SLOT_OF_DAY);
-        if (alignToSlot) limit = (limit / SLOT_MINUTES) * SLOT_MINUTES; // 상한도 10분 단위로 내려 맞춘다
+        limit = (limit / SLOT_MINUTES) * SLOT_MINUTES; // 상한도 10분 단위로 내려 맞춘다
         limit = Math.min(limit, toMinuteOfDay(LAST_SLOT_OF_DAY));
 
         int n = minutes.length;
         int[] out = new int[n];
         for (int i = 0; i < n; i++) {
-            int value = minutes[i];
-            if (alignToSlot) value = ceilToSlot(value);
+            int value = ceilToSlot(minutes[i]);
             if (i > 0) value = Math.max(value, out[i - 1] + MIN_GAP_MINUTES);
             out[i] = Math.min(Math.max(value, 0), limit);
         }
