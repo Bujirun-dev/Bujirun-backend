@@ -87,6 +87,12 @@ public class ItineraryItem {
         this.orderIndex = orderIndex;
     }
 
+    // 여행 시작 시각이 바뀌어 방문 시각만 평행 이동할 때 사용(ItineraryService.update 전용).
+    // 순서·체류시간·이동수단은 사용자가 손으로 정한 값이므로 건드리지 않는다.
+    public void updateArrivalTime(LocalTime arrivalTime) {
+        if (arrivalTime != null) this.arrivalTime = arrivalTime;
+    }
+
     // 경로 상세(노선번호·정류장명 등)까지 함께 갱신할 때 사용
     public void updateRoute(String travelMode, Integer travelTimeMin,
                             String routeType, String routeNo,
