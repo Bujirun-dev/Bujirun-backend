@@ -6,12 +6,13 @@ import com.bujirun.bujirun.domain.group.service.GroupService;
 import com.bujirun.bujirun.domain.itinerary.dto.request.AddItemRequest;
 import com.bujirun.bujirun.domain.itinerary.dto.request.UpdateItemRequest;
 import com.bujirun.bujirun.domain.itinerary.dto.request.UpdateItineraryRequest;
-import com.bujirun.bujirun.domain.itinerary.dto.response.ItineraryItemResponse;
 import com.bujirun.bujirun.domain.itinerary.entity.Itinerary;
 import com.bujirun.bujirun.domain.itinerary.entity.ItineraryDay;
 import com.bujirun.bujirun.domain.itinerary.entity.ItineraryItem;
 import com.bujirun.bujirun.domain.itinerary.generate.service.SubwayScheduleMappingService;
 import com.bujirun.bujirun.domain.itinerary.generate.service.TransitRouteService;
+import com.bujirun.bujirun.domain.itinerary.optimize.dto.request.ItineraryOptimizeRequest;
+import com.bujirun.bujirun.domain.itinerary.optimize.service.ItineraryOptimizeService;
 import com.bujirun.bujirun.domain.itinerary.repository.ItineraryDayRepository;
 import com.bujirun.bujirun.domain.itinerary.repository.ItineraryItemRepository;
 import com.bujirun.bujirun.domain.itinerary.repository.ItineraryRepository;
@@ -32,6 +33,7 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.Mockito.*;
 
 class ItineraryServiceTest {
@@ -47,10 +49,12 @@ class ItineraryServiceTest {
     private final SwipeSessionRepository swipeSessionRepository = mock(SwipeSessionRepository.class);
     private final TransitRouteService transitRouteService = mock(TransitRouteService.class);
     private final SubwayScheduleMappingService subwayScheduleMappingService = mock(SubwayScheduleMappingService.class);
+    private final ItineraryOptimizeService itineraryOptimizeService = mock(ItineraryOptimizeService.class);
     private final ItineraryService itineraryService = new ItineraryService(
             itineraryRepository, dayRepository, itemRepository, tourSpotRepository,
             collectionRepository, visitRepository, groupMemberRepository, groupService,
-            swipeSessionRepository, transitRouteService, subwayScheduleMappingService);
+            swipeSessionRepository, transitRouteService, subwayScheduleMappingService,
+            itineraryOptimizeService);
 
     private final UUID itineraryId = UUID.randomUUID();
     private final UUID dayId = UUID.randomUUID();
@@ -67,7 +71,6 @@ class ItineraryServiceTest {
         existingItem = mock(ItineraryItem.class);
         when(existingItem.getId()).thenReturn(UUID.randomUUID());
         when(existingItem.getArrivalTime()).thenReturn(LocalTime.of(10, 0));
-        when(existingItem.getSpot()).thenReturn(spot("A", "관광지 A"));
 
         ItineraryDay day = mock(ItineraryDay.class);
         when(day.getItinerary()).thenReturn(itinerary);
@@ -75,29 +78,30 @@ class ItineraryServiceTest {
         when(dayRepository.findByIdForUpdate(dayId)).thenReturn(Optional.of(day));
     }
 
-    // ── 같은 날 같은 시각 허용 (프론트의 항목별 PATCH가 중간 상태에서 400을 맞지 않도록) ──
+    // ── 같은 날 같은 시각 금지 ─────────────────────────────────────
+    // 프론트 scheduleUtils의 resolveDayTimes/isUsable은 그날 저장된 시각이 "엄격 증가"여야
+    // 유효하다고 보고, 아니면 그날 시각 전체를 90분+이동시간으로 재합성한다. 그 재합성 값이
+    // Yjs → flush의 updateItem으로 DB에 다시 써지므로, 같은 시각을 허용하면 사용자가 정한
+    // 시각이 통째로 덮어써진다.
 
     @Test
-    void 같은_날짜와_시간에도_일정을_추가할_수_있다() {
-        TourSpot newSpot = spot("B", "관광지 B");
-        when(tourSpotRepository.findById(newSpot.getId())).thenReturn(Optional.of(newSpot));
-        when(itemRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
-
+    void 같은_날짜와_시간에_일정을_추가할_수_없다() {
         AddItemRequest request = new AddItemRequest(
-                newSpot.getId(), 0, LocalTime.of(10, 0), null, null, null, null);
+                UUID.randomUUID(), 1, LocalTime.of(10, 0), null, null, null, null);
 
-        ItineraryItemResponse response = itineraryService.addItem(itineraryId, dayId, request, userId);
+        assertThatThrownBy(() -> itineraryService.addItem(itineraryId, dayId, request, userId))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("같은 날짜와 시간");
 
-        assertThat(response.arrivalTime()).isEqualTo(LocalTime.of(10, 0));
-        verify(itemRepository).save(any());
+        verify(tourSpotRepository, never()).findById(any());
+        verify(itemRepository, never()).save(any());
     }
 
     @Test
-    void 시간_변경으로_같은_날짜와_시간이_되어도_저장된다() {
+    void 시간_변경으로_같은_날짜와_시간이_되는_것도_막는다() {
         UUID targetItemId = UUID.randomUUID();
         ItineraryItem targetItem = mock(ItineraryItem.class);
         when(targetItem.getId()).thenReturn(targetItemId);
-        when(targetItem.getSpot()).thenReturn(spot("B", "관광지 B"));
 
         ItineraryDay day = dayRepository.findByIdForUpdate(dayId).orElseThrow();
         when(day.getItems()).thenReturn(List.of(existingItem, targetItem));
@@ -105,57 +109,55 @@ class ItineraryServiceTest {
         UpdateItemRequest request = new UpdateItemRequest(
                 null, LocalTime.of(10, 0), null, null, null, null);
 
-        assertThatCode(() -> itineraryService.updateItem(itineraryId, dayId, targetItemId, request, userId))
-                .doesNotThrowAnyException();
+        assertThatThrownBy(() -> itineraryService.updateItem(
+                itineraryId, dayId, targetItemId, request, userId))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("같은 날짜와 시간");
 
-        verify(targetItem).update(null, LocalTime.of(10, 0), null, null, null, null);
+        verify(targetItem, never()).update(any(), any(), any(), any(), any(), any());
     }
 
-    // ── 여행 시작 시각 변경 = 방문 시각 평행 이동 (AI 재최적화 아님) ──
+    // ── 여행 시작 시각 변경 = 전체 Day 재최적화 ────────────────────
 
     @Test
-    void 시작_시간을_바꾸면_첫날_방문_시각이_같은_간격만큼_평행_이동한다() {
-        ItineraryItem first = item("A", 0, LocalTime.of(9, 0));
-        ItineraryItem second = item("B", 1, LocalTime.of(11, 0));
-        Itinerary itinerary = itineraryWith(LocalTime.of(9, 0), LocalTime.of(20, 0), first, second);
+    void 시작_시간을_바꾸면_아이템이_있는_day를_새_시작_시각으로_재최적화한다() {
+        ItineraryItem item = ItineraryItem.builder()
+                .id(UUID.randomUUID())
+                .spot(TourSpot.builder().id(UUID.randomUUID()).contentId("A").name("관광지 A").build())
+                .orderIndex(1).arrivalTime(LocalTime.of(9, 0)).build();
+
+        ItineraryDay day = ItineraryDay.builder().id(dayId).dayNumber(1)
+                .items(new ArrayList<>(List.of(item))).build();
+        Itinerary itinerary = Itinerary.builder().id(itineraryId).userId(userId)
+                .startAt(LocalDate.of(2026, 9, 10)).startTime(LocalTime.of(9, 0))
+                .endAt(LocalDate.of(2026, 9, 10)).endTime(LocalTime.of(20, 0))
+                .days(new ArrayList<>(List.of(day))).build();
         when(itineraryRepository.findById(itineraryId)).thenReturn(Optional.of(itinerary));
 
         UpdateItineraryRequest request = new UpdateItineraryRequest(
-                null, LocalDate.of(2026, 9, 10), LocalTime.of(12, 0),
-                LocalDate.of(2026, 9, 10), LocalTime.of(20, 0),
+                null, LocalDate.of(2026, 9, 10), LocalTime.of(18, 0),
+                LocalDate.of(2026, 9, 10), LocalTime.of(22, 0),
                 null, null, null, null, null);
 
         itineraryService.update(itineraryId, request, userId);
 
-        assertThat(first.getArrivalTime()).isEqualTo(LocalTime.of(12, 0));
-        assertThat(second.getArrivalTime()).isEqualTo(LocalTime.of(14, 0));
+        verify(itineraryOptimizeService).optimizeDay(eq(dayId),
+                argThat(r -> LocalTime.of(18, 0).equals(r.getStartTime())), eq(userId));
     }
 
     @Test
-    void 평행_이동이_여행_종료_시각을_넘기면_상한에서_멈추고_시각이_겹치지_않는다() {
-        ItineraryItem first = item("A", 0, LocalTime.of(9, 0));
-        ItineraryItem second = item("B", 1, LocalTime.of(11, 0));
-        ItineraryItem third = item("C", 2, LocalTime.of(13, 0));
-        Itinerary itinerary = itineraryWith(LocalTime.of(9, 0), LocalTime.of(20, 0), first, second, third);
-        when(itineraryRepository.findById(itineraryId)).thenReturn(Optional.of(itinerary));
+    void 시작_시간이_그대로면_재최적화를_호출하지_않는다() {
+        ItineraryItem item = ItineraryItem.builder()
+                .id(UUID.randomUUID())
+                .spot(TourSpot.builder().id(UUID.randomUUID()).contentId("A").name("관광지 A").build())
+                .orderIndex(1).arrivalTime(LocalTime.of(9, 0)).build();
 
-        // 09:00 → 19:00 (+10시간). 그대로 밀면 21:00/23:00이 되지만 종료 시각(20:00)이 상한이고,
-        // 상한에 몰려 같은 시각이 되지 않도록 최소 10분 간격으로 당겨진다.
-        UpdateItineraryRequest request = new UpdateItineraryRequest(
-                null, LocalDate.of(2026, 9, 10), LocalTime.of(19, 0),
-                LocalDate.of(2026, 9, 10), LocalTime.of(20, 0),
-                null, null, null, null, null);
-
-        itineraryService.update(itineraryId, request, userId);
-
-        assertThat(List.of(first.getArrivalTime(), second.getArrivalTime(), third.getArrivalTime()))
-                .containsExactly(LocalTime.of(19, 0), LocalTime.of(19, 50), LocalTime.of(20, 0));
-    }
-
-    @Test
-    void 시작_시간이_그대로면_방문_시각을_건드리지_않는다() {
-        ItineraryItem first = item("A", 0, LocalTime.of(9, 0));
-        Itinerary itinerary = itineraryWith(LocalTime.of(9, 0), LocalTime.of(20, 0), first);
+        ItineraryDay day = ItineraryDay.builder().id(dayId).dayNumber(1)
+                .items(new ArrayList<>(List.of(item))).build();
+        Itinerary itinerary = Itinerary.builder().id(itineraryId).userId(userId)
+                .startAt(LocalDate.of(2026, 9, 10)).startTime(LocalTime.of(9, 0))
+                .endAt(LocalDate.of(2026, 9, 10)).endTime(LocalTime.of(20, 0))
+                .days(new ArrayList<>(List.of(day))).build();
         when(itineraryRepository.findById(itineraryId)).thenReturn(Optional.of(itinerary));
 
         UpdateItineraryRequest request = new UpdateItineraryRequest(
@@ -163,13 +165,72 @@ class ItineraryServiceTest {
 
         itineraryService.update(itineraryId, request, userId);
 
-        assertThat(first.getArrivalTime()).isEqualTo(LocalTime.of(9, 0));
+        verify(itineraryOptimizeService, never()).optimizeDay(any(), any(), any());
     }
 
     @Test
+    void 재최적화로_orderIndex가_바뀌면_응답에_반영되도록_아이템_목록도_다시_정렬한다() {
+        ItineraryItem itemA = ItineraryItem.builder()
+                .id(UUID.randomUUID())
+                .spot(TourSpot.builder().id(UUID.randomUUID()).contentId("A").name("관광지 A").build())
+                .orderIndex(1).arrivalTime(LocalTime.of(9, 0)).build();
+        ItineraryItem itemB = ItineraryItem.builder()
+                .id(UUID.randomUUID())
+                .spot(TourSpot.builder().id(UUID.randomUUID()).contentId("B").name("관광지 B").build())
+                .orderIndex(2).arrivalTime(LocalTime.of(11, 0)).build();
+
+        ItineraryDay day = ItineraryDay.builder().id(dayId).dayNumber(1)
+                .items(new ArrayList<>(List.of(itemA, itemB))).build();
+        Itinerary itinerary = Itinerary.builder().id(itineraryId).userId(userId)
+                .startAt(LocalDate.of(2026, 9, 10)).startTime(LocalTime.of(9, 0))
+                .endAt(LocalDate.of(2026, 9, 10)).endTime(LocalTime.of(20, 0))
+                .days(new ArrayList<>(List.of(day))).build();
+        when(itineraryRepository.findById(itineraryId)).thenReturn(Optional.of(itinerary));
+
+        // optimizeDay가 좌표 기준으로 B를 먼저 방문하도록 순서를 바꿨다고 가정(실제 로직은 목으로 대체)
+        doAnswer(invocation -> {
+            itemB.updateOrder(0);
+            itemA.updateOrder(1);
+            return null;
+        }).when(itineraryOptimizeService).optimizeDay(eq(dayId), any(), eq(userId));
+
+        UpdateItineraryRequest request = new UpdateItineraryRequest(
+                null, LocalDate.of(2026, 9, 10), LocalTime.of(18, 0),
+                LocalDate.of(2026, 9, 10), LocalTime.of(22, 0),
+                null, null, null, null, null);
+
+        itineraryService.update(itineraryId, request, userId);
+
+        assertThat(day.getItems()).containsExactly(itemB, itemA);
+    }
+
+    @Test
+    void 아이템이_없는_day는_재최적화를_호출하지_않는다() {
+        ItineraryDay emptyDay = ItineraryDay.builder().id(dayId).dayNumber(1)
+                .items(new ArrayList<>()).build();
+        Itinerary itinerary = Itinerary.builder().id(itineraryId).userId(userId)
+                .startAt(LocalDate.of(2026, 9, 10)).startTime(LocalTime.of(9, 0))
+                .endAt(LocalDate.of(2026, 9, 10)).endTime(LocalTime.of(20, 0))
+                .days(new ArrayList<>(List.of(emptyDay))).build();
+        when(itineraryRepository.findById(itineraryId)).thenReturn(Optional.of(itinerary));
+
+        UpdateItineraryRequest request = new UpdateItineraryRequest(
+                null, LocalDate.of(2026, 9, 10), LocalTime.of(18, 0),
+                LocalDate.of(2026, 9, 10), LocalTime.of(22, 0),
+                null, null, null, null, null);
+
+        itineraryService.update(itineraryId, request, userId);
+
+        verify(itineraryOptimizeService, never()).optimizeDay(any(), any(), any());
+    }
+
+    // ── 날짜 없이 시각만 보낸 요청도 저장된다 (updatePeriod 호출 조건 버그) ──
+
+    @Test
     void 날짜_없이_시각만_보낸_요청도_기간에_반영된다() {
-        ItineraryItem first = item("A", 0, LocalTime.of(9, 0));
-        Itinerary itinerary = itineraryWith(LocalTime.of(9, 0), LocalTime.of(20, 0), first);
+        Itinerary itinerary = itineraryWith(
+                LocalDate.of(2026, 9, 10), LocalTime.of(9, 0),
+                LocalDate.of(2026, 9, 10), LocalTime.of(20, 0));
         when(itineraryRepository.findById(itineraryId)).thenReturn(Optional.of(itinerary));
 
         UpdateItineraryRequest request = new UpdateItineraryRequest(
@@ -178,15 +239,39 @@ class ItineraryServiceTest {
         itineraryService.update(itineraryId, request, userId);
 
         assertThat(itinerary.getStartTime()).isEqualTo(LocalTime.of(10, 0));
-        assertThat(first.getArrivalTime()).isEqualTo(LocalTime.of(10, 0));
+        verify(itineraryOptimizeService).optimizeDay(eq(dayId),
+                argThat(r -> LocalTime.of(10, 0).equals(r.getStartTime())), eq(userId));
     }
 
-    // ── 시작 > 종료 저장 차단 ──
+    // ── 기간 순서 검증은 "날짜·시간 필드를 보낸 요청"에만 적용 ──────
+
+    @Test
+    void 날짜_시간을_보내지_않은_요청은_이미_잘못_저장된_기간을_검증하지_않는다() {
+        // 당일치기인데 start_time == end_time == 00:00으로 저장돼 있는 기존 데이터.
+        // 프론트는 값이 안 바뀐 날짜·시간 필드를 보내지 않으므로, 최종 상태만 보고 검증하면
+        // 제목·숙소만 바꾸는 요청까지 400이 되어 이 일정은 영원히 수정할 수 없게 된다.
+        Itinerary itinerary = itineraryWith(
+                LocalDate.of(2026, 9, 10), LocalTime.MIDNIGHT,
+                LocalDate.of(2026, 9, 10), LocalTime.MIDNIGHT);
+        when(itineraryRepository.findById(itineraryId)).thenReturn(Optional.of(itinerary));
+
+        UpdateItineraryRequest titleOnly = new UpdateItineraryRequest(
+                "제목만 변경", null, null, null, null, null, null, null, null, null);
+        UpdateItineraryRequest accommodationOnly = new UpdateItineraryRequest(
+                null, null, null, null, null, "숙소", "주소", 37.5, 127.0, null);
+
+        assertThatCode(() -> itineraryService.update(itineraryId, titleOnly, userId))
+                .doesNotThrowAnyException();
+        assertThatCode(() -> itineraryService.update(itineraryId, accommodationOnly, userId))
+                .doesNotThrowAnyException();
+        assertThat(itinerary.getTitle()).isEqualTo("제목만 변경");
+    }
 
     @Test
     void 같은_날짜에_종료_시각이_시작_시각보다_빠르면_수정을_거부한다() {
-        Itinerary itinerary = itineraryWith(LocalTime.of(9, 0), LocalTime.of(20, 0),
-                item("A", 0, LocalTime.of(9, 0)));
+        Itinerary itinerary = itineraryWith(
+                LocalDate.of(2026, 9, 10), LocalTime.of(9, 0),
+                LocalDate.of(2026, 9, 10), LocalTime.of(20, 0));
         when(itineraryRepository.findById(itineraryId)).thenReturn(Optional.of(itinerary));
 
         UpdateItineraryRequest request = new UpdateItineraryRequest(
@@ -196,13 +281,35 @@ class ItineraryServiceTest {
 
         assertThatThrownBy(() -> itineraryService.update(itineraryId, request, userId))
                 .isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("종료 시간은 시작 시간보다 늦어야 합니다");
+                .hasMessageContaining("종료 시간은 시작 시간보다 빠를 수 없습니다");
+        verify(itineraryOptimizeService, never()).optimizeDay(any(), any(), any());
+    }
+
+    @Test
+    void 같은_날짜에_종료_시각이_시작_시각과_같으면_저장된다() {
+        // 당일치기 픽커는 "시작 + 60분"을 그날 마지막 슬롯(23:50)으로 클램프하므로 시작이
+        // 23:50이면 종료 하한도 23:50이다. 여기서 같은 값을 거부하면 UI로는 저장할 방법이 없다.
+        Itinerary itinerary = itineraryWith(
+                LocalDate.of(2026, 9, 10), LocalTime.of(9, 0),
+                LocalDate.of(2026, 9, 10), LocalTime.of(20, 0));
+        when(itineraryRepository.findById(itineraryId)).thenReturn(Optional.of(itinerary));
+
+        UpdateItineraryRequest request = new UpdateItineraryRequest(
+                null, LocalDate.of(2026, 9, 10), LocalTime.of(23, 50),
+                LocalDate.of(2026, 9, 10), LocalTime.of(23, 50),
+                null, null, null, null, null);
+
+        assertThatCode(() -> itineraryService.update(itineraryId, request, userId))
+                .doesNotThrowAnyException();
+        assertThat(itinerary.getStartTime()).isEqualTo(LocalTime.of(23, 50));
+        assertThat(itinerary.getEndTime()).isEqualTo(LocalTime.of(23, 50));
     }
 
     @Test
     void 종료일이_시작일보다_빠르면_수정을_거부한다() {
-        Itinerary itinerary = itineraryWith(LocalTime.of(9, 0), LocalTime.of(20, 0),
-                item("A", 0, LocalTime.of(9, 0)));
+        Itinerary itinerary = itineraryWith(
+                LocalDate.of(2026, 9, 10), LocalTime.of(9, 0),
+                LocalDate.of(2026, 9, 12), LocalTime.of(20, 0));
         when(itineraryRepository.findById(itineraryId)).thenReturn(Optional.of(itinerary));
 
         UpdateItineraryRequest request = new UpdateItineraryRequest(
@@ -217,25 +324,17 @@ class ItineraryServiceTest {
 
     // ── 헬퍼 ──
 
-    private TourSpot spot(String contentId, String name) {
-        return TourSpot.builder().id(UUID.randomUUID()).contentId(contentId).name(name).build();
-    }
-
-    private ItineraryItem item(String contentId, int orderIndex, LocalTime arrivalTime) {
-        return ItineraryItem.builder()
+    private Itinerary itineraryWith(LocalDate startAt, LocalTime startTime,
+                                    LocalDate endAt, LocalTime endTime) {
+        ItineraryItem item = ItineraryItem.builder()
                 .id(UUID.randomUUID())
-                .spot(spot(contentId, "관광지 " + contentId))
-                .orderIndex(orderIndex)
-                .arrivalTime(arrivalTime)
-                .build();
-    }
-
-    private Itinerary itineraryWith(LocalTime startTime, LocalTime endTime, ItineraryItem... items) {
+                .spot(TourSpot.builder().id(UUID.randomUUID()).contentId("A").name("관광지 A").build())
+                .orderIndex(0).arrivalTime(LocalTime.of(9, 0)).build();
         ItineraryDay day = ItineraryDay.builder().id(dayId).dayNumber(1)
-                .items(new ArrayList<>(List.of(items))).build();
+                .items(new ArrayList<>(List.of(item))).build();
         return Itinerary.builder().id(itineraryId).userId(userId)
-                .startAt(LocalDate.of(2026, 9, 10)).startTime(startTime)
-                .endAt(LocalDate.of(2026, 9, 10)).endTime(endTime)
+                .startAt(startAt).startTime(startTime)
+                .endAt(endAt).endTime(endTime)
                 .days(new ArrayList<>(List.of(day))).build();
     }
 }
