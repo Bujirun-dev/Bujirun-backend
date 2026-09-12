@@ -193,11 +193,16 @@ public class TravelLogService {
                     .build();
             copy.getDays().add(newDay);
 
+            // orderIndex는 원본 값을 그대로 복제하지 않고 0부터 다시 부여한다. 원본에는 1부터
+            // 시작하는 오래된 데이터가 섞여 있어(예전 투표 확정·최적화가 1-based로 저장했다)
+            // 그대로 복사하면 복사본에도 1-based가 계속 퍼진다. day.getItems()는 @OrderBy
+            // ("orderIndex ASC")로 정렬돼 있고 순서 기준은 상대 순서뿐이라 다시 매겨도 안전하다.
+            int orderIndex = 0;
             for (ItineraryItem item : day.getItems()) {
                 ItineraryItem newItem = ItineraryItem.builder()
                         .day(newDay)
                         .spot(item.getSpot())
-                        .orderIndex(item.getOrderIndex())
+                        .orderIndex(orderIndex++)
                         .arrivalTime(item.getArrivalTime())
                         .durationMin(item.getDurationMin())
                         .travelMode(item.getTravelMode())
