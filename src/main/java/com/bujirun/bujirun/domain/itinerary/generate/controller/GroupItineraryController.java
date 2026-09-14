@@ -12,6 +12,7 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
@@ -55,7 +56,17 @@ public class GroupItineraryController {
             return alreadyDone.get().toBuilder().groupSummary(groupSummary).build();
         }
 
-        Optional<UUID> reserved = itineraryVoteService.tryReserveGeneration(groupId);
+        // tryReserveGeneration의 유니크 제약 위반(DataIntegrityViolationException)은 그 메서드의
+        // 트랜잭션 경계 밖인 여기서 잡아야 한다 — 메서드 내부에서 잡으면 Hibernate가 이미
+        // rollback-only로 표시해둔 트랜잭션을 커밋하려다 UnexpectedRollbackException이 터져
+        // 그대로 500이 나가버린다(그룹원 여러 명이 거의 동시에 생성 요청 시 "다시 시도"가
+        // 반복되던 원인, 2026-09-15 확인). 다른 멤버가 이미 선점한 것과 동일하게 처리한다.
+        Optional<UUID> reserved;
+        try {
+            reserved = itineraryVoteService.tryReserveGeneration(groupId);
+        } catch (DataIntegrityViolationException e) {
+            reserved = Optional.empty();
+        }
         if (reserved.isPresent()) {
             UUID sessionId = reserved.get();
             try {
