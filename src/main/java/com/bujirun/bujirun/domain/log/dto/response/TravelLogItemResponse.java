@@ -15,7 +15,7 @@ public record TravelLogItemResponse(
         UUID spotId,
         String spotName,
         String spotCategory,
-        String spotCollectionCategory,
+        String spotCollectionCategory, // (바다/자연/문화/체험) — 도감 여부와 무관하게 전체 관광지에 채워짐(spotCategory 승계)
         String spotAddress,
         BigDecimal spotLat,
         BigDecimal spotLng,
@@ -34,7 +34,7 @@ public record TravelLogItemResponse(
                 spot.getId(),
                 spot.getName(),
                 spot.getCategory(),
-                spot.getCollectionCategory(),
+                spot.getSpotCategory(),
                 spot.getAddress(),
                 spot.getLat(),
                 spot.getLng(),

@@ -29,6 +29,7 @@ public record ItineraryItemResponse(
             UUID id,
             String name,
             String category,
+            String collectionCategory, // (바다/자연/문화/체험) — 도감 여부와 무관하게 전체 관광지에 채워짐(spotCategory 승계)
             String address,
             BigDecimal lat,
             BigDecimal lng,
@@ -45,7 +46,7 @@ public record ItineraryItemResponse(
                 item.getId(),
                 item.getOrderIndex(),
                 new SpotSummary(
-                        s.getId(), s.getName(), s.getCategory(),
+                        s.getId(), s.getName(), s.getCategory(), s.getSpotCategory(),
                         s.getAddress(), s.getLat(), s.getLng(),
                         s.getThumbnailUrl(),
                         collectedSpotIds.contains(s.getId()),
