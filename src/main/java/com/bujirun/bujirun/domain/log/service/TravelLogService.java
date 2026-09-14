@@ -36,6 +36,7 @@ import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -120,26 +121,31 @@ public class TravelLogService {
         Map<UUID, Visit> visitedItemMap = buildVisitedItemMap(allItineraryItems(itinerary), userId);
         copyVisitPhotos(logItemMap, visitedItemMap);
 
-        // 대표 사진(=로그 썸네일)이 아직 없으면, 일정 순서상 첫 번째 인증 사진을 대표로 지정한다.
+        // 대표 사진(=로그 썸네일)이 아직 없으면, 가장 먼저 방문(인증)한 관광지의 사진을 대표로 지정한다.
         // 사용자가 나중에 다른 사진을 대표로 바꾸면 그 값이 유지된다(setRepresentativePhoto).
-        assignDefaultThumbnail(log, itinerary, logItemMap);
+        assignDefaultThumbnail(log, logItemMap, visitedItemMap);
 
         return log;
     }
 
-    // 로그 생성 시 대표 사진 자동 지정 — 일정에 담긴 순서대로 스캔해 가장 먼저 나오는 인증 사진을 쓴다.
-    private void assignDefaultThumbnail(TravelLog log, Itinerary itinerary, Map<UUID, TravelLogItem> logItemMap) {
+    // 로그 생성 시 대표 사진 자동 지정 — "일정에 담긴 순서(day/orderIndex)"가 아니라 실제
+    // 방문 인증 시각(Visit.visitedAt) 기준으로 가장 먼저 방문한 관광지의 사진을 쓴다. 계획된
+    // 순서와 실제로 돌아본 순서가 다를 수 있어서(예: 코스를 바꿔서 방문), 일정 순서로 스캔하면
+    // "가장 먼저 방문한 곳"이 아니라 "계획상 첫 번째 관광지"가 대표로 뽑히는 문제가 있었다.
+    private void assignDefaultThumbnail(TravelLog log, Map<UUID, TravelLogItem> logItemMap,
+                                         Map<UUID, Visit> visitedItemMap) {
         if (log.getThumbnailPhotoUrl() != null) return;
-        for (var day : itinerary.getDays()) {
-            for (ItineraryItem item : day.getItems()) {
-                TravelLogItem logItem = logItemMap.get(item.getId());
-                if (logItem == null || logItem.getPhotos().isEmpty()) continue;
-                TravelLogPhoto first = logItem.getPhotos().get(0);
-                first.setRepresentative(true);
-                log.updateThumbnail(first.getPhotoUrl());
-                return;
-            }
-        }
+        visitedItemMap.entrySet().stream()
+                .filter(entry -> {
+                    TravelLogItem logItem = logItemMap.get(entry.getKey());
+                    return logItem != null && !logItem.getPhotos().isEmpty();
+                })
+                .min(Comparator.comparing(entry -> entry.getValue().getVisitedAt()))
+                .ifPresent(entry -> {
+                    TravelLogPhoto first = logItemMap.get(entry.getKey()).getPhotos().get(0);
+                    first.setRepresentative(true);
+                    log.updateThumbnail(first.getPhotoUrl());
+                });
     }
 
     public TravelLogDetailResponse getDetail(UUID logId, UUID userId) {

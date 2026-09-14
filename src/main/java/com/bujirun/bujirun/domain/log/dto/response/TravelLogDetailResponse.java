@@ -37,14 +37,15 @@ public record TravelLogDetailResponse(
                 .mapToInt(d -> d.getItems().size())
                 .sum();
 
-        String duration;
-        if (itinerary.getStartAt() != null && itinerary.getEndAt() != null) {
-            int days = (int) ChronoUnit.DAYS.between(itinerary.getStartAt(), itinerary.getEndAt()) + 1;
-            duration = days <= 1 ? "당일치기" : (days - 1) + "박 " + days + "일";
-        } else {
-            int dayCount = itinerary.getDays().size();
-            duration = dayCount <= 1 ? "당일치기" : (dayCount - 1) + "박 " + dayCount + "일";
-        }
+        // itinerary_days 행 수를 우선 쓴다 — 바로 아래 days(응답의 days[] 배열)도 같은 값으로
+        // 만들어지므로, 이 응답 안에서 "N일치 일정이라면서 duration은 당일치기" 같은 자기모순이
+        // 생기지 않는다. startAt/endAt은 편집 이력에 따라 실제 day 행 수와 어긋날 수 있어서
+        // (예: 날짜만 줄이고 day 행 정리가 안 된 경우) days가 비어있을 때만 날짜로 계산한다.
+        int dayCount = !itinerary.getDays().isEmpty() ? itinerary.getDays().size()
+                : (itinerary.getStartAt() != null && itinerary.getEndAt() != null)
+                        ? (int) ChronoUnit.DAYS.between(itinerary.getStartAt(), itinerary.getEndAt()) + 1
+                        : 1;
+        String duration = dayCount <= 1 ? "당일치기" : (dayCount - 1) + "박 " + dayCount + "일";
 
         LocalDate startDate = itinerary.getStartAt() != null ? itinerary.getStartAt()
                 : (itinerary.getDays().isEmpty() ? null : itinerary.getDays().get(0).getDate());
