@@ -157,7 +157,7 @@ public class TransitRouteService {
 
         double congestionFactor = resolveCongestionFactor(LocalDateTime.now(KST));
         timeMin = (int) Math.ceil(timeMin * congestionFactor);
-        fare = (int) Math.round(fare * congestionFactor);
+        fare = (int) (Math.ceil(fare * congestionFactor / 100.0) * 100);
 
         return new TransitOption("택시", timeMin, fare, 0, true, List.of());
     }
