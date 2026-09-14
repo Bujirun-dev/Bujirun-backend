@@ -23,7 +23,6 @@ import com.bujirun.bujirun.global.util.TransitRouteUtils;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
@@ -82,19 +81,23 @@ public class ItineraryVoteService {
     // 멤버마다 관광지 조합이 달라지는 문제(2026-09-02 발견)를 막는다.
     // 선점에 실패하면(다른 멤버가 이미 선점/완료함) empty를 반환하고,
     // 호출부(컨트롤러)는 waitForActiveSession()으로 그 결과를 기다려 합류해야 한다.
+    // 유니크 제약 위반(DataIntegrityViolationException)을 여기서 catch하지 않는다 — Hibernate는
+    // saveAndFlush에서 제약 위반이 발생하면 Java 예외를 catch하더라도 현재 트랜잭션을 이미
+    // rollback-only로 표시해버린다. 그 상태로 이 메서드가 정상 반환되면, 메서드 경계에서
+    // 커밋을 시도하던 Spring 트랜잭션 프록시가 UnexpectedRollbackException을 던져 그대로 500이
+    // 나가버린다(2026-09 발견 — 그룹원 여러 명이 거의 동시에 생성 요청 시 "다시 시도"가 반복되던
+    // 원인). 그래서 예외를 여기서 삼키지 않고 트랜잭션 경계 밖(컨트롤러)까지 그대로 던져서,
+    // 이 메서드의 트랜잭션이 정상적으로 롤백된 뒤에 호출부가 안전하게 잡도록 한다.
     public Optional<UUID> tryReserveGeneration(UUID groupId) {
-        try {
-            // ID가 DB 시퀀스가 아니라 Hibernate에서 UUID로 미리 채번되므로, save()만 호출하면
-            // 실제 INSERT(및 유니크 제약 검사)가 트랜잭션 커밋 시점(이 메서드가 리턴한 뒤)까지
-            // 미뤄질 수 있다. 그러면 여기 catch가 위반을 못 잡으므로 saveAndFlush로 즉시 반영한다.
-            ItineraryVoteSession session = sessionRepository.saveAndFlush(ItineraryVoteSession.builder()
-                    .groupId(groupId)
-                    .status("generating")
-                    .build());
-            return Optional.of(session.getId());
-        } catch (DataIntegrityViolationException e) {
-            return Optional.empty();
-        }
+        // ID가 DB 시퀀스가 아니라 Hibernate에서 UUID로 미리 채번되므로, save()만 호출하면
+        // 실제 INSERT(및 유니크 제약 검사)가 트랜잭션 커밋 시점(이 메서드가 리턴한 뒤)까지
+        // 미뤄질 수 있다. 그러면 유니크 제약 위반을 이 요청 안에서 즉시 알 수 없으므로
+        // saveAndFlush로 즉시 반영한다.
+        ItineraryVoteSession session = sessionRepository.saveAndFlush(ItineraryVoteSession.builder()
+                .groupId(groupId)
+                .status("generating")
+                .build());
+        return Optional.of(session.getId());
     }
 
     // 선점한 요청이 AI 생성을 마쳤을 때 결과를 채워 "voting"으로 전이한다.
