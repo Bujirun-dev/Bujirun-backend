@@ -67,7 +67,7 @@ public interface TourSpotRepository extends JpaRepository<TourSpot, UUID> {
             @Param("category") String category
     );
 
-    List<TourSpot> findByCollectionTrueAndCollectionCategory(String collectionCategory);
+    List<TourSpot> findByCollectionTrueAndSpotCategory(String spotCategory);
 
     long countByCollectionTrue();
 

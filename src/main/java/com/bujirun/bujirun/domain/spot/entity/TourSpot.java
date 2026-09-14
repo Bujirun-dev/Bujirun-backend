@@ -55,6 +55,11 @@ public class TourSpot {
     @Column(name = "collection_category")
     private String collectionCategory;
 
+    // 전체 관광지(도감 포함) 공통 4분류(바다/자연/문화/체험). 도감 60개는 collectionCategory와 동일한 값,
+    // 나머지는 AI(gpt-4.1-mini) 보조 분류로 채움. TourAPI cat1 기반 category(6분류)와는 값 체계가 다름
+    @Column(name = "spot_category")
+    private String spotCategory;
+
     // 스와이프 덱(/api/collections/swipe-deck) 전용 큐레이션 이미지. thumbnail_url(API 동기화 값)과 별개로 관리됨
     @Column(name = "swipe_image_url", length = 500)
     private String swipeImageUrl;

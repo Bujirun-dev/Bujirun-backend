@@ -107,7 +107,7 @@ public class CollectionService {
         for (int i = 0; i < DECK_CATEGORIES.size(); i++) {
             String category = DECK_CATEGORIES.get(i);
             List<TourSpot> pool = tourSpotRepository
-                    .findByCollectionTrueAndCollectionCategory(category);
+                    .findByCollectionTrueAndSpotCategory(category);
             Collections.shuffle(pool);
 
             int pickCount = i < 2 ? 3 : 2;
