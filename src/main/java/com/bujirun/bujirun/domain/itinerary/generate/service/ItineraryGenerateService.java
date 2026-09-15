@@ -167,7 +167,7 @@ public class ItineraryGenerateService {
         String userPrompt = buildUserPrompt(likedSpotInfos, preferenceVector, candidates, tripDays,
                 request.getOptimizationType(), request.getStartDate(),
                 request.getEndDate(), request.getStartTime(), request.getEndTime(), activityHours,
-                groupPreferenceSummary);
+                groupPreferenceSummary, centerLat, centerLng);
 
         log.info("OpenAI 호출 시작 - 후보 관광지 {}개, 여행 {}일", candidates.size(), tripDays);
         String rawResponse = openAiClient.chat(systemPrompt, userPrompt);
@@ -319,7 +319,8 @@ public class ItineraryGenerateService {
                                    LocalTime startTime,
                                    LocalTime endTime,
                                    int activityHours,
-                                   GroupPreferenceSummary groupPreferenceSummary) {
+                                   GroupPreferenceSummary groupPreferenceSummary,
+                                   Double centerLat, Double centerLng) {
         StringBuilder sb = new StringBuilder();
 
         sb.append("## 좋아요한 장소 목록\n");
@@ -388,23 +389,34 @@ public class ItineraryGenerateService {
             sb.append("- ").append(day).append("일차: 최대 ").append(maxSpots).append("곳").append(note).append("\n");
         }
 
+        // AI가 좌표만으로 거리를 잘못 암산하지 않도록, 중심좌표 기준 거리(km)를 서버에서 미리 계산해 같이 내려준다
         sb.append("\n## 후보 관광지 목록\n");
-        candidates.forEach(spot ->
-                sb.append("- contentId: ").append(spot.getContentId())
-                        .append(", 이름: ").append(spot.getName())
-                        .append(", 카테고리: ").append(spot.getCategory())
-                        .append(", 지역: ").append(spot.getSigungu())
-                        .append(", 운영시간: ").append(
-                                spot.getOperatingHours() != null && !spot.getOperatingHours().isBlank()
-                                        ? spot.getOperatingHours() : "정보없음")
-                        .append(", 위치: (").append(spot.getLat()).append(", ").append(spot.getLng()).append(")\n")
-        );
+        candidates.forEach(spot -> {
+            sb.append("- contentId: ").append(spot.getContentId())
+                    .append(", 이름: ").append(spot.getName())
+                    .append(", 카테고리: ").append(spot.getCategory())
+                    .append(", 지역: ").append(spot.getSigungu())
+                    .append(", 운영시간: ").append(
+                            spot.getOperatingHours() != null && !spot.getOperatingHours().isBlank()
+                                    ? spot.getOperatingHours() : "정보없음")
+                    .append(", 위치: (").append(spot.getLat()).append(", ").append(spot.getLng()).append(")");
+            if (centerLat != null && centerLng != null) {
+                double distanceKm = GeoUtils.haversineDistance(centerLat, centerLng, spot.getLat(), spot.getLng()) / 1000;
+                sb.append(", 중심좌표 기준 거리: ").append(String.format("%.1f", distanceKm)).append("km");
+            }
+            sb.append("\n");
+        });
 
         sb.append("\n위 후보 관광지 중에서만 선택하여 A/B 2가지 일정을 생성하세요.");
         sb.append("\n각 일차별 최대 관광지 수는 위에 명시된 값을 절대 초과하지 마세요. 첫날/마지막날은 활동시간이 짧을 수 있으니 특히 유의하세요.");
         sb.append("\n중요: 각 일차는 운영시간상 불가능한 곳을 제외하면 반드시 명시된 최대 관광지 수만큼 채워야 합니다. 후보가 충분히 있는데도 임의로 1~2곳만 배정하지 마세요. 특정 날짜에 선호 카테고리 후보가 부족하면 다른 후보 관광지로 채워서라도 최대한 개수를 채우세요.");
 
-        sb.append("\nA안은 선호 카테고리에 집중하고, 위 좋아요한 장소 목록에 있는 장소를 일정에 최대한 포함하세요.");
+        // 동떨어진 관광지 억제 규칙 - centroid 거리는 반경 필터 통과 기준일 뿐 다른 후보와의 근접성을 보장하지 않으므로 A/B 공통으로 명시
+        sb.append("\n\n## 동떨어진 관광지 제외 규칙");
+        sb.append("\n후보 목록의 '중심좌표 기준 거리'가 다른 후보들에 비해 두드러지게 먼 곳(예: 대부분 10km 이내인데 혼자 30km 이상인 경우)은, 선호 카테고리와 강하게 일치해도 가급적 일정에서 제외하세요.");
+        sb.append("\n부득이 포함해야 한다면 같은 날 다른 방문지와 동선이 이어지는 경우에만 넣고, 그 외에는 다른 방문지들과 가까운 후보로 대체하세요.");
+
+        sb.append("\nA안은 선호 카테고리에 집중하고, 위 좋아요한 장소 목록에 있는 장소를 일정에 최대한 포함하세요. 단, 위 '동떨어진 관광지 제외 규칙'은 A안에도 동일하게 적용됩니다.");
         sb.append("\nB안은 동선이 꼬이지 않도록 각 후보 관광지의 위도·경도를 기준으로 같은 권역(예: 수영구·해운대구, 중구·영도구 등 인접한 구/군)끼리 묶어서 묶음 단위로 하루 일정을 구성하세요. 서로 먼 권역의 관광지를 같은 날 또는 인접한 순서에 배치하지 마세요.");
 
         sb.append("\n\n## 운영시간 유의사항");
