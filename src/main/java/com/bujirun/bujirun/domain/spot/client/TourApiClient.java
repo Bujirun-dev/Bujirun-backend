@@ -7,6 +7,9 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.reactive.function.client.WebClient;
 import reactor.util.retry.Retry;
 
+import java.net.URI;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.Optional;
 
@@ -19,27 +22,28 @@ public class TourApiClient {
     private static final int    NUM_OF_ROWS     = 1000;
 
     private final WebClient webClient;
-    private final String    serviceKey;
+    private final String    encodedServiceKey;
 
+    // serviceKey에 '+'가 들어있으면 UriComponentsBuilder.queryParam()이 그대로 통과시켜서
+    // 서버가 폼 인코딩 규칙으로 '+' → 공백으로 잘못 디코딩해 SERVICE_KEY_IS_NOT_REGISTERED_ERROR가 남
+    // (BusanAttractionApiClient에서 먼저 발견된 것과 동일한 문제). URLEncoder로 미리 인코딩해서
+    // 완성된 URI 문자열을 그대로 넘긴다.
     public TourApiClient(WebClient.Builder builder,
                          @Value("${tourapi.service-key}") String serviceKey) {
-        this.webClient  = builder.baseUrl(BASE_URL).build();
-        this.serviceKey = serviceKey;
+        this.webClient         = builder.baseUrl(BASE_URL).build();
+        this.encodedServiceKey = URLEncoder.encode(serviceKey, StandardCharsets.UTF_8);
     }
 
     public AreaListResponse fetchAreaList(int pageNo, int contentTypeId) {
         log.info("[TourAPI] areaBasedList - contentTypeId={}, pageNo={}", contentTypeId, pageNo);
+        String url = BASE_URL + "/areaBasedList2?serviceKey=" + encodedServiceKey
+                + "&MobileOS=ETC&MobileApp=BujiRun&_type=json"
+                + "&contentTypeId=" + contentTypeId
+                + "&areaCode=" + AREA_CODE_BUSAN
+                + "&numOfRows=" + NUM_OF_ROWS
+                + "&pageNo=" + pageNo;
         return webClient.get()
-                .uri(uri -> uri.path("/areaBasedList2")
-                        .queryParam("serviceKey", serviceKey)
-                        .queryParam("MobileOS",   "ETC")
-                        .queryParam("MobileApp",  "BujiRun")
-                        .queryParam("_type",      "json")
-                        .queryParam("contentTypeId", contentTypeId)
-                        .queryParam("areaCode",   AREA_CODE_BUSAN)
-                        .queryParam("numOfRows",  NUM_OF_ROWS)
-                        .queryParam("pageNo",     pageNo)
-                        .build())
+                .uri(URI.create(url))
                 .retrieve()
                 .bodyToMono(AreaListResponse.class)
                 .retryWhen(Retry.backoff(3, Duration.ofSeconds(2)))
@@ -48,15 +52,12 @@ public class TourApiClient {
 
     public Optional<DetailIntroResponse.IntroItem> fetchDetailIntro(String contentId, int contentTypeId) {
         try {
+            String url = BASE_URL + "/detailIntro2?serviceKey=" + encodedServiceKey
+                    + "&MobileOS=ETC&MobileApp=BujiRun&_type=json"
+                    + "&contentId=" + contentId
+                    + "&contentTypeId=" + contentTypeId;
             DetailIntroResponse res = webClient.get()
-                    .uri(uri -> uri.path("/detailIntro2")
-                            .queryParam("serviceKey",    serviceKey)
-                            .queryParam("MobileOS",      "ETC")
-                            .queryParam("MobileApp",     "BujiRun")
-                            .queryParam("_type",         "json")
-                            .queryParam("contentId",     contentId)
-                            .queryParam("contentTypeId", contentTypeId)
-                            .build())
+                    .uri(URI.create(url))
                     .retrieve()
                     .bodyToMono(DetailIntroResponse.class)
                     .retryWhen(Retry.backoff(3, Duration.ofSeconds(2)))
@@ -81,14 +82,11 @@ public class TourApiClient {
             // 됐을 수도 있으나 API 스펙이 바뀐 듯). 예전엔 이 실패가 catch에 조용히 먹혀서
             // TourAPI의 overview/tel/homepage가 항상 폴백 문구("등록된 정보 없음")로만 나갔음.
             // contentId만 보내도 overview/tel/homepage/firstimage 등은 기본으로 포함되어 내려온다.
+            String url = BASE_URL + "/detailCommon2?serviceKey=" + encodedServiceKey
+                    + "&MobileOS=ETC&MobileApp=BujiRun&_type=json"
+                    + "&contentId=" + contentId;
             DetailCommonResponse res = webClient.get()
-                    .uri(uri -> uri.path("/detailCommon2")
-                            .queryParam("serviceKey",    serviceKey)
-                            .queryParam("MobileOS",      "ETC")
-                            .queryParam("MobileApp",     "BujiRun")
-                            .queryParam("_type",         "json")
-                            .queryParam("contentId",     contentId)
-                            .build())
+                    .uri(URI.create(url))
                     .retrieve()
                     .bodyToMono(DetailCommonResponse.class)
                     .retryWhen(Retry.backoff(3, Duration.ofSeconds(2)))

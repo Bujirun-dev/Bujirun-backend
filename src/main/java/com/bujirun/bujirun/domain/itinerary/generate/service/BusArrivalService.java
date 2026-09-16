@@ -15,6 +15,9 @@ import reactor.netty.http.client.HttpClient;
 
 import javax.xml.parsers.DocumentBuilderFactory;
 import java.io.ByteArrayInputStream;
+import java.net.URI;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 
 @Slf4j
@@ -23,12 +26,16 @@ public class BusArrivalService implements ArrivalInfoProvider {
 
     private static final Duration RESPONSE_TIMEOUT = Duration.ofSeconds(5);
     private static final int CONNECT_TIMEOUT_MILLIS = 2000;
+    private static final String BASE_URL = "http://apis.data.go.kr/6260000/BusanBIMS/bitArrByArsno";
 
     private final WebClient webClient;
-    private final String apiKey;
+    private final String encodedApiKey;
 
+    // 서비스키에 '+' 등 특수문자가 있으면 UriComponentsBuilder.queryParam()이 그대로 통과시켜서
+    // 서버가 폼 인코딩 규칙으로 잘못 디코딩하는 문제(TourApiClient/BusanAttractionApiClient와 동일 케이스)를
+    // 피하려고 URLEncoder로 미리 인코딩해서 완성된 URI 문자열을 그대로 넘긴다.
     public BusArrivalService(@Value("${busan.api.key}") String apiKey) {
-        this.apiKey = apiKey;
+        this.encodedApiKey = URLEncoder.encode(apiKey, StandardCharsets.UTF_8);
         this.webClient = WebClient.builder()
                 .clientConnector(new ReactorClientHttpConnector(
                         HttpClient.create()
@@ -54,19 +61,7 @@ public class BusArrivalService implements ArrivalInfoProvider {
             return null;
         }
         try {
-            String xml = webClient.get()
-                    .uri(uriBuilder -> uriBuilder
-                            .scheme("http")
-                            .host("apis.data.go.kr")
-                            .path("/6260000/BusanBIMS/bitArrByArsno")
-                            .queryParam("serviceKey", apiKey)
-                            .queryParam("arsno", arsId)
-                            .build())
-                    .retrieve()
-                    .bodyToMono(String.class)
-                    .timeout(RESPONSE_TIMEOUT)
-                    .block();
-
+            String xml = fetchArrivalXml(arsId);
             return parseMin1(xml, subPath.routeNo());
         } catch (Exception e) {
             log.warn("버스 도착정보 조회 실패 arsId={}: {}", arsId, e.getMessage());
@@ -77,23 +72,22 @@ public class BusArrivalService implements ArrivalInfoProvider {
     public Integer getArrivalByArsId(String arsId, String routeNo) {
         if (arsId == null || arsId.isBlank()) return null;
         try {
-            String xml = webClient.get()
-                    .uri(uriBuilder -> uriBuilder
-                            .scheme("http")
-                            .host("apis.data.go.kr")
-                            .path("/6260000/BusanBIMS/bitArrByArsno")
-                            .queryParam("serviceKey", apiKey)
-                            .queryParam("arsno", arsId)
-                            .build())
-                    .retrieve()
-                    .bodyToMono(String.class)
-                    .timeout(RESPONSE_TIMEOUT)
-                    .block();
+            String xml = fetchArrivalXml(arsId);
             return parseMin1(xml, routeNo);
         } catch (Exception e) {
             log.warn("버스 도착정보 조회 실패 arsId={}: {}", arsId, e.getMessage());
             return null;
         }
+    }
+
+    private String fetchArrivalXml(String arsId) {
+        String url = BASE_URL + "?serviceKey=" + encodedApiKey + "&arsno=" + arsId;
+        return webClient.get()
+                .uri(URI.create(url))
+                .retrieve()
+                .bodyToMono(String.class)
+                .timeout(RESPONSE_TIMEOUT)
+                .block();
     }
     
     private Integer parseMin1(String xml, String routeNo) throws Exception {
