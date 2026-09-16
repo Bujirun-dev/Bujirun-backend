@@ -265,12 +265,6 @@ public class ItineraryService {
         TourSpot spot = tourSpotRepository.findById(req.spotId())
                 .orElseThrow(() -> new EntityNotFoundException("관광지를 찾을 수 없습니다. id=" + req.spotId()));
 
-        boolean alreadyInDay = day.getItems().stream()
-                .anyMatch(existing -> existing.getSpot().getId().equals(spot.getId()));
-        if (alreadyInDay) {
-            throw new IllegalArgumentException("이미 해당 일차에 추가된 관광지입니다. spotId=" + req.spotId());
-        }
-
         // 직전 스팟과의 구간 정보(역명/노선번호 등)는 항상 자동 계산한다.
         // travelMode는 프론트가 보낸 값이 있으면 그 수단에 맞는 옵션을 찾아서 쓰고,
         // 없으면(null) 자동 산출된 최적 옵션을 그대로 쓴다.
