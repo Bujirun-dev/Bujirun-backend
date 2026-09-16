@@ -13,7 +13,7 @@ public class SpotDetailResponse {
     private String contentId;
     private String name;
     private String category;
-    private String collectionCategory; // (바다/자연/문화/체험)
+    private String collectionCategory; // (바다/자연/문화/체험) — 도감 여부와 무관하게 전체 관광지에 채워짐(spotCategory 승계)
     private boolean isCollection;
     private String address;
     private BigDecimal lat;
@@ -41,7 +41,7 @@ public class SpotDetailResponse {
                 .contentId(spot.getContentId())
                 .name(spot.getName())
                 .category(spot.getCategory())
-                .collectionCategory(spot.getCollectionCategory())
+                .collectionCategory(spot.getSpotCategory())
                 .isCollection(spot.isCollection())
                 .address(spot.getAddress())
                 .lat(spot.getLat())

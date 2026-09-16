@@ -5,6 +5,7 @@ import com.bujirun.bujirun.domain.log.entity.TravelLog;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.temporal.ChronoUnit;
 import java.util.UUID;
 
 public record TravelLogSummaryResponse(
@@ -14,6 +15,7 @@ public record TravelLogSummaryResponse(
         String firstSpotName,
         String thumbnailPhotoUrl,
         boolean isPublic,
+        String duration,
         LocalDate startDate,
         LocalDate endDate,
         int totalSpots,
@@ -49,6 +51,13 @@ public record TravelLogSummaryResponse(
         LocalDate endDate = itinerary.getEndAt() != null ? itinerary.getEndAt()
                 : (itinerary.getDays().isEmpty() ? null : itinerary.getDays().get(itinerary.getDays().size() - 1).getDate());
 
+        // TravelLogDetailResponse와 동일한 계산 방식 — days 행 수를 우선 쓰고, 비어있을 때만 날짜로 계산
+        int dayCount = !itinerary.getDays().isEmpty() ? itinerary.getDays().size()
+                : (itinerary.getStartAt() != null && itinerary.getEndAt() != null)
+                        ? (int) ChronoUnit.DAYS.between(itinerary.getStartAt(), itinerary.getEndAt()) + 1
+                        : 1;
+        String duration = dayCount <= 1 ? "당일치기" : (dayCount - 1) + "박 " + dayCount + "일";
+
         return new TravelLogSummaryResponse(
                 log.getId(),
                 log.getItineraryId(),
@@ -56,6 +65,7 @@ public record TravelLogSummaryResponse(
                 firstSpotName,
                 thumbnailPhotoUrl,
                 log.isPublic(),
+                duration,
                 startDate,
                 endDate,
                 totalSpots,
