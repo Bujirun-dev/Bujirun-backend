@@ -41,6 +41,8 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -118,12 +120,15 @@ public class TravelLogService {
                 .stream().collect(Collectors.toMap(TravelLogItem::getItineraryItemId, i -> i));
 
         // 일정 항목별로 연결된 인증(Visit) 기록을 찾아 인증 사진을 로그 사진으로 그대로 옮겨온다
-        Map<UUID, Visit> visitedItemMap = buildVisitedItemMap(allItineraryItems(itinerary), userId);
+        List<ItineraryItem> allItems = allItineraryItems(itinerary);
+        Map<UUID, Visit> visitedItemMap = buildVisitedItemMap(allItems, userId);
         copyVisitPhotos(logItemMap, visitedItemMap);
 
         // 대표 사진(=로그 썸네일)이 아직 없으면, 가장 먼저 방문(인증)한 관광지의 사진을 대표로 지정한다.
         // 사용자가 나중에 다른 사진을 대표로 바꾸면 그 값이 유지된다(setRepresentativePhoto).
-        assignDefaultThumbnail(log, logItemMap, visitedItemMap);
+        Map<UUID, ItineraryItem> itemMap = allItems.stream()
+                .collect(Collectors.toMap(ItineraryItem::getId, i -> i));
+        assignDefaultThumbnail(log, logItemMap, visitedItemMap, itemMap);
 
         return log;
     }
@@ -132,20 +137,35 @@ public class TravelLogService {
     // 방문 인증 시각(Visit.visitedAt) 기준으로 가장 먼저 방문한 관광지의 사진을 쓴다. 계획된
     // 순서와 실제로 돌아본 순서가 다를 수 있어서(예: 코스를 바꿔서 방문), 일정 순서로 스캔하면
     // "가장 먼저 방문한 곳"이 아니라 "계획상 첫 번째 관광지"가 대표로 뽑히는 문제가 있었다.
+    // 사용자가 찍은 인증사진이 하나도 없으면(가장 먼저 방문한 곳에도 사진이 없으면), 그 관광지
+    // 자체의 기본 이미지(TourAPI 썸네일, 없으면 스와이프 큐레이션 이미지)로 대체한다.
     private void assignDefaultThumbnail(TravelLog log, Map<UUID, TravelLogItem> logItemMap,
-                                         Map<UUID, Visit> visitedItemMap) {
+                                         Map<UUID, Visit> visitedItemMap, Map<UUID, ItineraryItem> itemMap) {
         if (log.getThumbnailPhotoUrl() != null) return;
-        visitedItemMap.entrySet().stream()
+
+        Optional<Map.Entry<UUID, Visit>> earliestWithPhoto = visitedItemMap.entrySet().stream()
                 .filter(entry -> {
                     TravelLogItem logItem = logItemMap.get(entry.getKey());
                     return logItem != null && !logItem.getPhotos().isEmpty();
                 })
+                .min(Comparator.comparing(entry -> entry.getValue().getVisitedAt()));
+
+        if (earliestWithPhoto.isPresent()) {
+            Map.Entry<UUID, Visit> entry = earliestWithPhoto.get();
+            TravelLogPhoto first = logItemMap.get(entry.getKey()).getPhotos().get(0);
+            first.setRepresentative(true);
+            log.updateThumbnail(first.getPhotoUrl());
+            return;
+        }
+
+        visitedItemMap.entrySet().stream()
                 .min(Comparator.comparing(entry -> entry.getValue().getVisitedAt()))
-                .ifPresent(entry -> {
-                    TravelLogPhoto first = logItemMap.get(entry.getKey()).getPhotos().get(0);
-                    first.setRepresentative(true);
-                    log.updateThumbnail(first.getPhotoUrl());
-                });
+                .map(entry -> itemMap.get(entry.getKey()))
+                .filter(Objects::nonNull)
+                .map(item -> item.getSpot())
+                .map(spot -> spot.getThumbnailUrl() != null ? spot.getThumbnailUrl() : spot.getSwipeImageUrl())
+                .filter(Objects::nonNull)
+                .ifPresent(log::updateThumbnail);
     }
 
     public TravelLogDetailResponse getDetail(UUID logId, UUID userId) {
