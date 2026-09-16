@@ -6,6 +6,8 @@ import com.bujirun.bujirun.domain.group.dto.response.GroupInvitePreviewResponse;
 import com.bujirun.bujirun.domain.group.dto.response.GroupMemberResponse;
 import com.bujirun.bujirun.domain.group.dto.response.GroupResponse;
 import com.bujirun.bujirun.domain.group.service.GroupService;
+import com.bujirun.bujirun.domain.group.service.GroupFlowTimerService;
+import org.springframework.web.bind.annotation.RequestParam;
 import com.bujirun.bujirun.global.response.ApiResponse;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -29,6 +31,17 @@ import java.util.UUID;
 public class GroupController {
 
     private final GroupService groupService;
+    private final GroupFlowTimerService flowTimerService;
+
+    @Operation(summary = "공통 대기 타이머 시작/조회", description = "그룹 단계별 마감 시각과 서버 현재 시각을 밀리초로 반환합니다. 재요청해도 마감은 연장되지 않습니다.")
+    @PostMapping("/{groupId}/flow-timers/{phase}")
+    public ApiResponse<GroupFlowTimerService.TimerResponse> flowTimer(
+            @PathVariable UUID groupId,
+            @PathVariable String phase,
+            @RequestParam(required = false) UUID sessionId,
+            @AuthenticationPrincipal UUID userId) {
+        return ApiResponse.ok(flowTimerService.getOrStart(groupId, phase, sessionId, userId));
+    }
 
     @Operation(summary = "그룹 생성", description = "새로운 여행 그룹을 생성합니다.")
     @PostMapping
