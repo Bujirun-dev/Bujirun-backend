@@ -18,4 +18,5 @@ public class SpotInfo {
     private String thumbnailUrl;
     private String operatingHours;
     private List<String> reasons; // 추가: 그룹 일정 생성 시에만 채워지는 AI 추천 이유 (개인 일정은 항상 null)
+    private boolean official; // 부산명소정보 API(공식 관광지)에 등재된 도감 스팟 여부
 }
