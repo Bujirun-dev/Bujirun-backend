@@ -92,6 +92,12 @@ public class TourSpot {
     @Column(name = "summary_description", columnDefinition = "TEXT")
     private String summaryDescription;
 
+    // 부산명소정보 API(공식 관광지)에 좌표·명칭이 매칭되는 도감 스팟 여부.
+    // 일정 생성 프롬프트에서 취향 편중 보완용 tie-breaker로 사용
+    @Column(name = "is_official_recommended", nullable = false)
+    @Builder.Default
+    private boolean officialRecommended = false;
+
     @PrePersist
     public void prePersist() {
         this.syncedAt = LocalDateTime.now();
@@ -134,5 +140,10 @@ public class TourSpot {
 
     public void updateSummaryDescription(String summaryDescription) {
         this.summaryDescription = summaryDescription;
+    }
+
+    // 부산명소정보 API 좌표·명칭 매칭 배치에서 공식 관광지로 확인된 경우 호출
+    public void markOfficialRecommended() {
+        this.officialRecommended = true;
     }
 }

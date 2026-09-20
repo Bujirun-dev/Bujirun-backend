@@ -404,6 +404,8 @@ public class ItineraryGenerateService {
                 double distanceKm = GeoUtils.haversineDistance(centerLat, centerLng, spot.getLat(), spot.getLng()) / 1000;
                 sb.append(", 중심좌표 기준 거리: ").append(String.format("%.1f", distanceKm)).append("km");
             }
+            // 부산명소정보 API(공식 관광지) 등재 여부 - A/B안 프롬프트 지침에서 tie-breaker/균형 고려 근거로 사용
+            sb.append(", 부산 공식 명소: ").append(spot.isOfficial() ? "예" : "아니오");
             sb.append("\n");
         });
 
@@ -417,7 +419,11 @@ public class ItineraryGenerateService {
         sb.append("\n부득이 포함해야 한다면 같은 날 다른 방문지와 동선이 이어지는 경우에만 넣고, 그 외에는 다른 방문지들과 가까운 후보로 대체하세요.");
 
         sb.append("\nA안은 선호 카테고리에 집중하고, 위 좋아요한 장소 목록에 있는 장소를 일정에 최대한 포함하세요. 단, 위 '동떨어진 관광지 제외 규칙'은 A안에도 동일하게 적용됩니다.");
+        // 취향 순위가 절대 기준이며, 선호도가 동일한 후보가 여러 개일 때만 공식 명소를 우선 선택
+        sb.append(" 취향(선호 카테고리) 순위는 항상 최우선 기준이며, 선호도가 동일한 후보가 여러 개일 때만 그중 '부산 공식 명소'가 예인 곳을 우선 선택하세요.");
         sb.append("\nB안은 동선이 꼬이지 않도록 각 후보 관광지의 위도·경도를 기준으로 같은 권역(예: 수영구·해운대구, 중구·영도구 등 인접한 구/군)끼리 묶어서 묶음 단위로 하루 일정을 구성하세요. 서로 먼 권역의 관광지를 같은 날 또는 인접한 순서에 배치하지 마세요.");
+        // 취향 분포와 함께 부산 대표 명소(공식 관광지)도 균형 있게 고려
+        sb.append(" 동선 구성이 끝나면, 취향 분포를 해치지 않는 선에서 '부산 공식 명소'가 예인 곳도 일정 전반에 균형 있게 포함되도록 고려하세요.");
 
         sb.append("\n\n## 운영시간 유의사항");
         sb.append("\n각 관광지의 '운영시간' 정보를 참고하여, 배정된 날짜(요일)·시간대에 실제로 운영하지 않는 곳(정기 휴무일, 계절 미운영 기간 등)은 해당 날짜의 일정에서 제외하세요.");
@@ -569,6 +575,7 @@ public class ItineraryGenerateService {
                 .address(spot.getAddress())
                 .thumbnailUrl(spot.getThumbnailUrl())
                 .operatingHours(spot.getOperatingHours())
+                .official(spot.isOfficialRecommended()) // 부산명소정보 API 공식 관광지 여부
                 .build();
     }
 
