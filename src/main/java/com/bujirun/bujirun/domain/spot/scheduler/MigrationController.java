@@ -32,6 +32,7 @@ public class MigrationController {
     private final SummarizeStatusHolder summarizeStatusHolder;
     private final TourApiOverviewStatusHolder tourApiOverviewStatusHolder;
     private final TourApiSummarizeStatusHolder tourApiSummarizeStatusHolder;
+    private final OfficialRecommendedStatusHolder officialRecommendedStatusHolder;
 
     @PostMapping("/run")
     public ResponseEntity<Map<String, String>> run() {
@@ -209,6 +210,42 @@ public class MigrationController {
         body.put("finishedAt", tourApiSummarizeStatusHolder.getFinishedAt());
         body.put("result", tourApiSummarizeStatusHolder.getLastResult());
         body.put("error", tourApiSummarizeStatusHolder.getLastError());
+        return ResponseEntity.ok(body);
+    }
+
+    // 부산 대표 명소(도감 60개) 중 부산명소정보 API에 실제 등재된 곳을 is_official_recommended로 표시
+    @PostMapping("/official-recommended/run")
+    public ResponseEntity<Map<String, String>> runOfficialRecommendedMatch() {
+        if (!officialRecommendedStatusHolder.tryStart()) {
+            return ResponseEntity.status(HttpStatus.CONFLICT)
+                    .body(Map.of("message", "이미 공식 추천 관광지 매칭이 진행 중입니다."));
+        }
+
+        Mono.fromCallable(migrationService::matchOfficialRecommendedSpots)
+                .subscribeOn(Schedulers.boundedElastic())
+                .subscribe(
+                        result -> {
+                            officialRecommendedStatusHolder.markCompleted(result);
+                            log.info("공식 추천 관광지 매칭 완료: {}", result);
+                        },
+                        error -> {
+                            officialRecommendedStatusHolder.markFailed(error.getMessage());
+                            log.error("공식 추천 관광지 매칭 실패", error);
+                        }
+                );
+
+        return ResponseEntity.accepted()
+                .body(Map.of("message", "공식 추천 관광지 매칭이 시작되었습니다. /official-recommended/status 로 진행 상황을 확인하세요."));
+    }
+
+    @GetMapping("/official-recommended/status")
+    public ResponseEntity<Map<String, Object>> officialRecommendedStatus() {
+        Map<String, Object> body = new java.util.HashMap<>();
+        body.put("status", officialRecommendedStatusHolder.getStatus());
+        body.put("startedAt", officialRecommendedStatusHolder.getStartedAt());
+        body.put("finishedAt", officialRecommendedStatusHolder.getFinishedAt());
+        body.put("result", officialRecommendedStatusHolder.getLastResult());
+        body.put("error", officialRecommendedStatusHolder.getLastError());
         return ResponseEntity.ok(body);
     }
 }

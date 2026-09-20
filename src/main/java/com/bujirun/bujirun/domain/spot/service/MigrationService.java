@@ -189,6 +189,69 @@ public class MigrationService {
         return true;
     }
 
+    // 부산 대표 명소(도감 60개) 중 부산명소정보 API(공식 관광지 DB)에 실제 등재된 곳을 표시.
+    // enrichWithBusanAttractionApi()와 동일한 좌표(100m)·명칭 매칭 로직을 재사용하되, 후보를
+    // 도감(is_collection=true)으로만 한정해서 is_official_recommended 플래그를 채운다.
+    // AI 일정 생성 프롬프트에서 취향 편중 보완용 tie-breaker 근거로 사용할 예정(제안서 수치 자료용).
+    @Transactional
+    public OfficialRecommendedResult matchOfficialRecommendedSpots() {
+        log.info("========== 공식 추천 관광지(부산명소정보 매칭) 배치 시작 ==========");
+
+        List<BusanAttractionApiResponse> items = busanAttractionApiClient.fetchAll();
+        long totalCollectionSpots = tourSpotRepository.countByCollectionTrue();
+        log.info("도감 관광지: {}건, 부산명소정보 API: {}건", totalCollectionSpots, items.size());
+
+        int matched = 0, failed = 0;
+
+        for (BusanAttractionApiResponse item : items) {
+            try {
+                if (self.matchSingleOfficialRecommendedItem(item)) {
+                    matched++;
+                }
+            } catch (Exception e) {
+                log.error("[OfficialRecommendedMatch] 실패 - UC_SEQ={}, {}", item.getUcSeq(), e.getMessage());
+                failed++;
+            }
+        }
+
+        OfficialRecommendedResult result =
+                new OfficialRecommendedResult((int) totalCollectionSpots, items.size(), matched, failed);
+        log.info("========== 공식 추천 관광지 매칭 완료: {} ==========", result);
+        return result;
+    }
+
+    // matchOfficialRecommendedSpots()의 항목 하나를 독립된 트랜잭션에서 처리 (격리 이유는 enrichSingleBusanItem 참고).
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public boolean matchSingleOfficialRecommendedItem(BusanAttractionApiResponse item) {
+        Double lat = parseDouble(item.getLat());
+        Double lng = parseDouble(item.getLng());
+        if (lat == null || lng == null) {
+            return false;
+        }
+
+        TourSpot spot = tourSpotRepository.findNearby(lat, lng, BUSAN_ATTRACTION_MATCH_RADIUS_KM).stream()
+                .filter(TourSpot::isCollection)
+                .filter(candidate -> namesMatch(candidate.getName(),
+                        item.getMainTitle(), item.getTitle(), item.getPlace()))
+                .findFirst()
+                .orElse(null);
+
+        if (spot == null) {
+            return false;
+        }
+
+        spot.markOfficialRecommended();
+        tourSpotRepository.save(spot);
+        return true;
+    }
+
+    public record OfficialRecommendedResult(int totalCollectionSpots, int totalApiItems, int matched, int failed) {
+        @Override public String toString() {
+            return String.format("도감=%d, API건수=%d, 매칭=%d, 실패=%d",
+                    totalCollectionSpots, totalApiItems, matched, failed);
+        }
+    }
+
     // 부산명소정보 API로도 매칭 안 된 관광지(description 없음)를 TourAPI 자체 개요(overview)로 백필.
     // detailCommon2가 contentId 외 파라미터를 얹으면 거부되던 버그를 수정한 뒤(2026-08-06),
     // 매칭 안 된 256곳 중 251곳(98%)에서 실제로 개요가 내려오는 것을 확인해서 만든 배치.
