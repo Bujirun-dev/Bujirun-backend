@@ -21,6 +21,11 @@ spring:
     redis:
       host: ${REDIS_HOST:localhost}
       port: ${REDIS_PORT:6379}
+      # 타임아웃 미설정 시 커넥션이 끊긴 채로 남아있으면 요청이 응답 없이 계속 걸릴 수 있다
+      # (2026-09-16 로컬에서 Redis를 죽인 채로 재현 확인 — try/catch 폴백이 있어도 예외
+      # 자체가 안 던져지고 그냥 멈춰있었음). 짧게 잡아서 장애 시 빨리 실패하고 폴백하게 한다.
+      timeout: 1000ms
+      connect-timeout: 1000ms
 
 server:
   port: 8080
@@ -60,3 +65,10 @@ openai:
   api:
     key: ${OPENAI_API_KEY}
     model: gpt-4.1-mini
+
+internal:
+  api:
+    # node-yjs 서버가 room의 flush를 대신 호출할 때 쓰는 서버 간 공유 비밀값.
+    # 비어있으면(로컬에서 안 쓸 때) InternalAuthFilter가 항상 거부한다 — 빈 문자열끼리
+    # 매치돼 인증이 뚫리는 걸 막기 위함.
+    secret: ${INTERNAL_API_SECRET:}

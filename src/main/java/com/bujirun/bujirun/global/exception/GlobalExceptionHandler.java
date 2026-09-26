@@ -1,6 +1,8 @@
 package com.bujirun.bujirun.global.exception;
 
 import com.bujirun.bujirun.domain.auth.exception.DuplicateNicknameException;
+import com.bujirun.bujirun.domain.itinerary.dto.response.ItineraryDayResponse;
+import com.bujirun.bujirun.domain.itinerary.exception.DayVersionConflictException;
 import com.bujirun.bujirun.domain.itinerary.generate.exception.OpenAiApiException;
 import com.bujirun.bujirun.domain.itinerary.generate.exception.OpenAiRateLimitException;
 import com.bujirun.bujirun.global.response.ApiResponse;
@@ -24,6 +26,11 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(IllegalArgumentException.class)
     public ResponseEntity<ApiResponse<Void>> handleBadRequest(IllegalArgumentException e) {
         return ResponseEntity.badRequest().body(ApiResponse.fail(e.getMessage()));
+    }
+
+    @ExceptionHandler(ForbiddenException.class)
+    public ResponseEntity<ApiResponse<Void>> handleForbidden(ForbiddenException e) {
+        return ResponseEntity.status(403).body(ApiResponse.fail(e.getMessage()));
     }
 
     @ExceptionHandler(IllegalStateException.class)
@@ -70,6 +77,13 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(DuplicateNicknameException.class)
     public ResponseEntity<ApiResponse<Void>> handleDuplicateNickname(DuplicateNicknameException e) {
         return ResponseEntity.status(409).body(ApiResponse.fail(e.getMessage()));
+    }
+
+    // 낙관적 락 충돌. 서버가 이미 들고 있는 최신 day 상태를 데이터로 함께 돌려줘, 프론트가
+    // 별도 조회 없이 바로 로컬 상태를 이 값으로 되돌리고(reconcile) 재시도할 수 있게 한다.
+    @ExceptionHandler(DayVersionConflictException.class)
+    public ResponseEntity<ApiResponse<ItineraryDayResponse>> handleDayVersionConflict(DayVersionConflictException e) {
+        return ResponseEntity.status(409).body(ApiResponse.fail(e.getMessage(), e.getCurrentDay()));
     }
 
     // DB 유니크 제약 위반의 최종 방어선(예: 동시 요청이 애플리케이션 레벨 중복 체크를 함께 통과한 경우).
