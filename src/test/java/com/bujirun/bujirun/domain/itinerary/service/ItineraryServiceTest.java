@@ -13,6 +13,7 @@ import com.bujirun.bujirun.domain.itinerary.generate.service.SubwayScheduleMappi
 import com.bujirun.bujirun.domain.itinerary.generate.service.TransitRouteService;
 import com.bujirun.bujirun.domain.itinerary.optimize.dto.request.ItineraryOptimizeRequest;
 import com.bujirun.bujirun.domain.itinerary.optimize.service.ItineraryOptimizeService;
+import com.bujirun.bujirun.domain.itinerary.repository.DayReplaceIdempotencyRepository;
 import com.bujirun.bujirun.domain.itinerary.repository.ItineraryDayRepository;
 import com.bujirun.bujirun.domain.itinerary.repository.ItineraryItemRepository;
 import com.bujirun.bujirun.domain.itinerary.repository.ItineraryRepository;
@@ -20,6 +21,8 @@ import com.bujirun.bujirun.domain.spot.entity.TourSpot;
 import com.bujirun.bujirun.domain.spot.repository.TourSpotRepository;
 import com.bujirun.bujirun.domain.swipe.repository.SwipeSessionRepository;
 import com.bujirun.bujirun.domain.visit.repository.VisitRepository;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import jakarta.persistence.EntityManager;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -50,11 +53,15 @@ class ItineraryServiceTest {
     private final TransitRouteService transitRouteService = mock(TransitRouteService.class);
     private final SubwayScheduleMappingService subwayScheduleMappingService = mock(SubwayScheduleMappingService.class);
     private final ItineraryOptimizeService itineraryOptimizeService = mock(ItineraryOptimizeService.class);
+    private final DayReplaceIdempotencyRepository dayReplaceIdempotencyRepository =
+            mock(DayReplaceIdempotencyRepository.class);
+    private final ObjectMapper objectMapper = new ObjectMapper();
+    private final EntityManager entityManager = mock(EntityManager.class);
     private final ItineraryService itineraryService = new ItineraryService(
             itineraryRepository, dayRepository, itemRepository, tourSpotRepository,
             collectionRepository, visitRepository, groupMemberRepository, groupService,
             swipeSessionRepository, transitRouteService, subwayScheduleMappingService,
-            itineraryOptimizeService);
+            itineraryOptimizeService, dayReplaceIdempotencyRepository, objectMapper, entityManager);
 
     private final UUID itineraryId = UUID.randomUUID();
     private final UUID dayId = UUID.randomUUID();
@@ -75,6 +82,7 @@ class ItineraryServiceTest {
         ItineraryDay day = mock(ItineraryDay.class);
         when(day.getItinerary()).thenReturn(itinerary);
         when(day.getItems()).thenReturn(List.of(existingItem));
+        when(day.getVersion()).thenReturn(0L);
         when(dayRepository.findByIdForUpdate(dayId)).thenReturn(Optional.of(day));
     }
 
