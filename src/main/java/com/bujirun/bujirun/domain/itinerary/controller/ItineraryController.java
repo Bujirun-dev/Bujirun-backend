@@ -167,19 +167,36 @@ public class ItineraryController {
                 .map(r -> ResponseEntity.ok(ApiResponse.ok(r)));
     }
 
+    @Operation(summary = "일차 항목 전체 교체(원자적)", description = """
+            해당 일차의 방문 항목 전체를 요청 목록으로 통째 교체합니다. 개별 추가/삭제 API를
+            여러 번 나눠 보내는 대신 이 API로 한 번에 반영하면, 중간에 일부만 성공하고 나머지가
+            실패해 일차가 반쪽만 재구성된 채 남는 상황을 막을 수 있습니다. operationId가 같은
+            요청을 다시 보내면(재시도, 다중 클라이언트 중복 전송 등) 재처리하지 않고 첫 요청의
+            결과를 그대로 돌려줍니다(멱등).
+            """)
+    @PutMapping("/{itineraryId}/days/{dayId}/items")
+    public Mono<ResponseEntity<ApiResponse<ItineraryDayResponse>>> replaceDayItems(
+            @PathVariable UUID itineraryId,
+            @PathVariable UUID dayId,
+            @RequestBody @Valid ReplaceDayItemsRequest req,
+            @AuthenticationPrincipal UUID userId) {
+        return blocking(() -> itineraryService.replaceDayItems(itineraryId, dayId, req, userId))
+                .map(r -> ResponseEntity.ok(ApiResponse.ok(r)));
+    }
+
     @Operation(summary = "방문 항목 순서 일괄 변경",
             description = "일차에 속한 방문 항목 전체의 순서를 한 번에 원자적으로 반영합니다. " +
                     "항목별 개별 PATCH로 순서를 나눠 반영하면 동시편집 시 order_index가 충돌할 수 있어 도입됨. " +
-                    "itemIds는 그 일차에 존재하는 항목 id 전체를 원하는 순서대로 담아야 합니다.")
+                    "itemIds는 그 일차에 존재하는 항목 id 전체를 원하는 순서대로 담아야 합니다. " +
+                    "expectedVersion이 서버의 현재 값과 다르면 409를 반환합니다(낙관적 락).")
     @PatchMapping("/{itineraryId}/days/{dayId}/items/order")
-    public Mono<ResponseEntity<Void>> reorderItems(
+    public Mono<ResponseEntity<ApiResponse<ItineraryDayResponse>>> reorderItems(
             @PathVariable UUID itineraryId,
             @PathVariable UUID dayId,
             @RequestBody @Valid ReorderItemsRequest req,
             @AuthenticationPrincipal UUID userId) {
-        return Mono.fromRunnable(() -> itineraryService.reorderItems(itineraryId, dayId, req, userId))
-                .subscribeOn(Schedulers.boundedElastic())
-                .thenReturn(ResponseEntity.noContent().<Void>build());
+        return blocking(() -> itineraryService.reorderItems(itineraryId, dayId, req, userId))
+                .map(r -> ResponseEntity.ok(ApiResponse.ok(r)));
     }
 
     @Operation(summary = "방문 항목 삭제", description = "일차에서 특정 방문 항목을 삭제합니다.")

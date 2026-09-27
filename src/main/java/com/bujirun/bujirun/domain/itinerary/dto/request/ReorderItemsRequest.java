@@ -10,5 +10,7 @@ import java.util.UUID;
 // 항목별 PATCH로 순서를 나눠 반영하면 동시편집 중 서로 다른 클라이언트의 갱신이 뒤섞여
 // order_index가 충돌할 수 있어서(2026-08-12 프로덕션에서 실제 발견) 이 API로 대체한다.
 public record ReorderItemsRequest(
-        @NotEmpty List<UUID> itemIds
+        @NotEmpty List<UUID> itemIds,
+        // replaceDayItems와 동일한 낙관적 락 용도. null이면 체크 스킵(구버전 프론트 호환).
+        Long expectedVersion
 ) {}

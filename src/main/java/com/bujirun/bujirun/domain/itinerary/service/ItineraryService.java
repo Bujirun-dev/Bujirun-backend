@@ -8,6 +8,7 @@ import com.bujirun.bujirun.domain.itinerary.dto.response.*;
 import com.bujirun.bujirun.domain.itinerary.entity.Itinerary;
 import com.bujirun.bujirun.domain.itinerary.entity.ItineraryDay;
 import com.bujirun.bujirun.domain.itinerary.entity.ItineraryItem;
+import com.bujirun.bujirun.domain.itinerary.exception.DayVersionConflictException;
 import com.bujirun.bujirun.domain.itinerary.generate.dto.response.SpotInfo;
 import com.bujirun.bujirun.domain.itinerary.generate.dto.response.SubPath;
 import com.bujirun.bujirun.domain.itinerary.generate.dto.response.TransitDetail;
@@ -17,6 +18,7 @@ import com.bujirun.bujirun.domain.itinerary.generate.service.SubwayScheduleMappi
 import com.bujirun.bujirun.domain.itinerary.generate.service.TransitRouteService;
 import com.bujirun.bujirun.domain.itinerary.optimize.dto.request.ItineraryOptimizeRequest;
 import com.bujirun.bujirun.domain.itinerary.optimize.service.ItineraryOptimizeService;
+import com.bujirun.bujirun.domain.itinerary.repository.DayReplaceIdempotencyRepository;
 import com.bujirun.bujirun.domain.itinerary.repository.ItineraryDayRepository;
 import com.bujirun.bujirun.domain.itinerary.repository.ItineraryItemRepository;
 import com.bujirun.bujirun.domain.itinerary.repository.ItineraryRepository;
@@ -25,14 +27,19 @@ import com.bujirun.bujirun.domain.spot.repository.TourSpotRepository;
 import com.bujirun.bujirun.domain.swipe.entity.SwipeSession;
 import com.bujirun.bujirun.domain.swipe.repository.SwipeSessionRepository;
 import com.bujirun.bujirun.domain.visit.repository.VisitRepository;
+import com.bujirun.bujirun.global.exception.ForbiddenException;
 import com.bujirun.bujirun.global.util.TransitRouteUtils;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import jakarta.persistence.EntityManager;
 import jakarta.persistence.EntityNotFoundException;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
 import java.time.LocalTime;
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Comparator;
 import java.util.List;
@@ -42,6 +49,7 @@ import java.util.UUID;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 @Transactional(readOnly = true)
@@ -62,6 +70,11 @@ public class ItineraryService {
     private final TransitRouteService transitRouteService;
     private final SubwayScheduleMappingService subwayScheduleMappingService;
     private final ItineraryOptimizeService itineraryOptimizeService;
+    private final DayReplaceIdempotencyRepository dayReplaceIdempotencyRepository;
+    private final ObjectMapper objectMapper;
+    // bumpDayVersion()에서 day의 낙관적 락 version을 강제로 올리는 데 쓴다(JPQL bulk
+    // update 뒤 이미 로드된 day 인스턴스를 최신 값으로 동기화하려면 refresh가 필요).
+    private final EntityManager entityManager;
     // ── Itinerary ──────────────────────────────────────────────────
 
     @Transactional
@@ -338,6 +351,184 @@ public class ItineraryService {
         return ItineraryItemResponse.from(saved, fetchCollectedSpotIds(userId), Set.of());
     }
 
+    // node-yjs 서버가 room의 flush를 대신 호출하는 경로(/api/internal/**). actorUserId가
+    // 그 일정의 소유자/collaborator가 아니면 403 — 아래 replaceDayItems도 내부에서
+    // validateAccess를 다시 호출하지만 그건 IllegalArgumentException(400)으로 매핑되므로,
+    // "누구인지는 확실한데 권한이 없는" 이 경로는 여기서 먼저 걸러 403으로 구분해서 응답한다.
+    // 그 외 로직(행 잠금/버전 체크/멱등키)은 replaceDayItems를 그대로 재사용한다 — node가
+    // 유일한 flush 주체가 된 뒤에도 배포 중 구버전 프론트가 잠깐 같이 flush할 수 있어서
+    // 이 방어 로직들은 계속 필요하다.
+    @Transactional
+    public ItineraryDayResponse replaceDayItemsInternal(UUID itineraryId, UUID dayId,
+                                                          InternalReplaceDayItemsRequest req) {
+        Itinerary itinerary = itineraryRepository.findById(itineraryId)
+                .orElseThrow(() -> new EntityNotFoundException("일정을 찾을 수 없습니다. id=" + itineraryId));
+        try {
+            validateAccess(itinerary, req.actorUserId());
+        } catch (IllegalArgumentException e) {
+            throw new ForbiddenException(e.getMessage());
+        }
+        ReplaceDayItemsRequest delegated = new ReplaceDayItemsRequest(
+                req.operationId(), req.expectedVersion(), req.items());
+        return replaceDayItems(itineraryId, dayId, delegated, req.actorUserId());
+    }
+
+    // day의 항목 전체를 한 번에 원자적으로 교체한다. 기존엔 실시간 협업 편집이 재구성(삭제 N번 +
+    // 추가 N번)을 개별 요청으로 보내서, 여러 클라이언트가 같은 변경을 동시에 재전송하면 일부
+    // 요청만 성공하고 나머지는 실패해 day가 반쪽만 재구성된 채 남는 사고가 있었다
+    // (2026-09-16 프로덕션에서 실제 발생 — 재구성 삭제는 다 됐는데 재추가가 부분적으로만
+    // 반영됨). operationId로 같은 논리적 편집의 중복 요청을 감지해, 첫 요청만 실제로 처리하고
+    // 이후 재전송은 캐시된 결과를 그대로 돌려준다(재시도/중복 전송이 안전해짐).
+    @Transactional
+    public ItineraryDayResponse replaceDayItems(UUID itineraryId, UUID dayId,
+                                                 ReplaceDayItemsRequest req, UUID userId) {
+        boolean claimed;
+        try {
+            claimed = dayReplaceIdempotencyRepository.claim(req.operationId());
+        } catch (Exception e) {
+            log.warn("[replaceDayItems] Redis 클레임 실패(장애로 추정) - 멱등성 없이 직접 처리. operationId={}, {}",
+                    req.operationId(), e.getMessage());
+            claimed = false;
+        }
+        if (!claimed) {
+            String result = null;
+            try {
+                result = dayReplaceIdempotencyRepository.waitForResult(req.operationId());
+            } catch (Exception e) {
+                log.warn("[replaceDayItems] 결과 대기 중 Redis 오류 - 직접 처리로 폴백. operationId={}, {}",
+                        req.operationId(), e.getMessage());
+            }
+            if (result != null) {
+                try {
+                    return objectMapper.readValue(result, ItineraryDayResponse.class);
+                } catch (Exception e) {
+                    log.warn("[replaceDayItems] 캐시된 응답 역직렬화 실패, 재처리로 폴백 - operationId={}, {}",
+                            req.operationId(), e.getMessage());
+                }
+            }
+            // 선점자가 죽었거나 타임아웃, 또는 Redis 자체가 불능 — 안전장치로 이 요청이 직접
+            // 처리한다(DB 행 잠금이 있어 중복 처리돼도 데이터 정합성은 깨지지 않음). claimed가
+            // false로 남으므로 아래에서 이 결과를 캐시에 쓰지 않는다 — 원래 선점자가 뒤늦게
+            // 자기 결과를 쓸 자리를 덮어쓰지 않기 위함.
+            log.warn("[replaceDayItems] 선점 실패 - 직접 처리로 폴백. operationId={}", req.operationId());
+        }
+
+        ItineraryDay day = itineraryDayRepository.findByIdForUpdate(dayId)
+                .filter(d -> d.getItinerary().getId().equals(itineraryId))
+                .orElseThrow(() -> new EntityNotFoundException("Day를 찾을 수 없습니다. id=" + dayId));
+        validateAccess(day.getItinerary(), userId);
+        checkDayVersion(day, req.expectedVersion(), userId);
+
+        List<ReplaceDayItemsRequest.ItemInput> items = req.items();
+        if (items.size() > MAX_ITEMS_PER_DAY) {
+            throw new IllegalArgumentException("하루 일정에는 관광지를 최대 " + MAX_ITEMS_PER_DAY + "개까지만 추가할 수 있습니다.");
+        }
+        Set<LocalTime> seenArrivalTimes = new java.util.HashSet<>();
+        for (ReplaceDayItemsRequest.ItemInput input : items) {
+            if (input.arrivalTime() != null && !seenArrivalTimes.add(input.arrivalTime())) {
+                throw new IllegalArgumentException("같은 날짜와 시간에는 일정을 하나만 추가할 수 있습니다. arrivalTime=" + input.arrivalTime());
+            }
+        }
+
+        // existingItemId로 지목된 기존 항목은 "그 행 그대로" 갱신한다(삭제 후 재생성이 아님) —
+        // id가 유지돼야 방문인증(itinerary_item_id 매칭)과 여행로그 연결이 구조적 편집 한 번에
+        // 끊기지 않는다(첫 구현 땐 매번 새 id를 발급해서 이 문제가 있었음, 2026-09-16).
+        // 목록에서 완전히 빠진(= existingItemId로도 지목 안 된) 기존 항목만 실제로 삭제한다.
+        Map<UUID, ItineraryItem> existingById = day.getItems().stream()
+                .collect(Collectors.toMap(ItineraryItem::getId, i -> i));
+        Set<UUID> keptIds = items.stream()
+                .map(ReplaceDayItemsRequest.ItemInput::existingItemId)
+                .filter(java.util.Objects::nonNull)
+                .collect(Collectors.toSet());
+        day.getItems().removeIf(item -> !keptIds.contains(item.getId()));
+
+        List<ItineraryItem> orderedResult = new ArrayList<>();
+        ItineraryItem prev = null;
+        int orderIndex = 0;
+        for (ReplaceDayItemsRequest.ItemInput input : items) {
+            TourSpot spot = tourSpotRepository.findById(input.spotId())
+                    .orElseThrow(() -> new EntityNotFoundException("관광지를 찾을 수 없습니다. id=" + input.spotId()));
+            ItineraryItem existing = input.existingItemId() != null ? existingById.get(input.existingItemId()) : null;
+
+            ItineraryItem item;
+            if (existing != null) {
+                applyTransitFields(existing, spot, orderIndex, input, prev, existing.getTravelMode());
+                item = existing;
+            } else {
+                item = ItineraryItem.builder().day(day).spot(spot).build();
+                applyTransitFields(item, spot, orderIndex, input, prev, input.travelMode());
+                day.getItems().add(item);
+            }
+            orderedResult.add(item);
+            orderIndex++;
+            prev = item;
+        }
+        itineraryItemRepository.saveAll(orderedResult);
+        bumpDayVersion(day);
+
+        ItineraryDayResponse response = ItineraryDayResponse.from(day, fetchCollectedSpotIds(userId), Set.of());
+        if (claimed) {
+            try {
+                dayReplaceIdempotencyRepository.save(req.operationId(), objectMapper.writeValueAsString(response));
+            } catch (Exception e) {
+                log.warn("[replaceDayItems] 응답 캐싱 실패(멱등성 보장 안 됨) - operationId={}, {}", req.operationId(), e.getMessage());
+            }
+        }
+        return response;
+    }
+
+    // addItem의 구간(교통수단) 계산 로직과 동일하다 — 의도적으로 별도 메서드로 둔다(공유
+    // 리팩터링 시 addItem의 기존 동작을 건드릴 위험을 피하기 위함, 2026-09-16).
+    // target: 새로 만드는 중인 항목(day/spot만 세팅된 빈 builder 결과) 또는 그대로 갱신할
+    // 기존 항목. preferredTravelMode: 신규 항목이면 프론트 요청값, 기존 항목 갱신이면 그
+    // 항목이 원래 갖고 있던 값 — addItem의 requestedMode와 동일하게 옵션 매칭에 쓰여서
+    // 사용자가 이전에 골라둔 수단 "의도"는 유지하되 실제 경로(시간/노선)는 이웃 변경에 맞춰
+    // 새로 계산한다. durationMin/memo는 target에 이미 있는 값을 입력이 없을 때 그대로 둔다.
+    private void applyTransitFields(ItineraryItem target, TourSpot spot, int orderIndex,
+                                     ReplaceDayItemsRequest.ItemInput input, ItineraryItem prevItem,
+                                     String preferredTravelMode) {
+        String travelMode = input.travelMode() != null ? input.travelMode() : preferredTravelMode;
+        Integer travelTimeMin = input.travelTimeMin();
+        Integer durationMin = input.durationMin() != null ? input.durationMin() : target.getDurationMin();
+        String memo = input.memo() != null ? input.memo() : target.getMemo();
+        String routeType = null;
+        String routeNo = null;
+        String startStationName = null;
+        String endStationName = null;
+        String startArsId = null;
+        TransitDetail transitDetail = TransitDetail.EMPTY;
+
+        if (prevItem != null) {
+            List<SpotInfo> pair = List.of(toSpotInfo(prevItem.getSpot()), toSpotInfo(spot));
+            List<TransitRouteResponse> routes = transitRouteService.getRoutesForDay(pair, null);
+
+            if (!routes.isEmpty() && !routes.get(0).options().isEmpty()) {
+                List<TransitOption> options = routes.get(0).options();
+                String requestedMode = travelMode;
+                TransitOption leg = requestedMode != null
+                        ? options.stream()
+                                .filter(opt -> matchesRequestedMode(requestedMode, opt))
+                                .findFirst()
+                                .orElse(options.get(0))
+                        : options.get(0);
+                SubPath firstSubPath = TransitRouteUtils.findFirstTransitSubPath(leg.subPaths());
+
+                travelMode = TransitRouteUtils.toTravelMode(leg.type());
+                if (travelTimeMin == null) travelTimeMin = leg.totalTime();
+                routeType = firstSubPath != null ? firstSubPath.type() : leg.type();
+                routeNo = firstSubPath != null ? firstSubPath.routeNo() : null;
+                startStationName = firstSubPath != null ? firstSubPath.startName() : null;
+                endStationName = firstSubPath != null ? firstSubPath.endName() : null;
+                startArsId = firstSubPath != null ? firstSubPath.startArsId() : null;
+                transitDetail = TransitDetail.from(leg, subwayScheduleMappingService.mapSubwaySegments(leg));
+            }
+        }
+
+        target.update(orderIndex, input.arrivalTime(), durationMin, travelMode, travelTimeMin, memo);
+        target.updateRoute(travelMode, travelTimeMin, routeType, routeNo,
+                startStationName, endStationName, startArsId, transitDetail);
+    }
+
     private SpotInfo toSpotInfo(TourSpot spot) {
         return SpotInfo.builder()
                 .contentId(spot.getContentId())
@@ -517,11 +708,15 @@ public class ItineraryService {
     // 다른 항목이 섞이면 거부한다 — 부분 반영 시 조용히 잘못된 최종 순서가 저장되는
     // 상황을 막기 위함.
     @Transactional
-    public void reorderItems(UUID itineraryId, UUID dayId, ReorderItemsRequest req, UUID userId) {
-        ItineraryDay day = itineraryDayRepository.findById(dayId)
+    public ItineraryDayResponse reorderItems(UUID itineraryId, UUID dayId, ReorderItemsRequest req, UUID userId) {
+        // findById(잠금 없음)로는 두 클라이언트가 동시에 서로 다른 순서를 반영할 때 나중
+        // 커밋이 앞선 커밋을 조용히 덮어쓸 수 있었다(1단계 감사에서 발견) — replaceDayItems와
+        // 같은 행 잠금으로 직렬화한다.
+        ItineraryDay day = itineraryDayRepository.findByIdForUpdate(dayId)
                 .filter(d -> d.getItinerary().getId().equals(itineraryId))
                 .orElseThrow(() -> new EntityNotFoundException("Day를 찾을 수 없습니다. id=" + dayId));
         validateAccess(day.getItinerary(), userId);
+        checkDayVersion(day, req.expectedVersion(), userId);
 
         List<ItineraryItem> currentItems = day.getItems();
         Set<UUID> currentIds = currentItems.stream().map(ItineraryItem::getId).collect(Collectors.toSet());
@@ -533,6 +728,39 @@ public class ItineraryService {
                 .collect(Collectors.toMap(ItineraryItem::getId, i -> i));
         for (int i = 0; i < req.itemIds().size(); i++) {
             itemById.get(req.itemIds().get(i)).updateOrder(i);
+        }
+        bumpDayVersion(day);
+        return ItineraryDayResponse.from(day, fetchCollectedSpotIds(userId), Set.of());
+    }
+
+    // day의 @Version은 day 엔티티 자신의 컬럼이 바뀔 때만 Hibernate가 자동으로 올린다.
+    // replaceDayItems/reorderItems는 day에 속한 item들(자식 테이블 row)만 갱신하고 day 자신의
+    // 컬럼은 손대지 않으므로, 그냥 두면 구조를 아무리 바꿔도 version이 절대 오르지 않는다
+    // (로컬에서 8개 동시 replaceDayItems 요청을 보내 전부 200으로 통과하는 걸로 실제 확인,
+    // 2026-09-17) — 낙관적 락의 핵심 전제가 깨지는 셈이라 OPTIMISTIC_FORCE_INCREMENT로
+    // day 자신이 변경되지 않아도 매번 version을 강제로 올린다. flush까지 해야 이후
+    // day.getVersion()을 읽는 응답(ItineraryDayResponse.from)에 새 값이 반영된다.
+    private void bumpDayVersion(ItineraryDay day) {
+        // 대기 중인 item insert/update(saveAll)를 먼저 DB에 반영해야 한다 — 아래 refresh가
+        // day.getItems()까지 캐스케이드로 재조회하는데, 아직 flush 안 된(=DB에 없는) 새
+        // item을 refresh하면 "No row with the given identifier exists"로 실패한다
+        // (2026-09-17 로컬 재현·확인).
+        entityManager.flush();
+        itineraryDayRepository.bumpVersion(day.getId());
+        // bulk JPQL update는 영속성 컨텍스트를 거치지 않아 이미 로드된 day 인스턴스의
+        // version 필드는 그대로다 — 응답(ItineraryDayResponse.from)이 새 값을 읽도록
+        // day를 다시 조회해 동기화한다.
+        entityManager.refresh(day);
+    }
+
+    // expectedVersion이 null이면(구버전 프론트) 체크를 건너뛴다. 값이 있는데 현재 day의
+    // version과 다르면 그 사이 다른 요청이 먼저 반영된 것 — 서버가 이미 들고 있는 최신
+    // 상태를 실어 409로 던져, 호출부가 추가 조회 없이 바로 reconcile할 수 있게 한다.
+    private void checkDayVersion(ItineraryDay day, Long expectedVersion, UUID userId) {
+        if (expectedVersion == null) return;
+        if (!expectedVersion.equals(day.getVersion())) {
+            throw new DayVersionConflictException(
+                    ItineraryDayResponse.from(day, fetchCollectedSpotIds(userId), Set.of()));
         }
     }
 
