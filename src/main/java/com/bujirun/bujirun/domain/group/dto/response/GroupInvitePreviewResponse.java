@@ -6,6 +6,7 @@ public record GroupInvitePreviewResponse(
         String groupName,
         String inviterNickname,
         long memberCount,
+        int maxMembers,
         boolean completed,
         UUID itineraryId
 ) {

@@ -31,6 +31,7 @@ public class GroupService {
     private static final String INVITE_CODE_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; // 혼동되는 0/O/1/I 제외
     private static final int INVITE_CODE_LENGTH = 8;
     private static final int INVITE_CODE_MAX_ATTEMPTS = 5;
+    private static final int DEFAULT_MAX_MEMBERS = 6;
     private static final SecureRandom RANDOM = new SecureRandom();
 
     private final GroupRepository groupRepository;
@@ -58,6 +59,7 @@ public class GroupService {
                 .name(normalizedName)
                 .inviteCode(generateUniqueInviteCode())
                 .createdBy(userId)
+                .maxMembers(req.maxMembers() != null ? req.maxMembers() : DEFAULT_MAX_MEMBERS)
                 .build());
 
         groupMemberRepository.save(GroupMember.builder()
@@ -70,7 +72,9 @@ public class GroupService {
 
     @Transactional
     public GroupResponse join(JoinGroupRequest req, UUID userId) {
-        Group group = groupRepository.findByInviteCode(req.inviteCode())
+        // 그룹 행을 잠근 상태에서 정원 확인과 멤버 추가를 수행해 동시 참여 요청도
+        // 설정된 정원을 넘어 저장되지 않도록 직렬화한다.
+        Group group = groupRepository.findByInviteCodeForUpdate(req.inviteCode())
                 .orElseThrow(() -> new EntityNotFoundException("초대 코드를 찾을 수 없습니다."));
 
         if (findCompletedItinerary(group.getId()) != null) {
@@ -78,6 +82,10 @@ public class GroupService {
         }
 
         if (!groupMemberRepository.existsById_GroupIdAndId_UserId(group.getId(), userId)) {
+            long memberCount = groupMemberRepository.countById_GroupId(group.getId());
+            if (memberCount >= group.getMaxMembers()) {
+                throw new IllegalStateException("그룹 정원이 초과되어 참여할 수 없습니다.");
+            }
             groupMemberRepository.save(GroupMember.builder()
                     .groupId(group.getId())
                     .userId(userId)
@@ -102,6 +110,7 @@ public class GroupService {
                 group.getName(),
                 inviterNickname,
                 memberCount,
+                group.getMaxMembers(),
                 completedItinerary != null,
                 completedItinerary != null ? completedItinerary.getId() : null
         );

@@ -31,7 +31,7 @@ class GroupServiceTest {
         UUID groupId = UUID.randomUUID();
         Group group = mock(Group.class);
         when(group.getId()).thenReturn(groupId);
-        when(groupRepository.findByInviteCode("DONE1234")).thenReturn(Optional.of(group));
+        when(groupRepository.findByInviteCodeForUpdate("DONE1234")).thenReturn(Optional.of(group));
         when(itineraryRepository.findFirstByGroupIdAndStatusOrderByCreatedAtDesc(groupId, "confirmed"))
                 .thenReturn(Optional.of(mock(Itinerary.class)));
 
@@ -39,6 +39,45 @@ class GroupServiceTest {
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("이미 완성되어 참여가 종료된 일정");
 
+        verify(groupMemberRepository, never()).save(any());
+    }
+
+    @Test
+    void 정원이_찬_그룹에는_새_멤버가_참여할_수_없다() {
+        UUID groupId = UUID.randomUUID();
+        UUID joiningUserId = UUID.randomUUID();
+        Group group = mock(Group.class);
+        when(group.getId()).thenReturn(groupId);
+        when(group.getMaxMembers()).thenReturn(4);
+        when(groupRepository.findByInviteCodeForUpdate("FULL1234")).thenReturn(Optional.of(group));
+        when(itineraryRepository.findFirstByGroupIdAndStatusOrderByCreatedAtDesc(groupId, "confirmed"))
+                .thenReturn(Optional.empty());
+        when(groupMemberRepository.existsById_GroupIdAndId_UserId(groupId, joiningUserId))
+                .thenReturn(false);
+        when(groupMemberRepository.countById_GroupId(groupId)).thenReturn(4L);
+
+        assertThatThrownBy(() -> groupService.join(new JoinGroupRequest("FULL1234"), joiningUserId))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("정원이 초과");
+
+        verify(groupMemberRepository, never()).save(any());
+    }
+
+    @Test
+    void 정원이_차도_이미_참여한_멤버의_재접속은_허용한다() {
+        UUID groupId = UUID.randomUUID();
+        UUID existingUserId = UUID.randomUUID();
+        Group group = mock(Group.class);
+        when(group.getId()).thenReturn(groupId);
+        when(groupRepository.findByInviteCodeForUpdate("FULL1234")).thenReturn(Optional.of(group));
+        when(itineraryRepository.findFirstByGroupIdAndStatusOrderByCreatedAtDesc(groupId, "confirmed"))
+                .thenReturn(Optional.empty());
+        when(groupMemberRepository.existsById_GroupIdAndId_UserId(groupId, existingUserId))
+                .thenReturn(true);
+
+        groupService.join(new JoinGroupRequest("FULL1234"), existingUserId);
+
+        verify(groupMemberRepository, never()).countById_GroupId(groupId);
         verify(groupMemberRepository, never()).save(any());
     }
 

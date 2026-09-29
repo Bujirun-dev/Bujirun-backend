@@ -403,7 +403,19 @@ public class ItineraryService {
             }
             if (result != null) {
                 try {
-                    return objectMapper.readValue(result, ItineraryDayResponse.class);
+                    ItineraryDayResponse cached = objectMapper.readValue(result, ItineraryDayResponse.class);
+                    // operationId는 day + 항목 구성만으로 만들어져서, TTL(10분) 안에 "같은 구성"의
+                    // 편집을 다시 하면(같은 로그를 다시 불러오기, 지웠던 관광지 다시 추가 등) 이미
+                    // 지워진 행의 id가 담긴 옛 응답이 돌아왔다 — 호출부는 그 id로 로컬을 맞춰서
+                    // 이후 travel-mode 조회가 404가 났다(2026-09-29 로컬 재현). 캐시 이후 day가
+                    // 바뀌었으면(version 불일치) 다른 편집으로 보고 새로 처리한다.
+                    Long currentVersion = itineraryDayRepository.findById(dayId)
+                            .map(ItineraryDay::getVersion).orElse(null);
+                    if (java.util.Objects.equals(cached.version(), currentVersion)) {
+                        return cached;
+                    }
+                    log.info("[replaceDayItems] 캐시된 응답이 현재 day와 다름(version {} → {}) — 새로 처리. operationId={}",
+                            cached.version(), currentVersion, req.operationId());
                 } catch (Exception e) {
                     log.warn("[replaceDayItems] 캐시된 응답 역직렬화 실패, 재처리로 폴백 - operationId={}, {}",
                             req.operationId(), e.getMessage());
@@ -430,12 +442,7 @@ public class ItineraryService {
         if (items.size() > MAX_ITEMS_PER_DAY) {
             throw new IllegalArgumentException("하루 일정에는 관광지를 최대 " + MAX_ITEMS_PER_DAY + "개까지만 추가할 수 있습니다.");
         }
-        Set<LocalTime> seenArrivalTimes = new java.util.HashSet<>();
-        for (ReplaceDayItemsRequest.ItemInput input : items) {
-            if (input.arrivalTime() != null && !seenArrivalTimes.add(input.arrivalTime())) {
-                throw new IllegalArgumentException("같은 날짜와 시간에는 일정을 하나만 추가할 수 있습니다. arrivalTime=" + input.arrivalTime());
-            }
-        }
+        items = dropDuplicateArrivalTimes(items, dayId);
 
         // existingItemId로 지목된 기존 항목은 "그 행 그대로" 갱신한다(삭제 후 재생성이 아님) —
         // id가 유지돼야 방문인증(itinerary_item_id 매칭)과 여행로그 연결이 구조적 편집 한 번에
@@ -512,6 +519,27 @@ public class ItineraryService {
                 }
             }
         });
+    }
+
+    // 같은 시각이 둘 이상이면 뒤에 나온 항목의 시각만 반영하지 않는다(기존 항목은 원래 시각을
+    // 유지, 새 항목은 시각 없음). 예전엔 400으로 day 전체 교체를 거부했는데, node-yjs는 시간만
+    // 바뀌어도 day 전체를 보내므로 겹친 시각 하나 때문에 그날의 추가/삭제/순서 변경까지 전부
+    // 저장되지 않았다(2026-09-29 운영, 동시 로그 불러오기로 10:00이 겹친 day가 계속 400).
+    private List<ReplaceDayItemsRequest.ItemInput> dropDuplicateArrivalTimes(
+            List<ReplaceDayItemsRequest.ItemInput> items, UUID dayId) {
+        Set<LocalTime> seen = new java.util.HashSet<>();
+        List<ReplaceDayItemsRequest.ItemInput> result = new ArrayList<>(items.size());
+        for (ReplaceDayItemsRequest.ItemInput input : items) {
+            if (input.arrivalTime() == null || seen.add(input.arrivalTime())) {
+                result.add(input);
+                continue;
+            }
+            log.warn("[replaceDayItems] 같은 시각 중복 — 뒤 항목의 시각은 반영하지 않음. dayId={}, spotId={}, arrivalTime={}",
+                    dayId, input.spotId(), input.arrivalTime());
+            result.add(new ReplaceDayItemsRequest.ItemInput(input.existingItemId(), input.spotId(), null,
+                    input.durationMin(), input.travelMode(), input.travelTimeMin(), input.memo()));
+        }
+        return result;
     }
 
     // 기존 항목별 "직전 항목의 관광지 id"(order_index 기준). 첫 항목은 값이 없다.

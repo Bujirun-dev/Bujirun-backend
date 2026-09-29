@@ -2,6 +2,7 @@ package com.bujirun.bujirun.domain.group.repository;
 
 import com.bujirun.bujirun.domain.group.entity.Group;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -9,10 +10,15 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import jakarta.persistence.LockModeType;
 
 public interface GroupRepository extends JpaRepository<Group, UUID> {
 
     Optional<Group> findByInviteCode(String inviteCode);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select g from Group g where g.inviteCode = :inviteCode")
+    Optional<Group> findByInviteCodeForUpdate(@Param("inviteCode") String inviteCode);
 
     /**
      * "생성 중 이탈"로 방치된 그룹 id 목록.
