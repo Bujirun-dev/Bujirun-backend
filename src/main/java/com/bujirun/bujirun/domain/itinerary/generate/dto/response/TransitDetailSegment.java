@@ -12,6 +12,7 @@ public record TransitDetailSegment(
         String endName,
         String routeNo,
         int sectionTime,
+        Integer distance,     // 구간 이동 거리(m). 이 필드 추가 전 저장된 transit_detail은 null
         // 버스 실시간 도착정보 폴링(GET /api/transit/arrival/bus)에 필요한 arsId.
         // SubPath.startArsId()를 그대로 옮긴 것 — 버스 구간에만 값이 있고, 지하철/도보/마을버스는 빈 문자열일 수 있음
         String startArsId,
@@ -25,6 +26,7 @@ public record TransitDetailSegment(
                 subPath.endName(),
                 subPath.routeNo(),
                 subPath.sectionTime(),
+                subPath.distance(),
                 subPath.startArsId(),
                 subwaySchedule
         );

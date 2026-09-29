@@ -112,7 +112,7 @@ public class TransitRouteService {
                     sp.startName(), sp.endName(),
                     sp.startX(), sp.startY(), sp.endX(), sp.endY(),
                     sp.startArsId(), sp.startId(), sp.wayCode(),
-                    remain
+                    remain, sp.distance()
             );
         }).toList();
 

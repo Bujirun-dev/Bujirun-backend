@@ -109,7 +109,8 @@ public class OdsayClient {
                     subPaths.add(new SubPath(
                             "도보", sub.path("sectionTime").asInt(), "", 0,
                             "", "", 0, 0, 0, 0,
-                            "", 0, 0, null
+                            "", 0, 0, null,
+                            sub.path("distance").asInt()
                     ));
                 } else if (trafficType == 2) {
                     String busNo = sub.path("lane").get(0).path("busNo").asText();
@@ -122,7 +123,8 @@ public class OdsayClient {
                             sub.path("endX").asDouble(),
                             sub.path("endY").asDouble(),
                             sub.path("startArsID").asText(""),
-                            0, 0, null
+                            0, 0, null,
+                            sub.path("distance").asInt()
                     ));
                 } else if (trafficType == 1) {
                     String lineName = sub.path("lane").get(0).path("name").asText();
@@ -137,7 +139,8 @@ public class OdsayClient {
                             "",
                             sub.path("startID").asInt(),
                             sub.path("wayCode").asInt(),
-                            null
+                            null,
+                            sub.path("distance").asInt()
                     ));
                 }
             }

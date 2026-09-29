@@ -14,5 +14,6 @@ public record SubPath(
         String startArsId,     // 버스 승차 정류장 ARS 번호 (마을버스 등 일부 없음 → "", 지하철/도보: "")
         int startId,           // 지하철 승차역 코드 - ODsay startID (버스/도보: 0)
         int wayCode,           // 지하철 방향 - ODsay wayCode (1=상행, 2=하행, 버스/도보: 0)
-        Integer remainMinutes  // 다음 버스/열차까지 대기 시간 (분) - 조회 실패 또는 도보 시 null
+        Integer remainMinutes, // 다음 버스/열차까지 대기 시간 (분) - 조회 실패 또는 도보 시 null
+        Integer distance       // 구간 이동 거리(m) - ODsay subPath.distance. 이 필드 추가 전 캐시된 경로는 null
 ) {}
