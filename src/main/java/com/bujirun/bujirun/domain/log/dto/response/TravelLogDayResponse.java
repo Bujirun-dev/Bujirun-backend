@@ -1,7 +1,6 @@
 package com.bujirun.bujirun.domain.log.dto.response;
 
 import com.bujirun.bujirun.domain.itinerary.entity.ItineraryDay;
-import com.bujirun.bujirun.domain.itinerary.entity.ItineraryItem;
 import com.bujirun.bujirun.domain.log.entity.TravelLogItem;
 
 import java.time.LocalDate;

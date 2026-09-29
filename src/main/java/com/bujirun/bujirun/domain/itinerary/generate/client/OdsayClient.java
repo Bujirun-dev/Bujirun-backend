@@ -143,8 +143,7 @@ public class OdsayClient {
             }
         }
 
-        // 기존 TransitRouteService에 있던 remainMinutes enrich(stream/map) 블록은
-        // 여기로 옮기지 않음 — TransitRouteService.enrichWithArrival()로 이동함
+        // 실시간 도착정보(remainMinutes) 보강은 여기서 하지 않고 TransitRouteService.enrichWithArrival()에서 한다
 
         String type = resolvePathTypeLabel(pathType);
 

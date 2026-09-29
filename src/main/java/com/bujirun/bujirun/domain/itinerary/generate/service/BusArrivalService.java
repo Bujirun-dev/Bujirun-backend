@@ -3,7 +3,6 @@ package com.bujirun.bujirun.domain.itinerary.generate.service;
 import com.bujirun.bujirun.domain.itinerary.generate.dto.response.SubPath;
 import io.netty.channel.ChannelOption;
 import io.netty.resolver.DefaultAddressResolverGroup;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.client.reactive.ReactorClientHttpConnector;
@@ -14,7 +13,6 @@ import org.w3c.dom.NodeList;
 import reactor.netty.http.client.HttpClient;
 
 import javax.xml.parsers.DocumentBuilderFactory;
-import java.io.ByteArrayInputStream;
 import java.net.URI;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;

@@ -39,7 +39,7 @@ public class ItineraryVoteSession {
     private UUID itineraryId;
 
     // AI 생성을 실제로 수행한 요청의 startTime/endTime. 방장이 입력한 값과 팀원 화면에
-    // 표시되는 값이 달라지는 문제(2026-09-05 발견)를 막기 위해, 프론트 URL 파라미터가 아니라
+    // 표시되는 값이 달라지는 문제를 막기 위해, 프론트 URL 파라미터가 아니라
     // 이 컬럼을 시작/종료 시각의 단일 source of truth로 삼는다.
     @Column(name = "start_time")
     private LocalTime startTime;

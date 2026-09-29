@@ -13,10 +13,6 @@ public interface TourSpotRepository extends JpaRepository<TourSpot, UUID> {
 
     Optional<TourSpot> findByContentId(String contentId);
 
-    List<TourSpot> findBySigunguId(Integer sigunguId);
-
-    List<TourSpot> findByCategory(String category);
-
     // 반경 N km 이내 관광지. HAVING은 SELECT절 별칭을 못 봐서(PostgreSQL) 서브쿼리로 감싸 WHERE에서 필터링
     @Query(value = """
             SELECT * FROM (

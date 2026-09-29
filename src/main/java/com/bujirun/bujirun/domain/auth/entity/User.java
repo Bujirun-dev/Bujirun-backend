@@ -60,7 +60,7 @@ public class User {
         return this.deletedAt != null;
     }
 
-    //30일 이후 -> 계정 삭제
+    // 탈퇴 30일 경과 후 같은 카카오 계정으로 재가입할 때, 옛 계정과의 provider_id 충돌을 막기 위해 초기화
     public void clearProviderId() {
         this.providerId = null;
     }

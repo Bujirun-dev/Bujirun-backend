@@ -63,17 +63,6 @@ public class MigrationService {
             - 요약문만 출력하고, 다른 설명이나 따옴표는 붙이지 마.
             """;
 
-    private static final Map<Integer, String> CATEGORY_MAP = Map.of(
-            12, "관광지",
-            14, "문화시설",
-            15, "행사",
-            25, "여행코스",
-            28, "레포츠",
-            32, "숙박",
-            38, "쇼핑",
-            39, "음식점"
-    );
-
     private static final Map<String, String> SIGUNGU_MAP = Map.ofEntries(
             Map.entry("1",  "중구"),
             Map.entry("2",  "서구"),
@@ -151,10 +140,9 @@ public class MigrationService {
     }
 
     // enrichWithBusanAttractionApi()의 항목 하나를 독립된 트랜잭션에서 처리한다.
-    // 기존엔 213건 전체가 하나의 세션/트랜잭션을 공유해서, 중간에 하나가 유니크 제약 위반(중복
-    // busan_uc_seq 매칭 등)으로 실패하면 "current transaction is aborted"가 그 뒤 모든 항목에
-    // 전파되어 사실상 첫 실패 이후로는 전부 실패 처리되던 문제가 있었음(2026-08-06 실제 재현·발견).
-    // REQUIRES_NEW로 매 항목마다 새 트랜잭션을 열어서 한 건의 실패가 나머지에 번지지 않게 격리한다.
+    // 전체 항목이 하나의 세션/트랜잭션을 공유하면, 중간에 하나가 유니크 제약 위반(중복
+    // busan_uc_seq 매칭 등)으로 실패할 때 "current transaction is aborted"가 그 뒤 모든 항목에
+    // 전파되어 첫 실패 이후로는 전부 실패 처리된다. REQUIRES_NEW로 매 항목마다 새 트랜잭션을 열어서 한 건의 실패가 나머지에 번지지 않게 격리한다.
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public boolean enrichSingleBusanItem(BusanAttractionApiResponse item) {
         Double lat = parseDouble(item.getLat());
@@ -253,10 +241,7 @@ public class MigrationService {
     }
 
     // 부산명소정보 API로도 매칭 안 된 관광지(description 없음)를 TourAPI 자체 개요(overview)로 백필.
-    // detailCommon2가 contentId 외 파라미터를 얹으면 거부되던 버그를 수정한 뒤(2026-08-06),
-    // 매칭 안 된 256곳 중 251곳(98%)에서 실제로 개요가 내려오는 것을 확인해서 만든 배치.
-    // 지금까지는 상세조회 시점에 매번 TourAPI를 호출하는 라이브 폴백이었는데, 이 배치로 description에
-    // 영구 저장해두면 매 조회마다 외부 API를 안 타도 됨. REQUIRES_NEW로 항목별 격리(부산명소정보 배치와 동일 이유).
+    // description에 영구 저장해두면 상세조회 때마다 외부 API를 안 타도 됨. REQUIRES_NEW로 항목별 격리(부산명소정보 배치와 동일 이유).
     @Transactional
     public TourApiOverviewResult enrichWithTourApiOverview() {
         log.info("========== TourAPI 개요(overview) 백필 시작 ==========");
@@ -325,7 +310,7 @@ public class MigrationService {
         return summarizeDescriptions(targets, "부산명소정보", TourSpot::updateDescription);
     }
 
-    // TourAPI 자체 개요(overview)로 채워진 소개글도 같은 기준으로 재요약(2026-08-27, 사용자 요청).
+    // TourAPI 자체 개요(overview)로 채워진 소개글도 같은 기준으로 재요약.
     // 부산명소정보 매칭분(busanUcSeq 있는 것)은 위 메서드가 이미 처리하므로 제외.
     // 부산명소정보 때와 달리 원문 description은 보존하고 요약본은 summary_description 컬럼에 별도 저장.
     @Transactional
@@ -466,7 +451,6 @@ public class MigrationService {
                 tourApiClient.fetchDetailIntro(contentId, contentTypeId);
 
         Sigungu sigungu = sigunguRepository.findByCode(item.getSigungucode()).orElse(null);
-//        String category = CATEGORY_MAP.getOrDefault(item.getContenttypeid(), "기타");
         String category = resolveCategory(item.getCat1());
         String operatingHours = intro.map(DetailIntroResponse.IntroItem::getUsetime).orElse(null);
 
@@ -509,7 +493,7 @@ public class MigrationService {
         };
     }
 
-    // 기존 parseDouble 메서드 교체
+    // 좌표 문자열 → BigDecimal. 비어 있거나 숫자가 아니면 null
     private BigDecimal parseBigDecimal(String value) {
         if (value == null || value.isBlank()) return null;
         try { return new BigDecimal(value); }

@@ -89,7 +89,7 @@ public class GroupItineraryGenerateService {
         SwipeRequest swipeRequest = buildAggregatedSwipeRequest(likedIds, dislikedIds, request);
 
         // 그룹 요청이지만 도감(수집 상태) 우선순위는 요청자(방장) 기준으로 반영
-        ItineraryGenerateResponse response = itineraryGenerateService.generateItinerary(swipeRequest, requesterId, groupSummary); // 추가: groupSummary 전달
+        ItineraryGenerateResponse response = itineraryGenerateService.generateItinerary(swipeRequest, requesterId, groupSummary);
 
         // AI 추천 이유 결과를 로그로 검증하기 위한 진단 로깅
         logGroupRecommendationResult(groupId, groupSummary, response);

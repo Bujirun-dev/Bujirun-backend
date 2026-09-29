@@ -20,7 +20,6 @@ import com.bujirun.bujirun.domain.log.dto.request.UpdateLogRequest;
 import com.bujirun.bujirun.domain.log.dto.response.*;
 import com.bujirun.bujirun.domain.log.entity.*;
 import com.bujirun.bujirun.domain.log.repository.*;
-import com.bujirun.bujirun.domain.spot.entity.TourSpot;
 import com.bujirun.bujirun.domain.spot.repository.TourSpotRepository;
 import com.bujirun.bujirun.domain.visit.entity.Visit;
 import com.bujirun.bujirun.domain.visit.entity.VisitPhoto;
@@ -196,8 +195,7 @@ public class TravelLogService {
 
         Itinerary original = findItinerary(log.getItineraryId());
 
-        // added_count(인기순 정렬 idx_travel_logs_popular 기준)가 이 메서드에서 한 번도 증가된 적이
-        // 없어서 항상 0이던 버그(2026-08-25 발견, 2026-08-27 수정) — 이 로그가 실제로 복사될 때 증가시켜야 함
+        // added_count는 인기순 정렬(idx_travel_logs_popular)의 기준 — 이 로그가 실제로 복사될 때 증가시킨다
         log.incrementAddedCount();
 
         Itinerary copy = Itinerary.builder()
@@ -269,7 +267,7 @@ public class TravelLogService {
     // 여러 일정에 대해 로그인한 사용자의 여행 기록(영수증) 존재 여부를 배치로 확인.
     // "다시 묻지 않음"(promptDismissed) 여부도 함께 반환해, 프론트가 영수증 발행 팝업 노출을 판단하게 한다.
     //
-    // 2026-08-30 팀 회의 결정: 영수증을 실제로 "발행"(mood/theme/공개여부 확정)했는지와 무관하게,
+    // 영수증을 실제로 "발행"(mood/theme/공개여부 확정)했는지와 무관하게,
     // 종료된 일정이면 로그 자체는 항상 자동 생성해둔다. 그래야 사용자가 팝업을 무시하거나
     // "다시 묻지 않음"을 눌러도 방문 인증 사진 등 데이터가 유실되지 않는다. 그 결과 hasLog는 종료된
     // 일정이면 이 API를 한 번만 호출해도 계속 true가 되므로, "영수증 팝업을 다시 띄워야 하는지"는
