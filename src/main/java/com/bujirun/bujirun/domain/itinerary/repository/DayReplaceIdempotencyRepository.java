@@ -12,9 +12,10 @@ import java.util.UUID;
 // 편집을 동시에 재전송해도 실제로는 한 번만 반영되게 하기 위함.
 //
 // find() 후 save()하는 "확인 후 처리" 방식은 그 자체로 레이스다 — 여러 요청이 거의 동시에
-// find()를 통과해버리면(아직 아무도 save() 안 한 시점) 전부 독립적으로 재처리해버린다.
-// 그래서 claim()으로 Redis SETNX를 써서 "먼저 선점한 요청 하나만 처리, 나머지는 그 결과를
-// 기다렸다가 그대로 받는" 방식으로 처리한다.
+// find()를 통과해버리면(아직 아무도 save() 안 한 시점) 전부 독립적으로 재처리해버린다
+// (실제로 로컬에서 5개 동시요청 보내서 5개 다른 결과가 나오는 걸로 재현 확인, 2026-09-16).
+// claim()으로 Redis SETNX를 써서 "먼저 선점한 요청 하나만 처리, 나머지는 그 결과를
+// 기다렸다가 그대로 받는" 방식으로 바꿈.
 @Repository
 @RequiredArgsConstructor
 public class DayReplaceIdempotencyRepository {

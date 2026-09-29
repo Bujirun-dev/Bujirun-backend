@@ -9,11 +9,12 @@ import com.bujirun.bujirun.global.jwt.dto.TokenResponse;
 import com.bujirun.bujirun.global.response.ApiResponse;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseCookie;
-import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PostMapping;  // GET → POST로 변경
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -24,6 +25,7 @@ public class KakaoController {
 
     private final KakaoService kakaoService;
 
+    // 변경: GET /api/auth/kakao/callback → POST /api/auth/kakao/token
     @Operation(summary = "카카오 로그인", description = "카카오 인가 코드로 액세스 토큰과 사용자 정보를 받아 회원가입/로그인을 처리하고 서비스 자체 토큰을 발급합니다.")
     @PostMapping("/api/auth/kakao/token")
     public ApiResponse<KakaoLoginResponse> kakaoLogin(

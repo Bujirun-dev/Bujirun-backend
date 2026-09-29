@@ -1,7 +1,7 @@
 package com.bujirun.bujirun.domain.itinerary.generate.service;
 
 import com.bujirun.bujirun.domain.collection.repository.CollectionEntryRepository;
-import com.bujirun.bujirun.domain.group.dto.response.GroupPreferenceSummary;
+import com.bujirun.bujirun.domain.group.dto.response.GroupPreferenceSummary; // 추가: 그룹 추천 이유 생성용
 import com.bujirun.bujirun.domain.itinerary.generate.client.OpenAiClient;
 import com.bujirun.bujirun.domain.itinerary.generate.dto.response.ItineraryGenerateResponse;
 import com.bujirun.bujirun.domain.itinerary.generate.dto.response.SpotInfo;
@@ -51,15 +51,15 @@ public class ItineraryGenerateService {
     );
     private static final int MIN_ACTIVITY_HOURS = 1; // 하루 최소 활동시간
     private static final int MAX_ACTIVITY_HOURS = 16; // 하루 최대 활동시간 상한
-    private static final int DEFAULT_ACTIVITY_HOURS = 12; // activityHours 미입력 시 기본값 (09:00~21:00 기준)
-    private static final int MIN_PLAN_DIFF_SPOTS = 3; // 그룹 일정 생성 시 planA/planB 최소 차별화 스팟 수 (다양성 규칙)
+    private static final int DEFAULT_ACTIVITY_HOURS = 12; // 추가: activityHours 미입력 시 기본값 (09:00~21:00 기준)
+    private static final int MIN_PLAN_DIFF_SPOTS = 3; // 추가: 그룹 일정 생성 시 planA/planB 최소 차별화 스팟 수 (다양성 규칙)
 
     @Transactional(readOnly = true)
     public ItineraryGenerateResponse generateItinerary(SwipeRequest request, UUID userId) {
         return generateItinerary(request, userId, null);
     }
 
-    // 그룹 일정 생성 시 취향 집계(GroupPreferenceSummary)를 전달받아 추천 이유를 함께 생성한다. null이면 개인 일정 로직과 동일하게 동작한다.
+    // 추가: 그룹 일정 생성 시 취향 집계(GroupPreferenceSummary)를 전달받아 추천 이유를 함께 생성한다. null이면 기존 개인 일정 로직과 완전히 동일하게 동작한다.
     @Transactional(readOnly = true)
     public ItineraryGenerateResponse generateItinerary(SwipeRequest request, UUID userId, GroupPreferenceSummary groupPreferenceSummary) {
 
@@ -474,7 +474,7 @@ public class ItineraryGenerateService {
                     continue;
                 }
                 int day = dayField.asInt();
-                JsonNode spotReasonsNode = dayNode.get("spotReasons"); // 그룹 일정 생성 시에만 존재하는 스팟별 추천 이유
+                JsonNode spotReasonsNode = dayNode.get("spotReasons"); // 추가: 그룹 일정 생성 시에만 존재하는 스팟별 추천 이유
 
                 List<SpotInfo> spots = new ArrayList<>();
                 JsonNode spotIds = dayNode.get("spotContentIds");
@@ -514,7 +514,7 @@ public class ItineraryGenerateService {
                 .type(planNode.path("type").asText())
                 .label(planNode.path("label").asText())
                 .description(planNode.path("description").asText())
-                .summaryReason(planNode.hasNonNull("summaryReason") ? planNode.get("summaryReason").asText() : null) // 그룹 일정 생성 시에만 존재
+                .summaryReason(planNode.hasNonNull("summaryReason") ? planNode.get("summaryReason").asText() : null) // 추가: 그룹 일정 생성 시에만 존재
                 .days(days)
                 .build();
     }

@@ -50,33 +50,33 @@ public class OpenAiClient {
      */
     public String chatPlainText(String systemPrompt, String userPrompt) {
         // reasoning 모델은 reasoning 토큰도 출력 한도에 포함되므로 요약문이 잘리지 않게 한도를 넉넉히 둔다
-        Map<String, Object> body = baseBody(systemPrompt, userPrompt, 0.3, 500, 2000);
+        Map<String, Object> body = baseBody(systemPrompt, userPrompt, 0.3, 500, 2000); // 수정
         return call(body);
     }
 
     /**
-     * 모델 계열에 맞는 요청 body 생성
+     * 추가: 모델 계열에 맞는 요청 body 생성
      * gpt-4 계열은 temperature/max_tokens를 쓰고, reasoning 모델(gpt-6 계열)은 max_tokens를 거부하고
      * temperature는 기본값(1)만 허용하므로 max_completion_tokens/reasoning_effort를 쓴다.
      */
-    private Map<String, Object> baseBody(String systemPrompt, String userPrompt, double temperature,
-                                         int maxTokens, int maxCompletionTokens) {
-        Map<String, Object> body = new HashMap<>();
-        body.put("model", model);
-        body.put("messages", List.of(
-                Map.of("role", "system", "content", systemPrompt),
-                Map.of("role", "user", "content", userPrompt)
-        ));
-        if (model.startsWith("gpt-4")) {
-            body.put("temperature", temperature);
-            body.put("max_tokens", maxTokens);
-        } else {
-            body.put("max_completion_tokens", maxCompletionTokens);
-            if (reasoningEffort != null) {
-                body.put("reasoning_effort", reasoningEffort);
-            }
-        }
-        return body;
+    private Map<String, Object> baseBody(String systemPrompt, String userPrompt, double temperature, // 추가
+                                         int maxTokens, int maxCompletionTokens) { // 추가
+        Map<String, Object> body = new HashMap<>(); // 추가
+        body.put("model", model); // 추가
+        body.put("messages", List.of( // 추가
+                Map.of("role", "system", "content", systemPrompt), // 추가
+                Map.of("role", "user", "content", userPrompt) // 추가
+        )); // 추가
+        if (model.startsWith("gpt-4")) { // 추가
+            body.put("temperature", temperature); // 추가
+            body.put("max_tokens", maxTokens); // 추가
+        } else { // 추가
+            body.put("max_completion_tokens", maxCompletionTokens); // 추가
+            if (reasoningEffort != null) { // 추가
+                body.put("reasoning_effort", reasoningEffort); // 추가
+            } // 추가
+        } // 추가
+        return body; // 추가
     }
 
     private String call(Map<String, Object> body) {

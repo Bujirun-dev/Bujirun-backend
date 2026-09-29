@@ -96,4 +96,10 @@ public class SpotService {
         }
         return (topCategory != null && topCategory.equals(spot.getCategory())) ? 0 : 1;
     }
+
+    private boolean collectedByUser(UUID userId, UUID spotId) {
+        return collectionEntryRepository.findByUserIdAndSpotId(userId, spotId)
+                .map(CollectionEntry::isCollected)   // collected 필드명이 boolean getter로 isCollected()인지 확인 필요
+                .orElse(false);
+    }
 }
