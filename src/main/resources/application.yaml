@@ -45,6 +45,21 @@ odsay:
   api:
     key: ${ODSAY_API_KEY}
 
+transit:
+  taxi:
+    base-fare: 4800
+    base-distance-m: 2000
+    extra-fare: 100
+    extra-distance-m: 132
+    night-surcharges:
+      - { start-hour: 23, end-hour: 24, rate: 0.2 }
+      - { start-hour: 0, end-hour: 2, rate: 0.3 }
+      - { start-hour: 2, end-hour: 4, rate: 0.2 }
+  priority:
+    walk-distance-threshold-m: 700
+    max-extra-cost-per-person: 1000
+    min-time-saved-minutes: 10
+
 kakao:
   client-id: ${KAKAO_CLIENT_ID}
   client-secret: ${KAKAO_CLIENT_SECRET}
