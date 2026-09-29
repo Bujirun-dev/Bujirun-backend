@@ -64,7 +64,7 @@ public class TravelLogController {
 
             이미 종료된(endAt이 오늘 이전) 일정 중 로그가 없는 것은 이 호출 시점에 기본값(비공개, mood/theme 없음)으로
             자동 생성됩니다 — 사용자가 영수증 발행 팝업에서 실제로 "발행"을 누르지 않아도 방문 인증 사진 등
-            데이터가 유실되지 않도록 하기 위함. 그 결과 hasLog는 이후 계속 true가 되며,
+            데이터가 유실되지 않도록 하기 위함(2026-08-30 결정). 그 결과 hasLog는 이후 계속 true가 되며,
             프론트는 반환된 logId로 PATCH /api/logs/{id}를 호출해 mood/theme/공개여부만 채우면 됩니다
             (이미 자동 생성됐기 때문에 POST /api/logs는 다시 호출할 수 없습니다).
 

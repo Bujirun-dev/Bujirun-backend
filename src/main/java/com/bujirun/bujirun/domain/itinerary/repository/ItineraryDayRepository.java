@@ -27,8 +27,8 @@ public interface ItineraryDayRepository extends JpaRepository<ItineraryDay, UUID
     // day의 @Version은 day 엔티티 자신의 컬럼이 바뀔 때만 Hibernate가 자동으로 올린다.
     // replaceDayItems/reorderItems는 day에 속한 item(자식 테이블 row)만 갱신해서 dirty
     // checking이 day 자체는 "안 바뀜"으로 보고 UPDATE 자체를 안 낸다 — entityManager.lock
-    // (OPTIMISTIC_FORCE_INCREMENT)으로는 실제로 아무 SQL도 나가지 않아서
-    // JPQL bulk update로 명시적으로 올린다. 이미
+    // (OPTIMISTIC_FORCE_INCREMENT)으로 시도했지만 실제로 아무 SQL도 나가지 않는 걸 로컬에서
+    // 확인(2026-09-17, show-sql로 검증). JPQL bulk update로 명시적으로 올린다. 이미
     // findByIdForUpdate로 행 잠금을 쥔 상태에서만 호출하므로 동시성 문제는 없다.
     @Modifying
     @Query("update ItineraryDay d set d.version = d.version + 1 where d.id = :id")
