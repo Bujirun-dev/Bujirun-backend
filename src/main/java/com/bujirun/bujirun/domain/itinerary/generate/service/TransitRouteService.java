@@ -25,18 +25,17 @@ public class TransitRouteService {
 
     private final OdsayClient odsayClient;
     private final List<ArrivalInfoProvider> arrivalProviders;
+    private final TaxiFareEstimator taxiFareEstimator;
+    private final TransitOptionPrioritizer transitOptionPrioritizer;
 
     private static final double WALK_SPEED_MPS = 1.2;       // 도보 속도 1.2m/s
-    private static final int TAXI_BASE_FARE = 4800;          // 기본요금
-    private static final int TAXI_BASE_METER = 2000;         // 기본요금 적용 거리 (2km)
-    private static final double TAXI_EXTRA_FARE_PER_M = 100.0 / 132.0; // 100원/132m
 
     private static final double ROAD_DISTANCE_FACTOR = 1.3;  // 차량용
     private static final double WALK_DISTANCE_FACTOR = 1.4;  // 도보용 (골목/계단 등 우회 반영)
 
     private static final ZoneId KST = ZoneId.of("Asia/Seoul");
 
-    // 택시 혼잡 배율 (KST 기준, 요일/시간대별로 시간·요금에 동일 적용)
+    // 택시 혼잡 배율 (KST 기준, 요일/시간대별로 소요시간에 적용)
     private static final double WEEKDAY_RUSH_HOUR_FACTOR = 1.4; // 평일 07~09시, 18~20시
     private static final double WEEKDAY_DAYTIME_FACTOR = 1.1;   // 평일 09~18시
     private static final double WEEKDAY_NIGHT_FACTOR = 0.9;     // 평일 22~06시
@@ -96,6 +95,18 @@ public class TransitRouteService {
     }
 
     /**
+     * 두 스팟 사이 구간의 이동수단 옵션을 인원수 기준 우선순위로 정렬해 돌려준다.
+     * 경로 조회는 getRoutesForDay(캐시 사용)를 그대로 쓰고, 인원수에 따라 달라지는 정렬·비용 계산은 캐시 바깥에서 한다.
+     */
+    public List<TransitOption> getPrioritizedOptions(SpotInfo from, SpotInfo to, int partySize) {
+        List<TransitRouteResponse> routes = getRoutesForDay(List.of(from, to), null);
+        if (routes.isEmpty()) return List.of();
+
+        double distanceM = GeoUtils.haversineDistance(from.getLat(), from.getLng(), to.getLat(), to.getLng());
+        return transitOptionPrioritizer.prioritize(routes.get(0).options(), distanceM, partySize);
+    }
+
+    /**
      * 캐시된(혹은 방금 조회한) TransitOption의 subPath들에 실시간 도착정보(remainMinutes)를 채운다.
      * 캐시 히트 여부와 무관하게 항상 새로 조회 — 도착정보는 절대 캐싱 대상이 아님.
      */
@@ -146,25 +157,17 @@ public class TransitRouteService {
 
     private TransitOption calcTaxi(double distanceM) {
         double roadDistanceM = distanceM * ROAD_DISTANCE_FACTOR;
+        LocalDateTime now = LocalDateTime.now(KST);
 
-        int fare;
-        if (roadDistanceM <= TAXI_BASE_METER) {
-            fare = TAXI_BASE_FARE;
-        } else {
-            fare = TAXI_BASE_FARE + (int) ((roadDistanceM - TAXI_BASE_METER) * TAXI_EXTRA_FARE_PER_M);
-        }
+        int fare = taxiFareEstimator.estimate(roadDistanceM, now);
         int timeMin = (int) Math.ceil(roadDistanceM / 1000 / 30 * 60);
-
-        double congestionFactor = resolveCongestionFactor(LocalDateTime.now(KST));
-        timeMin = (int) Math.ceil(timeMin * congestionFactor);
-        fare = (int) (Math.ceil(fare * congestionFactor / 100.0) * 100);
+        timeMin = (int) Math.ceil(timeMin * resolveCongestionFactor(now));
 
         return new TransitOption("택시", timeMin, fare, 0, true, List.of());
     }
 
     // KST 기준 요일/시간대별 택시 혼잡 배율
-    // 정체 구간엔 실제로 더 걸리고(+시간요금제로 요금도 오르는 경향 반영),
-    // 심야엔 기본 근사식보다 빠르다고 가정
+    // 정체 구간엔 실제로 더 걸리고, 심야엔 기본 근사식보다 빠르다고 가정
     private double resolveCongestionFactor(LocalDateTime now) {
         DayOfWeek day = now.getDayOfWeek();
         int hour = now.getHour();
