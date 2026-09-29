@@ -18,7 +18,7 @@ import java.util.concurrent.Callable;
 
 // 내부 전용(server-to-server) API. /api/internal/**은 사람의 JWT가 아니라
 // X-Internal-Secret 헤더로 인증한다(SecurityConfig의 별도 SecurityFilterChain 참고) —
-// node-yjs 서버가 room 단위 flush를 대신 호출하는 용도로 도입됨(3단계, 2026-09-17).
+// node-yjs 서버가 room 단위 flush를 대신 호출하는 용도.
 @Tag(name = "내부 전용", description = "node-yjs 등 내부 서버가 호출하는 API. 사람이 직접 호출하지 않습니다.")
 @RestController
 @RequestMapping("/api/internal/itineraries")

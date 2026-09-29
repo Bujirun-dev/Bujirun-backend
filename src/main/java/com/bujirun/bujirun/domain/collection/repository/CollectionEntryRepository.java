@@ -21,8 +21,6 @@ public interface CollectionEntryRepository extends JpaRepository<CollectionEntry
         """)
     List<CollectionEntry> findByUserIdAndCollectedTrue(@Param("userId") UUID userId);
 
-    long countByUserIdAndCollectedTrue(UUID userId);
-
     @Query("""
         select ts.id as spotId, ts.name as name, ts.sigungu.id as sigunguId,
                ts.thumbnailUrl as thumbnailUrl, ts.collectionCategory as collectionCategory, ce.collected as collected, ce.collectedAt as collectedAt

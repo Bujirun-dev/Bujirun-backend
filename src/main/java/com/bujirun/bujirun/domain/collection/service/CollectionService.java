@@ -3,7 +3,6 @@ package com.bujirun.bujirun.domain.collection.service;
 import com.bujirun.bujirun.domain.auth.repository.UserRepository;
 import com.bujirun.bujirun.domain.collection.dto.response.CollectionDetailResponse;
 import com.bujirun.bujirun.domain.collection.dto.response.CollectionListResponse;
-import com.bujirun.bujirun.domain.collection.dto.response.CollectionResponse;
 import com.bujirun.bujirun.domain.collection.dto.response.MyCollectionResponse;
 import com.bujirun.bujirun.domain.collection.entity.CollectionEntry;
 import com.bujirun.bujirun.domain.collection.repository.CollectionEntryRepository;

@@ -1,7 +1,7 @@
 package com.bujirun.bujirun.domain.itinerary.generate.controller;
 
-import com.bujirun.bujirun.domain.group.dto.response.GroupPreferenceSummary; // 추가
-import com.bujirun.bujirun.domain.group.service.GroupPreferenceService; // 추가
+import com.bujirun.bujirun.domain.group.dto.response.GroupPreferenceSummary;
+import com.bujirun.bujirun.domain.group.service.GroupPreferenceService;
 import com.bujirun.bujirun.domain.itinerary.generate.dto.request.GroupItineraryRequest;
 import com.bujirun.bujirun.domain.itinerary.generate.dto.response.GroupItineraryGenerateResponse;
 import com.bujirun.bujirun.domain.itinerary.generate.dto.response.ItineraryGenerateResponse;
@@ -30,7 +30,7 @@ public class GroupItineraryController {
 
     private final GroupItineraryGenerateService groupItineraryGenerateService;
     private final ItineraryVoteService itineraryVoteService;
-    private final GroupPreferenceService groupPreferenceService; // 추가
+    private final GroupPreferenceService groupPreferenceService;
 
     @Operation(summary = "그룹 일정 자동 생성", description = "그룹 멤버들의 스와이프 결과를 종합하여 그룹 일정을 자동 생성합니다.")
     @PostMapping("/{groupId}/generate")
@@ -45,10 +45,10 @@ public class GroupItineraryController {
     // 그룹 멤버 여러 명이 거의 동시에 투표를 시작하면, AI 호출(최대 60초) 전에
     // "생성 중" 자리를 먼저 선점 시도한다. DB 유니크 인덱스(V36)가 그룹당 하나만
     // 통과시키므로, 선점에 이긴 요청만 실제로 OpenAI를 호출하고 나머지는 그 결과가
-    // 나올 때까지 기다렸다가 그대로 합류한다 — 그룹원마다 관광지 조합이 달라지던
-    // 문제(2026-09-02 발견)는 AI 호출 자체가 그룹당 한 번만 일어나야 막을 수 있다.
+    // 나올 때까지 기다렸다가 그대로 합류한다 — 그룹원마다 관광지 조합이 달라지는
+    // 문제는 AI 호출 자체가 그룹당 한 번만 일어나야 막을 수 있다.
     private GroupItineraryGenerateResponse resolveVoteSession(UUID groupId, GroupItineraryRequest req, UUID userId) {
-        // 추가: 그룹원 취향 집계는 매 요청마다 최신 상태로 계산해 응답에 함께 내려준다 (AI 호출 없는 순수 집계)
+        // 그룹원 취향 집계는 매 요청마다 최신 상태로 계산해 응답에 함께 내려준다 (AI 호출 없는 순수 집계)
         GroupPreferenceSummary groupSummary = groupPreferenceService.summarize(groupId);
 
         Optional<GroupItineraryGenerateResponse> alreadyDone = itineraryVoteService.findActiveSession(groupId);
@@ -59,8 +59,8 @@ public class GroupItineraryController {
         // tryReserveGeneration의 유니크 제약 위반(DataIntegrityViolationException)은 그 메서드의
         // 트랜잭션 경계 밖인 여기서 잡아야 한다 — 메서드 내부에서 잡으면 Hibernate가 이미
         // rollback-only로 표시해둔 트랜잭션을 커밋하려다 UnexpectedRollbackException이 터져
-        // 그대로 500이 나가버린다(그룹원 여러 명이 거의 동시에 생성 요청 시 "다시 시도"가
-        // 반복되던 원인, 2026-09-15 확인). 다른 멤버가 이미 선점한 것과 동일하게 처리한다.
+        // 그대로 500이 나가버린다(그룹원 여러 명이 거의 동시에 생성 요청하면 "다시 시도"가
+        // 반복됨). 다른 멤버가 이미 선점한 것과 동일하게 처리한다.
         Optional<UUID> reserved;
         try {
             reserved = itineraryVoteService.tryReserveGeneration(groupId);
@@ -71,14 +71,14 @@ public class GroupItineraryController {
             UUID sessionId = reserved.get();
             try {
                 ItineraryGenerateResponse generated =
-                        groupItineraryGenerateService.generateGroupItinerary(groupId, req, userId, groupSummary); // 추가: groupSummary 전달
+                        groupItineraryGenerateService.generateGroupItinerary(groupId, req, userId, groupSummary);
                 // 실제로 AI 생성에 쓰인 startTime/endTime을 세션에 함께 저장한다 — 이후 이
                 // 세션을 조회하는 모든 멤버가 각자의 화면 상태가 아니라 이 값을 보게 하기 위함.
                 itineraryVoteService.completeGeneration(sessionId, generated, req.getStartTime(), req.getEndTime());
                 return GroupItineraryGenerateResponse.builder()
                         .voteSessionId(sessionId)
                         .plans(generated)
-                        .groupSummary(groupSummary) // 추가
+                        .groupSummary(groupSummary)
                         .startTime(req.getStartTime())
                         .endTime(req.getEndTime())
                         .build();

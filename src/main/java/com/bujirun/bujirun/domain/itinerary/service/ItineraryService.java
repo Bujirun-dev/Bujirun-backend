@@ -373,11 +373,9 @@ public class ItineraryService {
         return replaceDayItems(itineraryId, dayId, delegated, req.actorUserId());
     }
 
-    // day의 항목 전체를 한 번에 원자적으로 교체한다. 기존엔 실시간 협업 편집이 재구성(삭제 N번 +
-    // 추가 N번)을 개별 요청으로 보내서, 여러 클라이언트가 같은 변경을 동시에 재전송하면 일부
-    // 요청만 성공하고 나머지는 실패해 day가 반쪽만 재구성된 채 남는 사고가 있었다
-    // (2026-09-16 프로덕션에서 실제 발생 — 재구성 삭제는 다 됐는데 재추가가 부분적으로만
-    // 반영됨). operationId로 같은 논리적 편집의 중복 요청을 감지해, 첫 요청만 실제로 처리하고
+    // day의 항목 전체를 한 번에 원자적으로 교체한다. 재구성(삭제 N번 + 추가 N번)을 개별 요청으로
+    // 보내면, 여러 클라이언트가 같은 변경을 동시에 재전송할 때 일부 요청만 성공해 day가 반쪽만
+    // 재구성된 채 남을 수 있다. operationId로 같은 논리적 편집의 중복 요청을 감지해, 첫 요청만 실제로 처리하고
     // 이후 재전송은 캐시된 결과를 그대로 돌려준다(재시도/중복 전송이 안전해짐).
     @Transactional
     public ItineraryDayResponse replaceDayItems(UUID itineraryId, UUID dayId,
@@ -432,7 +430,7 @@ public class ItineraryService {
 
         // existingItemId로 지목된 기존 항목은 "그 행 그대로" 갱신한다(삭제 후 재생성이 아님) —
         // id가 유지돼야 방문인증(itinerary_item_id 매칭)과 여행로그 연결이 구조적 편집 한 번에
-        // 끊기지 않는다(첫 구현 땐 매번 새 id를 발급해서 이 문제가 있었음, 2026-09-16).
+        // 끊기지 않는다.
         // 목록에서 완전히 빠진(= existingItemId로도 지목 안 된) 기존 항목만 실제로 삭제한다.
         Map<UUID, ItineraryItem> existingById = day.getItems().stream()
                 .collect(Collectors.toMap(ItineraryItem::getId, i -> i));
@@ -478,7 +476,7 @@ public class ItineraryService {
     }
 
     // addItem의 구간(교통수단) 계산 로직과 동일하다 — 의도적으로 별도 메서드로 둔다(공유
-    // 리팩터링 시 addItem의 기존 동작을 건드릴 위험을 피하기 위함, 2026-09-16).
+    // 리팩터링 시 addItem의 동작을 건드릴 위험을 피하기 위함).
     // target: 새로 만드는 중인 항목(day/spot만 세팅된 빈 builder 결과) 또는 그대로 갱신할
     // 기존 항목. preferredTravelMode: 신규 항목이면 프론트 요청값, 기존 항목 갱신이면 그
     // 항목이 원래 갖고 있던 값 — addItem의 requestedMode와 동일하게 옵션 매칭에 쓰여서
@@ -626,7 +624,7 @@ public class ItineraryService {
     // 관대한 버전: updateItem()에서 호출. 첫 스팟(idx<=0)은 애초에 이동정보가 없는 게 정상이라
     // 조용히 스킵하지만, 그 외의 실패(요청한 수단의 경로를 못 찾음)는 다른 수단으로 조용히
     // 바꿔치기하지 않고 예외를 던진다 — 그렇지 않으면 "지하철을 선택했는데 도보로 저장됨" 같은
-    // 상황이 200 OK로 감춰져 버린다(2026-08-07 그룹 일정 버스/지하철 정보 조사에서 발견).
+    // 상황이 200 OK로 감춰져 버린다.
     private void applyPreferredTravelMode(ItineraryItem item, String preferredMode) {
         List<ItineraryItem> dayItems = item.getDay().getItems(); // orderIndex ASC 정렬됨
 
@@ -702,8 +700,7 @@ public class ItineraryService {
 
     // day에 속한 방문 항목 전체의 순서를 한 트랜잭션에서 원자적으로 재반영한다.
     // updateItem처럼 항목별로 나눠 PATCH하면, 그룹 일정에서 여러 클라이언트가 거의 동시에
-    // flush할 때 서로 다른 순서 계산 결과가 겹쳐 쓰이며 order_index가 충돌할 수 있다
-    // (2026-08-12 프로덕션 DB에서 실제로 같은 day_id+order_index 중복 확인). 클라이언트는
+    // flush할 때 서로 다른 순서 계산 결과가 겹쳐 쓰이며 order_index가 충돌할 수 있다. 클라이언트는
     // 항상 그 day의 전체 항목 id를 원하는 순서 그대로 보내야 하며, 일부만 보내거나
     // 다른 항목이 섞이면 거부한다 — 부분 반영 시 조용히 잘못된 최종 순서가 저장되는
     // 상황을 막기 위함.
@@ -736,15 +733,13 @@ public class ItineraryService {
     // day의 @Version은 day 엔티티 자신의 컬럼이 바뀔 때만 Hibernate가 자동으로 올린다.
     // replaceDayItems/reorderItems는 day에 속한 item들(자식 테이블 row)만 갱신하고 day 자신의
     // 컬럼은 손대지 않으므로, 그냥 두면 구조를 아무리 바꿔도 version이 절대 오르지 않는다
-    // (로컬에서 8개 동시 replaceDayItems 요청을 보내 전부 200으로 통과하는 걸로 실제 확인,
-    // 2026-09-17) — 낙관적 락의 핵심 전제가 깨지는 셈이라 OPTIMISTIC_FORCE_INCREMENT로
+    // — 낙관적 락의 핵심 전제가 깨지는 셈이라 OPTIMISTIC_FORCE_INCREMENT로
     // day 자신이 변경되지 않아도 매번 version을 강제로 올린다. flush까지 해야 이후
     // day.getVersion()을 읽는 응답(ItineraryDayResponse.from)에 새 값이 반영된다.
     private void bumpDayVersion(ItineraryDay day) {
         // 대기 중인 item insert/update(saveAll)를 먼저 DB에 반영해야 한다 — 아래 refresh가
         // day.getItems()까지 캐스케이드로 재조회하는데, 아직 flush 안 된(=DB에 없는) 새
-        // item을 refresh하면 "No row with the given identifier exists"로 실패한다
-        // (2026-09-17 로컬 재현·확인).
+        // item을 refresh하면 "No row with the given identifier exists"로 실패한다.
         entityManager.flush();
         itineraryDayRepository.bumpVersion(day.getId());
         // bulk JPQL update는 영속성 컨텍스트를 거치지 않아 이미 로드된 day 인스턴스의

@@ -10,7 +10,7 @@ import java.util.UUID;
 
 // day의 항목 전체를 한 번의 원자적 요청으로 교체한다(삭제 N번 + 추가 N번을 따로 보내면
 // 실시간 협업 편집에서 여러 클라이언트가 동시에 같은 변경을 쏠 때 일부만 반영되고 나머지가
-// 유실되는 문제가 있었음, 2026-09-16 프로덕션 사고). operationId로 같은 논리적 편집의
+// 유실될 수 있다). operationId로 같은 논리적 편집의
 // 중복 요청을 감지해 두 번째 이후 요청은 재처리하지 않고 첫 요청의 결과를 그대로 돌려준다.
 public record ReplaceDayItemsRequest(
         @NotNull UUID operationId,

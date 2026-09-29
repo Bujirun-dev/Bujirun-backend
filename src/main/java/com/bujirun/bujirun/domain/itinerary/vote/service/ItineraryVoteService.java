@@ -78,15 +78,14 @@ public class ItineraryVoteService {
     // 그룹당 "생성 중(generating)" + "투표 중(voting)" 자리는 합쳐서 하나만 허용됨
     // (DB 유니크 인덱스, V26 → V36에서 generating까지 확장). AI 호출(최대 60초) 전에
     // 이 자리를 먼저 선점해서, 한 그룹에서 OpenAI 생성이 동시에 여러 번 실행되어
-    // 멤버마다 관광지 조합이 달라지는 문제(2026-09-02 발견)를 막는다.
+    // 멤버마다 관광지 조합이 달라지는 문제를 막는다.
     // 선점에 실패하면(다른 멤버가 이미 선점/완료함) empty를 반환하고,
     // 호출부(컨트롤러)는 waitForActiveSession()으로 그 결과를 기다려 합류해야 한다.
     // 유니크 제약 위반(DataIntegrityViolationException)을 여기서 catch하지 않는다 — Hibernate는
     // saveAndFlush에서 제약 위반이 발생하면 Java 예외를 catch하더라도 현재 트랜잭션을 이미
     // rollback-only로 표시해버린다. 그 상태로 이 메서드가 정상 반환되면, 메서드 경계에서
     // 커밋을 시도하던 Spring 트랜잭션 프록시가 UnexpectedRollbackException을 던져 그대로 500이
-    // 나가버린다(2026-09 발견 — 그룹원 여러 명이 거의 동시에 생성 요청 시 "다시 시도"가 반복되던
-    // 원인). 그래서 예외를 여기서 삼키지 않고 트랜잭션 경계 밖(컨트롤러)까지 그대로 던져서,
+    // 나가버린다(그룹원 여러 명이 거의 동시에 생성 요청하면 "다시 시도"가 반복됨). 그래서 예외를 여기서 삼키지 않고 트랜잭션 경계 밖(컨트롤러)까지 그대로 던져서,
     // 이 메서드의 트랜잭션이 정상적으로 롤백된 뒤에 호출부가 안전하게 잡도록 한다.
     public Optional<UUID> tryReserveGeneration(UUID groupId) {
         // ID가 DB 시퀀스가 아니라 Hibernate에서 UUID로 미리 채번되므로, save()만 호출하면
@@ -259,7 +258,7 @@ public class ItineraryVoteService {
 
         for (FinalizeItineraryRequest.DayInput dayInput : days) {
             // startDate는 @NotNull이라 항상 있음 — dayNumber 기준으로 날짜 계산해서 채워야 함.
-            // 이걸 빠뜨려서 date가 계속 null로 저장되던 버그(영수증 등에서 day별 날짜 미노출, 2026-08-27 발견)
+            // 빠뜨리면 date가 null로 저장되어 영수증 등에서 day별 날짜가 안 나온다
             ItineraryDay day = ItineraryDay.builder()
                     .itinerary(itinerary)
                     .dayNumber(dayInput.getDay())
