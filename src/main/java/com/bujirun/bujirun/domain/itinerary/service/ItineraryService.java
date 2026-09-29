@@ -36,6 +36,8 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.time.LocalDate;
 import java.time.LocalTime;
@@ -46,6 +48,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
@@ -412,6 +415,10 @@ public class ItineraryService {
             // 자기 결과를 쓸 자리를 덮어쓰지 않기 위함.
             log.warn("[replaceDayItems] 선점 실패 - 직접 처리로 폴백. operationId={}", req.operationId());
         }
+        AtomicReference<String> responseToCache = new AtomicReference<>();
+        if (claimed) {
+            registerIdempotencyCompletion(req.operationId(), responseToCache);
+        }
 
         ItineraryDay day = itineraryDayRepository.findByIdForUpdate(dayId)
                 .filter(d -> d.getItinerary().getId().equals(itineraryId))
@@ -436,6 +443,7 @@ public class ItineraryService {
         // 목록에서 완전히 빠진(= existingItemId로도 지목 안 된) 기존 항목만 실제로 삭제한다.
         Map<UUID, ItineraryItem> existingById = day.getItems().stream()
                 .collect(Collectors.toMap(ItineraryItem::getId, i -> i));
+        Map<UUID, UUID> previousSpotIdByItemId = previousSpotIdsByItemId(day.getItems());
         Set<UUID> keptIds = items.stream()
                 .map(ReplaceDayItemsRequest.ItemInput::existingItemId)
                 .filter(java.util.Objects::nonNull)
@@ -451,7 +459,15 @@ public class ItineraryService {
             ItineraryItem existing = input.existingItemId() != null ? existingById.get(input.existingItemId()) : null;
 
             ItineraryItem item;
-            if (existing != null) {
+            if (existing != null && isLegUnchanged(existing, input, prev, previousSpotIdByItemId)) {
+                // 직전 관광지가 그대로인 구간은 경로를 다시 계산하지 않고 저장된 값을 유지한다.
+                // 매 flush마다 모든 구간을 ODsay/실시간 도착정보로 재계산하던 탓에 요청이 5초를
+                // 넘겨 node-yjs flush가 연속 실패했다(2026-09-28 운영). 사용자가 골라둔 경로도
+                // 그대로 보존된다.
+                existing.update(orderIndex, input.arrivalTime(), input.durationMin(), null,
+                        input.travelTimeMin(), input.memo());
+                item = existing;
+            } else if (existing != null) {
                 applyTransitFields(existing, spot, orderIndex, input, prev, existing.getTravelMode());
                 item = existing;
             } else {
@@ -469,12 +485,55 @@ public class ItineraryService {
         ItineraryDayResponse response = ItineraryDayResponse.from(day, fetchCollectedSpotIds(userId), Set.of());
         if (claimed) {
             try {
-                dayReplaceIdempotencyRepository.save(req.operationId(), objectMapper.writeValueAsString(response));
+                responseToCache.set(objectMapper.writeValueAsString(response));
             } catch (Exception e) {
-                log.warn("[replaceDayItems] 응답 캐싱 실패(멱등성 보장 안 됨) - operationId={}, {}", req.operationId(), e.getMessage());
+                log.warn("[replaceDayItems] 응답 직렬화 실패(멱등성 보장 안 됨) - operationId={}, {}", req.operationId(), e.getMessage());
             }
         }
         return response;
+    }
+
+    // 선점한 operationId의 뒷정리를 트랜잭션 결과에 맞춘다. 커밋됐을 때만 응답을 캐시하고
+    // (롤백된 결과를 재시도에 돌려주면 안 됨), 예외·409·롤백으로 끝나면 선점 표시를 푼다 —
+    // 안 풀면 TTL 동안 같은 operationId의 재시도가 전부 대기 후 폴백하는 실패 루프가 된다.
+    private void registerIdempotencyCompletion(UUID operationId, AtomicReference<String> responseToCache) {
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCompletion(int status) {
+                String json = responseToCache.get();
+                try {
+                    if (status == STATUS_COMMITTED && json != null) {
+                        dayReplaceIdempotencyRepository.save(operationId, json);
+                    } else {
+                        dayReplaceIdempotencyRepository.release(operationId);
+                    }
+                } catch (Exception e) {
+                    log.warn("[replaceDayItems] 멱등키 정리 실패 - operationId={}, {}", operationId, e.getMessage());
+                }
+            }
+        });
+    }
+
+    // 기존 항목별 "직전 항목의 관광지 id"(order_index 기준). 첫 항목은 값이 없다.
+    private Map<UUID, UUID> previousSpotIdsByItemId(List<ItineraryItem> items) {
+        List<ItineraryItem> ordered = items.stream()
+                .sorted(Comparator.comparingInt(ItineraryItem::getOrderIndex))
+                .toList();
+        Map<UUID, UUID> result = new java.util.HashMap<>();
+        for (int i = 1; i < ordered.size(); i++) {
+            result.put(ordered.get(i).getId(), ordered.get(i - 1).getSpot().getId());
+        }
+        return result;
+    }
+
+    // 도착 항목과 직전 관광지가 둘 다 이전과 같고, 이동수단 변경 요청도 없으면 이 구간의 경로는
+    // 다시 계산할 이유가 없다. 경로가 한 번도 계산되지 않은 항목(travelMode 없음)은 계산한다.
+    private boolean isLegUnchanged(ItineraryItem existing, ReplaceDayItemsRequest.ItemInput input,
+                                   ItineraryItem prev, Map<UUID, UUID> previousSpotIdByItemId) {
+        if (prev == null || existing.getTravelMode() == null) return false;
+        if (!existing.getSpot().getId().equals(input.spotId())) return false;
+        if (input.travelMode() != null && !input.travelMode().equals(existing.getTravelMode())) return false;
+        return prev.getSpot().getId().equals(previousSpotIdByItemId.get(existing.getId()));
     }
 
     // addItem의 구간(교통수단) 계산 로직과 동일하다 — 의도적으로 별도 메서드로 둔다(공유
