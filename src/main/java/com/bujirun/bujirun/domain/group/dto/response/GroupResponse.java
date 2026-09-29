@@ -10,6 +10,7 @@ public record GroupResponse(
         String name,
         String inviteCode,
         UUID createdBy,
+        int maxMembers,
         LocalDateTime createdAt
 ) {
     public static GroupResponse from(Group group) {
@@ -18,6 +19,7 @@ public record GroupResponse(
                 group.getName(),
                 group.getInviteCode(),
                 group.getCreatedBy(),
+                group.getMaxMembers(),
                 group.getCreatedAt()
         );
     }

@@ -34,14 +34,18 @@ public class Group {
     @Column(name = "created_by", nullable = false)
     private UUID createdBy;
 
+    @Column(name = "max_members", nullable = false)
+    private int maxMembers;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
 
     @Builder
-    public Group(String name, String inviteCode, UUID createdBy) {
+    public Group(String name, String inviteCode, UUID createdBy, int maxMembers) {
         this.name = name;
         this.inviteCode = inviteCode;
         this.createdBy = createdBy;
+        this.maxMembers = maxMembers;
     }
 
     @PrePersist
