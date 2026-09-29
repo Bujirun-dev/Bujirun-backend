@@ -41,6 +41,17 @@ public class DayReplaceIdempotencyRepository {
         redisTemplate.opsForValue().set(PREFIX + operationId, responseJson, TTL);
     }
 
+    // 선점자가 결과를 못 남기고 끝났을 때(예외/롤백) 선점 표시를 푼다. 안 풀면 TTL(10분)
+    // 내내 같은 operationId의 재시도가 전부 waitForResult에서 POLL_TIMEOUT만큼 기다린 뒤
+    // 폴백하게 되어, node-yjs(요청 타임아웃)가 매번 끊고 다시 보내는 실패 루프가 된다
+    // (2026-09-28 운영에서 10분간 실제 발생). 이미 결과가 저장된 키는 지우지 않는다.
+    public void release(UUID operationId) {
+        String key = PREFIX + operationId;
+        if (PROCESSING_MARKER.equals(redisTemplate.opsForValue().get(key))) {
+            redisTemplate.delete(key);
+        }
+    }
+
     // 이미 완료된 결과면 즉시 반환. 아직 처리 중(PROCESSING_MARKER)이면 최대 POLL_TIMEOUT까지
     // 짧은 간격으로 재조회해 기다린다. 그래도 안 끝나면 null(호출부가 직접 처리하도록 폴백 —
     // 선점자가 죽었을 가능성에 대비한 안전장치, DB 행 잠금이 있어 중복 처리돼도 데이터는
