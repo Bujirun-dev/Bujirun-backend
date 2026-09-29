@@ -108,15 +108,14 @@ public class ItineraryOptimizeService {
         List<LocalTime> finalArrivalTimes = calculateArrivalTimes(startTime, finalTravelTimes, dayEndLimit);
 
         // 결과를 ItineraryItem에 반영
-        Map<String, ItineraryItem> itemMap = items.stream()
-                .collect(Collectors.toMap(item -> item.getSpot().getContentId(), item -> item));
-        applyToEntities(itemMap, finalOrder, finalArrivalTimes, routes);
+        List<ItineraryItem> orderedItems = matchItemsToOrder(items, finalOrder);
+        applyToEntities(orderedItems, finalOrder, finalArrivalTimes, routes);
 
         // 응답의 교통정보 필드는 ItineraryItemResponse와 동일하게, applyToEntities가 방금 반영한 엔티티 값을 그대로 담는다
         List<ItineraryOptimizeResponse.OptimizedSpot> optimizedSpots = new ArrayList<>();
         for (int i = 0; i < finalOrder.size(); i++) {
             SpotInfo spot = finalOrder.get(i);
-            ItineraryItem item = itemMap.get(spot.getContentId());
+            ItineraryItem item = orderedItems.get(i);
             optimizedSpots.add(ItineraryOptimizeResponse.OptimizedSpot.builder()
                     .contentId(spot.getContentId())
                     .name(spot.getName())
@@ -218,14 +217,17 @@ public class ItineraryOptimizeService {
             }
             JsonNode root = objectMapper.readTree(json);
 
-            Map<String, SpotInfo> spotMap = original.stream()
-                    .collect(Collectors.toMap(SpotInfo::getContentId, s -> s));
+            // 같은 관광지가 하루에 두 번 들어 있을 수 있다 — contentId마다 원본 항목을 순서대로
+            // 한 번씩만 꺼내 쓴다(toMap이면 중복 키로 파싱 자체가 실패했음).
+            Map<String, java.util.Deque<SpotInfo>> spotsById = new java.util.HashMap<>();
+            original.forEach(s -> spotsById.computeIfAbsent(s.getContentId(), k -> new java.util.ArrayDeque<>()).add(s));
 
             List<SpotInfo> order = new ArrayList<>();
             JsonNode orderNode = root.get("finalOrder");
             if (orderNode != null && orderNode.isArray()) {
                 for (JsonNode idNode : orderNode) {
-                    SpotInfo spot = spotMap.get(idNode.asText());
+                    java.util.Deque<SpotInfo> candidates = spotsById.get(idNode.asText());
+                    SpotInfo spot = candidates != null ? candidates.poll() : null;
                     if (spot != null) order.add(spot);
                 }
             }
@@ -248,11 +250,26 @@ public class ItineraryOptimizeService {
         }
     }
 
-    private void applyToEntities(Map<String, ItineraryItem> itemMap, List<SpotInfo> finalOrder, List<LocalTime> arrivalTimes,
+    // finalOrder의 각 자리에 대응하는 항목. 같은 관광지가 하루에 두 번 있어도 항목이 하나씩만
+    // 배정되도록 contentId별 대기열에서 순서대로 꺼낸다 — contentId → 항목 toMap은 중복 키
+    // IllegalStateException(409)으로 최적화 자체가 실패했다(2026-09-29 운영).
+    private List<ItineraryItem> matchItemsToOrder(List<ItineraryItem> items, List<SpotInfo> finalOrder) {
+        Map<String, java.util.Deque<ItineraryItem>> itemsById = new java.util.HashMap<>();
+        items.forEach(item -> itemsById
+                .computeIfAbsent(item.getSpot().getContentId(), k -> new java.util.ArrayDeque<>())
+                .add(item));
+        List<ItineraryItem> ordered = new ArrayList<>(finalOrder.size());
+        for (SpotInfo spot : finalOrder) {
+            java.util.Deque<ItineraryItem> candidates = itemsById.get(spot.getContentId());
+            ordered.add(candidates != null ? candidates.poll() : null);
+        }
+        return ordered;
+    }
+
+    private void applyToEntities(List<ItineraryItem> orderedItems, List<SpotInfo> finalOrder, List<LocalTime> arrivalTimes,
                                  List<TransitRouteResponse> routes) {
         for (int i = 0; i < finalOrder.size(); i++) {
-            SpotInfo spot = finalOrder.get(i);
-            ItineraryItem item = itemMap.get(spot.getContentId());
+            ItineraryItem item = orderedItems.get(i);
             if (item == null) continue;
 
             TransitOption leg = (i == 0 || routes.get(i - 1).options().isEmpty())
