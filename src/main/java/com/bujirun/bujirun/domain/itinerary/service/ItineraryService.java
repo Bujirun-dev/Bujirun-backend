@@ -40,12 +40,14 @@ import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicReference;
@@ -286,6 +288,7 @@ public class ItineraryService {
         // 없으면(null) 자동 산출된 최적 옵션을 그대로 쓴다.
         String travelMode = req.travelMode();
         Integer travelTimeMin = req.travelTimeMin();
+        Integer travelFare = null;
         String routeType = null;
         String routeNo = null;
         String startStationName = null;
@@ -307,7 +310,8 @@ public class ItineraryService {
 
         if (prevItem != null) {
             List<SpotInfo> pair = List.of(toSpotInfo(prevItem.getSpot()), toSpotInfo(spot));
-            List<TransitRouteResponse> routes = transitRouteService.getRoutesForDay(pair, null);
+            List<TransitRouteResponse> routes = transitRouteService.getRoutesForDay(pair, null,
+                    TransitRouteService.toTravelAt(day.getDate(), req.arrivalTime()));
 
             if (!routes.isEmpty() && !routes.get(0).options().isEmpty()) {
                 List<TransitOption> options = routes.get(0).options();
@@ -322,6 +326,7 @@ public class ItineraryService {
 
                 travelMode = TransitRouteUtils.toTravelMode(leg.type());
                 if (travelTimeMin == null) travelTimeMin = leg.totalTime();
+                travelFare = TransitRouteUtils.toTravelFare(leg);
                 // routeType: subPath 실측 타입(버스/지하철) 우선, 없으면(도보/택시 옵션) 옵션 타입 그대로
                 routeType = firstSubPath != null ? firstSubPath.type() : leg.type();
                 routeNo = firstSubPath != null ? firstSubPath.routeNo() : null;
@@ -340,6 +345,7 @@ public class ItineraryService {
                 .durationMin(req.durationMin())
                 .travelMode(travelMode)
                 .travelTimeMin(travelTimeMin)
+                .travelFare(travelFare)
                 .routeType(routeType)
                 .routeNo(routeNo)
                 .startStationName(startStationName)
@@ -471,8 +477,12 @@ public class ItineraryService {
                 // 매 flush마다 모든 구간을 ODsay/실시간 도착정보로 재계산하던 탓에 요청이 5초를
                 // 넘겨 node-yjs flush가 연속 실패했다(2026-09-28 운영). 사용자가 골라둔 경로도
                 // 그대로 보존된다.
+                LocalTime previousArrivalTime = existing.getArrivalTime();
                 existing.update(orderIndex, input.arrivalTime(), input.durationMin(), null,
                         input.travelTimeMin(), input.memo());
+                if (!Objects.equals(previousArrivalTime, existing.getArrivalTime())) {
+                    refreshTaxiTime(existing, prev);
+                }
                 item = existing;
             } else if (existing != null) {
                 applyTransitFields(existing, spot, orderIndex, input, prev, existing.getTravelMode());
@@ -576,6 +586,7 @@ public class ItineraryService {
                                      String preferredTravelMode) {
         String travelMode = input.travelMode() != null ? input.travelMode() : preferredTravelMode;
         Integer travelTimeMin = input.travelTimeMin();
+        Integer travelFare = null;
         Integer durationMin = input.durationMin() != null ? input.durationMin() : target.getDurationMin();
         String memo = input.memo() != null ? input.memo() : target.getMemo();
         String routeType = null;
@@ -587,7 +598,9 @@ public class ItineraryService {
 
         if (prevItem != null) {
             List<SpotInfo> pair = List.of(toSpotInfo(prevItem.getSpot()), toSpotInfo(spot));
-            List<TransitRouteResponse> routes = transitRouteService.getRoutesForDay(pair, null);
+            LocalTime arrivalTime = input.arrivalTime() != null ? input.arrivalTime() : target.getArrivalTime();
+            List<TransitRouteResponse> routes = transitRouteService.getRoutesForDay(pair, null,
+                    TransitRouteService.toTravelAt(target.getDay().getDate(), arrivalTime));
 
             if (!routes.isEmpty() && !routes.get(0).options().isEmpty()) {
                 List<TransitOption> options = routes.get(0).options();
@@ -602,6 +615,7 @@ public class ItineraryService {
 
                 travelMode = TransitRouteUtils.toTravelMode(leg.type());
                 if (travelTimeMin == null) travelTimeMin = leg.totalTime();
+                travelFare = TransitRouteUtils.toTravelFare(leg);
                 routeType = firstSubPath != null ? firstSubPath.type() : leg.type();
                 routeNo = firstSubPath != null ? firstSubPath.routeNo() : null;
                 startStationName = firstSubPath != null ? firstSubPath.startName() : null;
@@ -612,7 +626,7 @@ public class ItineraryService {
         }
 
         target.update(orderIndex, input.arrivalTime(), durationMin, travelMode, travelTimeMin, memo);
-        target.updateRoute(travelMode, travelTimeMin, routeType, routeNo,
+        target.updateRoute(travelMode, travelTimeMin, travelFare, routeType, routeNo,
                 startStationName, endStationName, startArsId, transitDetail);
     }
 
@@ -661,6 +675,7 @@ public class ItineraryService {
                 .orElseThrow(() -> new EntityNotFoundException("Item을 찾을 수 없습니다. id=" + itemId));
 
         validateArrivalTimeAvailable(day, req.arrivalTime(), itemId);
+        LocalTime previousArrivalTime = item.getArrivalTime();
 
         // travelMode만 오고 travelTimeMin이 없으면 = 사용자가 이동수단만 선택 → 재계산
         if (req.travelMode() != null && req.travelTimeMin() == null) {
@@ -670,6 +685,13 @@ public class ItineraryService {
         } else {
             item.update(req.orderIndex(), req.arrivalTime(), req.durationMin(),
                     req.travelMode(), req.travelTimeMin(), req.memo());
+        }
+
+        // 택시 구간은 도착 시각에 따라 소요시간이 달라진다 — 시각이 바뀌었으면 새 시각 기준으로 맞춘다
+        if (!Objects.equals(previousArrivalTime, item.getArrivalTime())) {
+            List<ItineraryItem> dayItems = day.getItems(); // orderIndex ASC 정렬됨
+            int idx = dayItems.indexOf(item);
+            refreshTaxiTime(item, idx > 0 ? dayItems.get(idx - 1) : null);
         }
 
         return ItineraryItemResponse.from(item, fetchCollectedSpotIds(userId), fetchVisitedItemIds(userId, List.of(item.getId())));
@@ -712,7 +734,8 @@ public class ItineraryService {
                 ? (int) groupMemberRepository.countById_GroupId(itinerary.getGroupId())
                 : 1;
         return transitRouteService.getPrioritizedOptions(
-                toSpotInfo(dayItems.get(idx - 1).getSpot()), toSpotInfo(item.getSpot()), partySize);
+                toSpotInfo(dayItems.get(idx - 1).getSpot()), toSpotInfo(item.getSpot()), partySize,
+                travelAtOf(item));
     }
 
     // 사용자가 이동수단(walk/transit/taxi)만 선택했을 때, 직전 스팟과의 구간을 해당 수단 기준으로 재계산
@@ -762,8 +785,23 @@ public class ItineraryService {
     // 직전 항목과의 구간에 대한 이동수단 옵션 목록을 조회한다 (없으면 빈 리스트)
     private List<TransitOption> fetchLegOptions(ItineraryItem prevItem, ItineraryItem item) {
         List<SpotInfo> pair = List.of(toSpotInfo(prevItem.getSpot()), toSpotInfo(item.getSpot()));
-        List<TransitRouteResponse> routes = transitRouteService.getRoutesForDay(pair, null);
+        List<TransitRouteResponse> routes = transitRouteService.getRoutesForDay(pair, null, travelAtOf(item));
         return routes.isEmpty() ? List.of() : routes.get(0).options();
+    }
+
+    // 항목으로 들어오는 구간의 택시 계산 기준 시각 = 그 날짜 + 항목의 도착 예정 시각.
+    // 저장(addItem·이동수단 변경)과 옵션 조회가 모두 이 값을 써야 일정탭과 옵션 API의 택시 시간이 같다.
+    private LocalDateTime travelAtOf(ItineraryItem item) {
+        return TransitRouteService.toTravelAt(item.getDay().getDate(), item.getArrivalTime());
+    }
+
+    // 택시로 저장된 구간의 소요시간·요금을 항목의 현재 도착 시각 기준으로 다시 계산한다.
+    // 도착 시각만 바뀐 경우라 ODsay 조회 없이 택시만 계산한다. 택시가 아니거나 첫 항목이면 그대로 둔다.
+    private void refreshTaxiTime(ItineraryItem item, ItineraryItem prevItem) {
+        if (prevItem == null || !"taxi".equals(item.getTravelMode())) return;
+        TransitOption taxi = transitRouteService.estimateTaxi(
+                toSpotInfo(prevItem.getSpot()), toSpotInfo(item.getSpot()), travelAtOf(item));
+        item.updateTravelTimeAndFare(taxi.totalTime(), taxi.totalFare());
     }
 
     // 선택된 옵션의 경로 상세(노선번호·정류장명 등)를 항목에 반영한다
@@ -777,6 +815,7 @@ public class ItineraryService {
         item.updateRoute(
                 TransitRouteUtils.toTravelMode(matched.type()),
                 matched.totalTime(),
+                TransitRouteUtils.toTravelFare(matched),
                 firstSubPath != null ? firstSubPath.type() : matched.type(),
                 firstSubPath != null ? firstSubPath.routeNo() : null,
                 firstSubPath != null ? firstSubPath.startName() : null,

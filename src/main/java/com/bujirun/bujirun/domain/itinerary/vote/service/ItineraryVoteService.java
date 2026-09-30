@@ -29,6 +29,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Duration;
 import java.time.Instant;
+import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.util.*;
 import java.util.stream.Collectors;
@@ -271,8 +272,8 @@ public class ItineraryVoteService {
                             .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 관광지: " + contentId)))
                     .toList();
 
-            List<TransitRouteResponse> routes = transitRouteService.getRoutesForDay(
-                    spots.stream().map(this::toSpotInfo).toList(), null);
+            List<SpotInfo> spotInfos = spots.stream().map(this::toSpotInfo).toList();
+            List<TransitRouteResponse> routes = transitRouteService.getRoutesForDay(spotInfos, null);
 
             // 확정 시점에 방문 시각(arrival_time)을 실제로 채운다.
             // 예전엔 durationMin만 넣고 arrivalTime을 비워둬서, 확정 직후 모든 항목의
@@ -292,6 +293,14 @@ public class ItineraryVoteService {
                     ItineraryTimeUtils.resolveDayStartTime(dayInput.getDay(), itinerary.getStartTime()),
                     gaps,
                     ItineraryTimeUtils.resolveDayEndLimit(dayInput.getDay(), totalDays, itinerary.getEndTime()));
+
+            // 택시 구간은 방금 정한 도착 시각 기준으로 다시 계산한다 — 이동수단 옵션 API도
+            // 같은 기준(날짜 + 도착 예정 시각)을 쓰므로 저장값과 옵션 API 값이 일치한다
+            List<LocalDateTime> travelAts = new ArrayList<>();
+            for (int i = 1; i < spots.size(); i++) {
+                travelAts.add(TransitRouteService.toTravelAt(day.getDate(), arrivalTimes.get(i)));
+            }
+            routes = transitRouteService.retimeTaxiOptions(spotInfos, routes, travelAts);
 
             for (int i = 0; i < spots.size(); i++) {
                 TransitOption leg = (i == 0 || routes.get(i - 1).options().isEmpty())
@@ -317,6 +326,7 @@ public class ItineraryVoteService {
                         .durationMin(DEFAULT_VISIT_DURATION_MINUTES)
                         .travelMode(leg != null ? TransitRouteUtils.toTravelMode(leg.type()) : null)
                         .travelTimeMin(leg != null ? leg.totalTime() : null)
+                        .travelFare(TransitRouteUtils.toTravelFare(leg))
                         .routeType(firstTransitSubPath != null ? firstTransitSubPath.type() : (leg != null ? leg.type() : null))
                         .routeNo(firstTransitSubPath != null ? firstTransitSubPath.routeNo() : null)
                         .startStationName(firstTransitSubPath != null ? firstTransitSubPath.startName() : null)

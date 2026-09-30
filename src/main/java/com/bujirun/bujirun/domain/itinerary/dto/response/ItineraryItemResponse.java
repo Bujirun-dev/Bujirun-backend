@@ -17,6 +17,7 @@ public record ItineraryItemResponse(
         Integer durationMin,
         String travelMode,
         Integer travelTimeMin,
+        Integer travelFare, // 구간 이동 요금(원). null = 요금을 모름(컬럼 추가 전 저장된 항목 등)
         String routeType,
         String routeNo,
         String startStationName,
@@ -56,6 +57,7 @@ public record ItineraryItemResponse(
                 item.getDurationMin(),
                 item.getTravelMode(),
                 item.getTravelTimeMin(),
+                item.getTravelFare(),
                 item.getRouteType(),
                 item.getRouteNo(),
                 item.getStartStationName(),

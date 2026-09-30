@@ -12,7 +12,9 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import java.time.DayOfWeek;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.LocalTime;
 import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -42,6 +44,15 @@ public class TransitRouteService {
     private static final double WEEKEND_DAYTIME_FACTOR = 1.2;   // 토·일 11~19시
 
     public List<TransitRouteResponse> getRoutesForDay(List<SpotInfo> spots, String optimizationType) {
+        return getRoutesForDay(spots, optimizationType, null);
+    }
+
+    /**
+     * travelAt: 택시 소요시간·요금을 계산할 기준 시각(이동 예정 시각). null이면 현재 시각.
+     * 일정 항목에 저장하는 값과 이동수단 옵션 API가 같은 기준 시각을 써야 둘이 일치한다.
+     */
+    public List<TransitRouteResponse> getRoutesForDay(List<SpotInfo> spots, String optimizationType,
+                                                      LocalDateTime travelAt) {
         List<TransitRouteResponse> routes = new ArrayList<>();
 
         Comparator<TransitOption> comparator = "TRANSFER_MIN".equals(optimizationType)
@@ -85,7 +96,7 @@ public class TransitRouteService {
             TransitOption representativeOption = transitOptions.isEmpty() ? null : transitOptions.get(0);
             options.add(resolveWalkOption(distanceM, representativeOption)); // ODsay 도보 구간 sectionTime 재사용, 매칭 실패 시 calcWalk 폴백
 
-            options.add(calcTaxi(distanceM));
+            options.add(calcTaxi(distanceM, travelAt));
 
             options.sort(comparator);
             routes.add(new TransitRouteResponse(options));
@@ -98,12 +109,48 @@ public class TransitRouteService {
      * 두 스팟 사이 구간의 이동수단 옵션을 인원수 기준 우선순위로 정렬해 돌려준다.
      * 경로 조회는 getRoutesForDay(캐시 사용)를 그대로 쓰고, 인원수에 따라 달라지는 정렬·비용 계산은 캐시 바깥에서 한다.
      */
-    public List<TransitOption> getPrioritizedOptions(SpotInfo from, SpotInfo to, int partySize) {
-        List<TransitRouteResponse> routes = getRoutesForDay(List.of(from, to), null);
+    public List<TransitOption> getPrioritizedOptions(SpotInfo from, SpotInfo to, int partySize,
+                                                     LocalDateTime travelAt) {
+        List<TransitRouteResponse> routes = getRoutesForDay(List.of(from, to), null, travelAt);
         if (routes.isEmpty()) return List.of();
 
         double distanceM = GeoUtils.haversineDistance(from.getLat(), from.getLng(), to.getLat(), to.getLng());
         return transitOptionPrioritizer.prioritize(routes.get(0).options(), distanceM, partySize);
+    }
+
+    /**
+     * 하루 전체 구간을 한 번에 계산한 뒤(도착 시각이 아직 없어서 현재 시각 기준) 도착 시각이
+     * 정해지면, 택시 옵션만 구간별 이동 시각 기준으로 다시 계산한다.
+     * travelAts.get(i)는 i번째 구간(spots[i] → spots[i+1])의 기준 시각이다.
+     * 옵션 순서는 그대로 둔다 — 이미 옵션 순서로 고른 구간과 도착 시각이 바뀌지 않게 하기 위함.
+     */
+    public List<TransitRouteResponse> retimeTaxiOptions(List<SpotInfo> spots, List<TransitRouteResponse> routes,
+                                                        List<LocalDateTime> travelAts) {
+        List<TransitRouteResponse> result = new ArrayList<>(routes.size());
+        for (int i = 0; i < routes.size(); i++) {
+            SpotInfo from = spots.get(i);
+            SpotInfo to = spots.get(i + 1);
+            LocalDateTime travelAt = travelAts.get(i);
+            List<TransitOption> options = routes.get(i).options().stream()
+                    .map(opt -> "택시".equals(opt.type()) ? estimateTaxi(from, to, travelAt) : opt)
+                    .toList();
+            result.add(new TransitRouteResponse(options));
+        }
+        return result;
+    }
+
+    // 택시 옵션만 따로 계산한다 — ODsay·실시간 도착정보 조회 없이 거리와 기준 시각만으로 정해지므로,
+    // 도착 시각만 바뀐 구간의 택시 소요시간을 가볍게 다시 맞출 때 쓴다
+    public TransitOption estimateTaxi(SpotInfo from, SpotInfo to, LocalDateTime travelAt) {
+        double distanceM = GeoUtils.haversineDistance(from.getLat(), from.getLng(), to.getLat(), to.getLng());
+        return calcTaxi(distanceM, travelAt);
+    }
+
+    // 일정 날짜 + 도착 예정 시각을 택시 계산 기준 시각으로 바꾼다. 시각이 없으면 null(= 현재 시각 기준),
+    // 날짜만 없으면(과거 date 미저장 데이터) 오늘 날짜로 본다.
+    public static LocalDateTime toTravelAt(LocalDate date, LocalTime arrivalTime) {
+        if (arrivalTime == null) return null;
+        return (date != null ? date : LocalDate.now(KST)).atTime(arrivalTime);
     }
 
     /**
@@ -155,13 +202,14 @@ public class TransitRouteService {
         return calcWalk(distanceM); // ODsay 매칭 실패 시 기존 계산식으로 폴백
     }
 
-    private TransitOption calcTaxi(double distanceM) {
+    // travelAt: 이동 예정 시각. null이면 현재 시각 기준
+    private TransitOption calcTaxi(double distanceM, LocalDateTime travelAt) {
         double roadDistanceM = distanceM * ROAD_DISTANCE_FACTOR;
-        LocalDateTime now = LocalDateTime.now(KST);
+        LocalDateTime at = travelAt != null ? travelAt : LocalDateTime.now(KST);
 
-        int fare = taxiFareEstimator.estimate(roadDistanceM, now);
+        int fare = taxiFareEstimator.estimate(roadDistanceM, at);
         int timeMin = (int) Math.ceil(roadDistanceM / 1000 / 30 * 60);
-        timeMin = (int) Math.ceil(timeMin * resolveCongestionFactor(now));
+        timeMin = (int) Math.ceil(timeMin * resolveCongestionFactor(at));
 
         return new TransitOption("택시", timeMin, fare, 0, true, List.of());
     }

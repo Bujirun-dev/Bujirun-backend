@@ -27,6 +27,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.util.*;
 import java.util.stream.Collectors;
@@ -107,6 +108,14 @@ public class ItineraryOptimizeService {
         List<Integer> finalTravelTimes = extractTravelTimes(routes);
         List<LocalTime> finalArrivalTimes = calculateArrivalTimes(startTime, finalTravelTimes, dayEndLimit);
 
+        // 택시 구간은 방금 정한 도착 시각 기준으로 다시 계산한다 — 이동수단 옵션 API도
+        // 같은 기준(날짜 + 도착 예정 시각)을 쓰므로 저장값과 옵션 API 값이 일치한다
+        List<LocalDateTime> travelAts = new ArrayList<>();
+        for (int i = 1; i < finalOrder.size(); i++) {
+            travelAts.add(TransitRouteService.toTravelAt(day.getDate(), finalArrivalTimes.get(i)));
+        }
+        routes = transitRouteService.retimeTaxiOptions(finalOrder, routes, travelAts);
+
         // 결과를 ItineraryItem에 반영
         List<ItineraryItem> orderedItems = matchItemsToOrder(items, finalOrder);
         applyToEntities(orderedItems, finalOrder, finalArrivalTimes, routes);
@@ -125,6 +134,7 @@ public class ItineraryOptimizeService {
                     .arrivalTime(finalArrivalTimes.get(i))
                     .travelMode(item != null ? item.getTravelMode() : null)
                     .travelTimeMin(item != null ? item.getTravelTimeMin() : null)
+                    .travelFare(item != null ? item.getTravelFare() : null)
                     .routeType(item != null ? item.getRouteType() : null)
                     .routeNo(item != null ? item.getRouteNo() : null)
                     .startStationName(item != null ? item.getStartStationName() : null)
@@ -297,6 +307,7 @@ public class ItineraryOptimizeService {
             item.updateRoute(
                     leg != null ? TransitRouteUtils.toTravelMode(leg.type()) : null,
                     leg != null ? leg.totalTime() : null,
+                    TransitRouteUtils.toTravelFare(leg),
                     firstTransitSubPath != null ? firstTransitSubPath.type() : (leg != null ? leg.type() : null),
                     firstTransitSubPath != null ? firstTransitSubPath.routeNo() : null,
                     firstTransitSubPath != null ? firstTransitSubPath.startName() : null,
