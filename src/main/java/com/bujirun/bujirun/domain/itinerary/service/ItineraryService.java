@@ -706,7 +706,13 @@ public class ItineraryService {
             throw new IllegalArgumentException("첫 번째 방문 항목은 이동수단 옵션이 없습니다.");
         }
 
-        return fetchLegOptions(dayItems.get(idx - 1), item);
+        // 표시 순서·1인당 비용은 인원수 기준으로 정한다 (그룹 일정은 그룹원 수, 개인 일정은 1명)
+        Itinerary itinerary = item.getDay().getItinerary();
+        int partySize = itinerary.getGroupId() != null
+                ? (int) groupMemberRepository.countById_GroupId(itinerary.getGroupId())
+                : 1;
+        return transitRouteService.getPrioritizedOptions(
+                toSpotInfo(dayItems.get(idx - 1).getSpot()), toSpotInfo(item.getSpot()), partySize);
     }
 
     // 사용자가 이동수단(walk/transit/taxi)만 선택했을 때, 직전 스팟과의 구간을 해당 수단 기준으로 재계산
