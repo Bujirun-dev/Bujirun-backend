@@ -280,19 +280,12 @@ public class ItineraryVoteService {
             // arrival_time이 null이었다. 그러면 프론트가 매번 화면에서 시각을 합성하는데
             // 그 값은 저장되지 않아("표시값 == 저장값"으로 착각해 PATCH를 건너뜀) 화면과
             // DB가 갈리고, 로그/Yjs로도 빈 시각이 그대로 퍼졌다.
-            // 기준 시각: 첫날은 여행 시작 시각, 둘째 날 이후는 기본값(09:00).
-            // 간격: 체류 시간(DEFAULT_VISIT_DURATION_MINUTES) + 직전 구간 이동 시간.
-            List<Integer> gaps = new ArrayList<>();
-            for (int i = 1; i < spots.size(); i++) {
-                TransitOption prevLeg = routes.get(i - 1).options().isEmpty()
-                        ? null
-                        : routes.get(i - 1).options().get(0);
-                gaps.add(DEFAULT_VISIT_DURATION_MINUTES + (prevLeg != null ? prevLeg.totalTime() : 0));
-            }
-            List<LocalTime> arrivalTimes = ItineraryTimeUtils.accumulateArrivalTimes(
-                    ItineraryTimeUtils.resolveDayStartTime(dayInput.getDay(), itinerary.getStartTime()),
-                    gaps,
-                    ItineraryTimeUtils.resolveDayEndLimit(dayInput.getDay(), totalDays, itinerary.getEndTime()));
+            // 시각은 추천 화면에서 보여준 기본 배치(10:00부터 3시간 간격)로 바로 저장한다 —
+            // 방장 화면이 확정 뒤에 PATCH로 바꾸던 방식은 다른 참여자의 Yjs 시딩·flush와 경합해
+            // 이동시간 기준 시각으로 되돌아갔다(ItineraryTimeUtils.defaultVisitTimes 참고).
+            List<LocalTime> arrivalTimes = ItineraryTimeUtils.defaultVisitTimes(
+                    dayInput.getDay(), totalDays, spots.size(),
+                    itinerary.getStartTime(), itinerary.getEndTime());
 
             // 택시 구간은 방금 정한 도착 시각 기준으로 다시 계산한다 — 이동수단 옵션 API도
             // 같은 기준(날짜 + 도착 예정 시각)을 쓰므로 저장값과 옵션 API 값이 일치한다
