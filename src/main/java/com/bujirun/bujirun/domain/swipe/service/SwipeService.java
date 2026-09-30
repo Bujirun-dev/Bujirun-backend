@@ -1,6 +1,7 @@
 package com.bujirun.bujirun.domain.swipe.service;
 
 import com.bujirun.bujirun.domain.group.repository.GroupMemberRepository;
+import com.bujirun.bujirun.domain.itinerary.vote.repository.ItineraryVoteSessionRepository;
 import com.bujirun.bujirun.domain.swipe.dto.request.SwipeRequest;
 import com.bujirun.bujirun.domain.swipe.dto.request.SwipeSubmitRequest;
 import com.bujirun.bujirun.domain.swipe.dto.response.SwipeSessionResponse;
@@ -31,6 +32,7 @@ public class SwipeService {
     private final SwipeResultRepository swipeResultRepository;
     private final TourSpotRepository tourSpotRepository;
     private final GroupMemberRepository groupMemberRepository;
+    private final ItineraryVoteSessionRepository itineraryVoteSessionRepository;
 
     public SwipeSessionResponse submitSwipeSession(SwipeSubmitRequest request, UUID userId) {
 
@@ -94,11 +96,15 @@ public class SwipeService {
 
         long doneCount = swipeSessionRepository.countDistinctCompletedUsersByGroupId(groupId);
         long totalCount = groupMemberRepository.countById_GroupId(groupId);
+        // 확정(confirmed)된 이전 세션은 제외한다 — 그룹당 generating/voting 세션은 하나뿐이다(V36).
+        boolean generationStarted = itineraryVoteSessionRepository
+                .existsByGroupIdAndStatusIn(groupId, List.of("generating", "voting"));
 
         return SwipeStatusResponse.builder()
                 .doneCount(doneCount)
                 .totalCount(totalCount)
                 .allDone(doneCount >= totalCount)
+                .generationStarted(generationStarted)
                 .build();
     }
 }
