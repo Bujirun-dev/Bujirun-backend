@@ -134,6 +134,7 @@ public class ItineraryOptimizeService {
                     .arrivalTime(finalArrivalTimes.get(i))
                     .travelMode(item != null ? item.getTravelMode() : null)
                     .travelTimeMin(item != null ? item.getTravelTimeMin() : null)
+                    .travelFare(item != null ? item.getTravelFare() : null)
                     .routeType(item != null ? item.getRouteType() : null)
                     .routeNo(item != null ? item.getRouteNo() : null)
                     .startStationName(item != null ? item.getStartStationName() : null)
@@ -306,6 +307,7 @@ public class ItineraryOptimizeService {
             item.updateRoute(
                     leg != null ? TransitRouteUtils.toTravelMode(leg.type()) : null,
                     leg != null ? leg.totalTime() : null,
+                    TransitRouteUtils.toTravelFare(leg),
                     firstTransitSubPath != null ? firstTransitSubPath.type() : (leg != null ? leg.type() : null),
                     firstTransitSubPath != null ? firstTransitSubPath.routeNo() : null,
                     firstTransitSubPath != null ? firstTransitSubPath.startName() : null,

@@ -326,6 +326,7 @@ public class ItineraryVoteService {
                         .durationMin(DEFAULT_VISIT_DURATION_MINUTES)
                         .travelMode(leg != null ? TransitRouteUtils.toTravelMode(leg.type()) : null)
                         .travelTimeMin(leg != null ? leg.totalTime() : null)
+                        .travelFare(TransitRouteUtils.toTravelFare(leg))
                         .routeType(firstTransitSubPath != null ? firstTransitSubPath.type() : (leg != null ? leg.type() : null))
                         .routeNo(firstTransitSubPath != null ? firstTransitSubPath.routeNo() : null)
                         .startStationName(firstTransitSubPath != null ? firstTransitSubPath.startName() : null)

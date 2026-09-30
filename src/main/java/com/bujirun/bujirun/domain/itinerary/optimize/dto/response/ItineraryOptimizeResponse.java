@@ -24,6 +24,7 @@ public class ItineraryOptimizeResponse {
         private LocalTime arrivalTime;
         private String travelMode;
         private Integer travelTimeMin;
+        private Integer travelFare;
         private String routeType;
         private String routeNo;
         private String startStationName;

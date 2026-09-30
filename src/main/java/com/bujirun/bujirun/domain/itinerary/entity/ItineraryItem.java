@@ -45,6 +45,9 @@ public class ItineraryItem {
     @Column(name = "travel_time_min")
     private Integer travelTimeMin;
 
+    @Column(name = "travel_fare")
+    private Integer travelFare;        // 구간 이동 요금(원). null = 요금을 모름(컬럼 추가 전 저장된 항목 등)
+
     @Column(name = "route_type")
     private String routeType;          // "버스", "지하철", "도보", "택시" 등 원본값
 
@@ -88,17 +91,24 @@ public class ItineraryItem {
     }
 
     // 경로 상세(노선번호·정류장명 등)까지 함께 갱신할 때 사용
-    public void updateRoute(String travelMode, Integer travelTimeMin,
+    public void updateRoute(String travelMode, Integer travelTimeMin, Integer travelFare,
                             String routeType, String routeNo,
                             String startStationName, String endStationName,
                             String startArsId, TransitDetail transitDetail) {
         if (travelMode        != null) this.travelMode        = travelMode;
         if (travelTimeMin     != null) this.travelTimeMin     = travelTimeMin;
+        if (travelFare        != null) this.travelFare        = travelFare;
         this.routeType         = routeType;          // 도보/택시면 null로 덮어써야 하니 무조건 대입
         this.routeNo           = routeNo;
         this.startStationName  = startStationName;
         this.endStationName    = endStationName;
         this.startArsId        = startArsId;
         this.transitDetail     = transitDetail;       // 도보/택시면 null로 덮어써야 하니 무조건 대입
+    }
+
+    // 경로는 그대로 두고 소요시간·요금만 다시 맞출 때 사용 (도착 시각만 바뀐 택시 구간 등)
+    public void updateTravelTimeAndFare(int travelTimeMin, int travelFare) {
+        this.travelTimeMin = travelTimeMin;
+        this.travelFare = travelFare;
     }
 }

@@ -233,6 +233,7 @@ public class TravelLogService {
                         .durationMin(item.getDurationMin())
                         .travelMode(item.getTravelMode())
                         .travelTimeMin(item.getTravelTimeMin())
+                        .travelFare(item.getTravelFare())
                         .memo(item.getMemo())
                         .build();
                 newDay.getItems().add(newItem);
