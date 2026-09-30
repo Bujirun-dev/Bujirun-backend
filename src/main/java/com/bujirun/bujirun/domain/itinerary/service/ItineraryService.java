@@ -288,6 +288,7 @@ public class ItineraryService {
         // 없으면(null) 자동 산출된 최적 옵션을 그대로 쓴다.
         String travelMode = req.travelMode();
         Integer travelTimeMin = req.travelTimeMin();
+        Integer travelFare = null;
         String routeType = null;
         String routeNo = null;
         String startStationName = null;
@@ -325,6 +326,7 @@ public class ItineraryService {
 
                 travelMode = TransitRouteUtils.toTravelMode(leg.type());
                 if (travelTimeMin == null) travelTimeMin = leg.totalTime();
+                travelFare = TransitRouteUtils.toTravelFare(leg);
                 // routeType: subPath 실측 타입(버스/지하철) 우선, 없으면(도보/택시 옵션) 옵션 타입 그대로
                 routeType = firstSubPath != null ? firstSubPath.type() : leg.type();
                 routeNo = firstSubPath != null ? firstSubPath.routeNo() : null;
@@ -343,6 +345,7 @@ public class ItineraryService {
                 .durationMin(req.durationMin())
                 .travelMode(travelMode)
                 .travelTimeMin(travelTimeMin)
+                .travelFare(travelFare)
                 .routeType(routeType)
                 .routeNo(routeNo)
                 .startStationName(startStationName)
@@ -583,6 +586,7 @@ public class ItineraryService {
                                      String preferredTravelMode) {
         String travelMode = input.travelMode() != null ? input.travelMode() : preferredTravelMode;
         Integer travelTimeMin = input.travelTimeMin();
+        Integer travelFare = null;
         Integer durationMin = input.durationMin() != null ? input.durationMin() : target.getDurationMin();
         String memo = input.memo() != null ? input.memo() : target.getMemo();
         String routeType = null;
@@ -611,6 +615,7 @@ public class ItineraryService {
 
                 travelMode = TransitRouteUtils.toTravelMode(leg.type());
                 if (travelTimeMin == null) travelTimeMin = leg.totalTime();
+                travelFare = TransitRouteUtils.toTravelFare(leg);
                 routeType = firstSubPath != null ? firstSubPath.type() : leg.type();
                 routeNo = firstSubPath != null ? firstSubPath.routeNo() : null;
                 startStationName = firstSubPath != null ? firstSubPath.startName() : null;
@@ -621,7 +626,7 @@ public class ItineraryService {
         }
 
         target.update(orderIndex, input.arrivalTime(), durationMin, travelMode, travelTimeMin, memo);
-        target.updateRoute(travelMode, travelTimeMin, routeType, routeNo,
+        target.updateRoute(travelMode, travelTimeMin, travelFare, routeType, routeNo,
                 startStationName, endStationName, startArsId, transitDetail);
     }
 
@@ -790,13 +795,13 @@ public class ItineraryService {
         return TransitRouteService.toTravelAt(item.getDay().getDate(), item.getArrivalTime());
     }
 
-    // 택시로 저장된 구간의 소요시간을 항목의 현재 도착 시각 기준으로 다시 계산한다.
+    // 택시로 저장된 구간의 소요시간·요금을 항목의 현재 도착 시각 기준으로 다시 계산한다.
     // 도착 시각만 바뀐 경우라 ODsay 조회 없이 택시만 계산한다. 택시가 아니거나 첫 항목이면 그대로 둔다.
     private void refreshTaxiTime(ItineraryItem item, ItineraryItem prevItem) {
         if (prevItem == null || !"taxi".equals(item.getTravelMode())) return;
         TransitOption taxi = transitRouteService.estimateTaxi(
                 toSpotInfo(prevItem.getSpot()), toSpotInfo(item.getSpot()), travelAtOf(item));
-        item.update(null, null, null, null, taxi.totalTime(), null);
+        item.updateTravelTimeAndFare(taxi.totalTime(), taxi.totalFare());
     }
 
     // 선택된 옵션의 경로 상세(노선번호·정류장명 등)를 항목에 반영한다
@@ -810,6 +815,7 @@ public class ItineraryService {
         item.updateRoute(
                 TransitRouteUtils.toTravelMode(matched.type()),
                 matched.totalTime(),
+                TransitRouteUtils.toTravelFare(matched),
                 firstSubPath != null ? firstSubPath.type() : matched.type(),
                 firstSubPath != null ? firstSubPath.routeNo() : null,
                 firstSubPath != null ? firstSubPath.startName() : null,

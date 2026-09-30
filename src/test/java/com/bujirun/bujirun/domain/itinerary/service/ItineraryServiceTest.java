@@ -4,11 +4,15 @@ import com.bujirun.bujirun.domain.collection.repository.CollectionEntryRepositor
 import com.bujirun.bujirun.domain.group.repository.GroupMemberRepository;
 import com.bujirun.bujirun.domain.group.service.GroupService;
 import com.bujirun.bujirun.domain.itinerary.dto.request.AddItemRequest;
+import com.bujirun.bujirun.domain.itinerary.dto.request.UpdateTravelModeRequest;
+import com.bujirun.bujirun.domain.itinerary.dto.response.ItineraryItemResponse;
 import com.bujirun.bujirun.domain.itinerary.dto.request.UpdateItemRequest;
 import com.bujirun.bujirun.domain.itinerary.dto.request.UpdateItineraryRequest;
 import com.bujirun.bujirun.domain.itinerary.entity.Itinerary;
 import com.bujirun.bujirun.domain.itinerary.entity.ItineraryDay;
 import com.bujirun.bujirun.domain.itinerary.entity.ItineraryItem;
+import com.bujirun.bujirun.domain.itinerary.generate.dto.response.TransitOption;
+import com.bujirun.bujirun.domain.itinerary.generate.dto.response.TransitRouteResponse;
 import com.bujirun.bujirun.domain.itinerary.generate.service.SubwayScheduleMappingService;
 import com.bujirun.bujirun.domain.itinerary.generate.service.TransitRouteService;
 import com.bujirun.bujirun.domain.itinerary.optimize.dto.request.ItineraryOptimizeRequest;
@@ -26,6 +30,7 @@ import jakarta.persistence.EntityManager;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
+import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalTime;
 import java.util.ArrayList;
@@ -344,5 +349,62 @@ class ItineraryServiceTest {
                 .startAt(startAt).startTime(startTime)
                 .endAt(endAt).endTime(endTime)
                 .days(new ArrayList<>(List.of(day))).build();
+    }
+
+    // ── 구간 이동 요금 저장 ─────────────────────────────────────────
+    // 예전엔 itinerary_items에 요금 컬럼이 없어서 일정 조회 응답에 요금이 없었고, 프론트는
+    // 이동수단 옵션 API를 따로 부른 구간에서만 요금을 표시할 수 있었다.
+
+    @Test
+    void 이동수단을_바꾸면_선택한_경로의_요금을_저장하고_응답에_내려준다() {
+        ItineraryItem[] items = dayWithTwoItems(LocalTime.of(10, 0), LocalTime.of(12, 0), null);
+        ItineraryItem target = items[1];
+        when(itemRepository.findById(target.getId())).thenReturn(Optional.of(target));
+        when(transitRouteService.getRoutesForDay(any(), isNull(), any())).thenReturn(List.of(
+                new TransitRouteResponse(List.of(
+                        new TransitOption("버스", 53, 1600, 1, false, List.of()),
+                        new TransitOption("택시", 20, 9800, 0, true, List.of())))));
+
+        ItineraryItemResponse response = itineraryService.updateTravelMode(
+                itineraryId, dayId, target.getId(), new UpdateTravelModeRequest("bus"), userId);
+
+        assertThat(target.getTravelFare()).isEqualTo(1600);
+        assertThat(response.travelFare()).isEqualTo(1600);
+    }
+
+    @Test
+    void 택시_구간의_도착_시각이_바뀌면_소요시간과_요금을_함께_다시_계산한다() {
+        ItineraryItem[] items = dayWithTwoItems(LocalTime.of(10, 0), LocalTime.of(12, 0), "taxi");
+        ItineraryItem target = items[1];
+        when(transitRouteService.estimateTaxi(any(), any(), any()))
+                .thenReturn(new TransitOption("택시", 25, 11200, 0, true, List.of()));
+
+        itineraryService.updateItem(itineraryId, dayId, target.getId(),
+                new UpdateItemRequest(null, LocalTime.of(18, 0), null, null, null, null), userId);
+
+        assertThat(target.getTravelTimeMin()).isEqualTo(25);
+        assertThat(target.getTravelFare()).isEqualTo(11200);
+    }
+
+    // 직전 항목 → 대상 항목 두 개짜리 day를 실제 엔티티로 만든다. [0]=직전 항목, [1]=대상 항목
+    private ItineraryItem[] dayWithTwoItems(LocalTime prevArrival, LocalTime targetArrival, String targetTravelMode) {
+        Itinerary itinerary = Itinerary.builder().id(itineraryId).userId(userId).build();
+        ItineraryDay day = ItineraryDay.builder().id(dayId).dayNumber(1).itinerary(itinerary)
+                .date(LocalDate.of(2026, 9, 30)).items(new ArrayList<>()).build();
+        ItineraryItem prev = ItineraryItem.builder().id(UUID.randomUUID()).day(day)
+                .spot(spot("오륙도해맞이공원", "35.1003", "129.1244"))
+                .orderIndex(0).arrivalTime(prevArrival).build();
+        ItineraryItem target = ItineraryItem.builder().id(UUID.randomUUID()).day(day)
+                .spot(spot("황령산 전망대", "35.1576", "129.0831"))
+                .orderIndex(1).arrivalTime(targetArrival).travelMode(targetTravelMode)
+                .travelTimeMin(30).travelFare(9000).build();
+        day.getItems().addAll(List.of(prev, target));
+        when(dayRepository.findByIdForUpdate(dayId)).thenReturn(Optional.of(day));
+        return new ItineraryItem[]{prev, target};
+    }
+
+    private TourSpot spot(String name, String lat, String lng) {
+        return TourSpot.builder().id(UUID.randomUUID()).contentId(name).name(name)
+                .lat(new BigDecimal(lat)).lng(new BigDecimal(lng)).build();
     }
 }

@@ -1,6 +1,7 @@
 package com.bujirun.bujirun.global.util;
 
 import com.bujirun.bujirun.domain.itinerary.generate.dto.response.SubPath;
+import com.bujirun.bujirun.domain.itinerary.generate.dto.response.TransitOption;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -29,6 +30,13 @@ public class TransitRouteUtils {
             }
         }
         return result;
+    }
+
+    // 선택된 구간(leg)의 요금을 itinerary_items.travel_fare에 저장할 값으로 변환한다.
+    // 저장 경로(투표 확정/일정 추가/일정 교체/이동수단 변경/최적화)가 모두 이 메서드를 거친다.
+    // 구간이 없으면(첫 항목, 경로 조회 실패) 요금을 알 수 없으므로 null
+    public static Integer toTravelFare(TransitOption leg) {
+        return leg != null ? leg.totalFare() : null;
     }
 
     // ODsay/자체계산 TransitOption.type()의 한글 값을 DB travel_mode 허용값(walk/transit/taxi)으로 변환
