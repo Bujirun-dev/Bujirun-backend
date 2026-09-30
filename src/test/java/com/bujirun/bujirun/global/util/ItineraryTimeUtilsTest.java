@@ -118,4 +118,67 @@ class ItineraryTimeUtilsTest {
         assertThat(arrivals).containsExactly(LocalTime.of(9, 10), LocalTime.of(9, 20));
         assertThat(arrivals).allSatisfy(time -> assertThat(time.getMinute() % 10).isZero());
     }
+
+    // ── 확정 직후 기본 배치 (프론트 tests/itinerary-default-times.test.mjs와 같은 케이스) ──
+
+    private static LocalTime t(String hhmm) {
+        return LocalTime.parse(hhmm);
+    }
+
+    @Test
+    void 기본_배치는_10시부터_3시간_간격이다() {
+        assertThat(ItineraryTimeUtils.defaultVisitTimes(2, 3, 3, null, null))
+                .containsExactly(t("10:00"), t("13:00"), t("16:00"));
+        assertThat(ItineraryTimeUtils.defaultVisitTimes(2, 3, 1, null, null))
+                .containsExactly(t("10:00"));
+        assertThat(ItineraryTimeUtils.defaultVisitTimes(2, 3, 4, null, null))
+                .containsExactly(t("10:00"), t("13:00"), t("16:00"), t("19:00"));
+    }
+
+    @Test
+    void 첫날_여행_시작이_이르면_10시_늦으면_그_시각부터_3시간_간격() {
+        assertThat(ItineraryTimeUtils.defaultVisitTimes(1, 2, 2, t("08:00"), t("18:00")))
+                .containsExactly(t("10:00"), t("13:00"));
+        // 2026-09-30 사고 일정: 시작 09:40이어도 10:00부터 (예전엔 09:40 10:50 12:00처럼 이동시간 누적)
+        assertThat(ItineraryTimeUtils.defaultVisitTimes(1, 4, 3, t("09:40"), t("21:40")))
+                .containsExactly(t("10:00"), t("13:00"), t("16:00"));
+        assertThat(ItineraryTimeUtils.defaultVisitTimes(1, 2, 1, t("20:00"), t("18:00")))
+                .containsExactly(t("20:00"));
+        assertThat(ItineraryTimeUtils.defaultVisitTimes(1, 2, 2, t("20:00"), t("18:00")))
+                .containsExactly(t("20:00"), t("23:00"));
+    }
+
+    @Test
+    void 마지막_날은_여행_종료_시각을_넘지_않게_간격만_좁힌다() {
+        assertThat(ItineraryTimeUtils.defaultVisitTimes(2, 2, 3, t("10:00"), t("14:00")))
+                .containsExactly(t("10:00"), t("12:00"), t("14:00"));
+        // 종료 시각이 하루 시작보다 이르면 종료 시각에서 거꾸로 펼친다
+        assertThat(ItineraryTimeUtils.defaultVisitTimes(2, 2, 2, t("10:00"), t("09:00")))
+                .containsExactly(t("08:50"), t("09:00"));
+    }
+
+    @Test
+    void 여행_시작_종료가_자정이면_설정_안_된_것으로_본다() {
+        assertThat(ItineraryTimeUtils.defaultVisitTimes(1, 1, 3, LocalTime.MIDNIGHT, LocalTime.MIDNIGHT))
+                .containsExactly(t("10:00"), t("13:00"), t("16:00"));
+    }
+
+    @Test
+    void 기본_배치는_어떤_경계에서도_겹치지_않고_오름차순이며_23시50분을_넘지_않는다() {
+        List<String> stamps = List.of("00:00", "07:30", "10:00", "13:20", "18:00", "20:00", "23:30");
+        int[][] dayCases = {{1, 1}, {1, 3}, {2, 3}, {3, 3}};
+        for (String start : stamps) {
+            for (String end : stamps) {
+                for (int count = 1; count <= 8; count++) {
+                    for (int[] dayCase : dayCases) {
+                        List<LocalTime> result = ItineraryTimeUtils.defaultVisitTimes(
+                                dayCase[0], dayCase[1], count, t(start), t(end));
+                        String label = start + "~" + end + " " + count + "곳 day" + dayCase[0] + "/" + dayCase[1];
+                        assertThat(result).as(label).hasSize(count).doesNotHaveDuplicates().isSorted();
+                        assertThat(result.get(count - 1)).as(label).isBeforeOrEqualTo(ItineraryTimeUtils.LAST_SLOT_OF_DAY);
+                    }
+                }
+            }
+        }
+    }
 }
