@@ -34,6 +34,7 @@ import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.StringUtils;
 
 import java.time.LocalDate;
 import java.util.Comparator;
@@ -126,9 +127,7 @@ public class TravelLogService {
 
         // 대표 사진(=로그 썸네일)이 아직 없으면, 가장 먼저 방문(인증)한 관광지의 사진을 대표로 지정한다.
         // 사용자가 나중에 다른 사진을 대표로 바꾸면 그 값이 유지된다(setRepresentativePhoto).
-        Map<UUID, ItineraryItem> itemMap = allItems.stream()
-                .collect(Collectors.toMap(ItineraryItem::getId, i -> i));
-        assignDefaultThumbnail(log, logItemMap, visitedItemMap, itemMap);
+        assignDefaultThumbnail(log, logItemMap, visitedItemMap, allItems);
 
         return log;
     }
@@ -139,8 +138,12 @@ public class TravelLogService {
     // "가장 먼저 방문한 곳"이 아니라 "계획상 첫 번째 관광지"가 대표로 뽑히는 문제가 있었다.
     // 사용자가 찍은 인증사진이 하나도 없으면(가장 먼저 방문한 곳에도 사진이 없으면), 그 관광지
     // 자체의 기본 이미지(TourAPI 썸네일, 없으면 스와이프 큐레이션 이미지)로 대체한다.
+    // 방문 인증이 하나도 없으면(또는 그 관광지에 이미지가 없으면) 일정 순서상 이미지가 있는
+    // 첫 관광지로 대체한다 — 예전엔 인증한 관광지 안에서만 찾아서, 인증 없이 끝난 여행의 로그는
+    // 대표 사진이 비어 있었다(2026-09-30).
+    // allItems는 day → orderIndex 순서다(allItineraryItems).
     private void assignDefaultThumbnail(TravelLog log, Map<UUID, TravelLogItem> logItemMap,
-                                         Map<UUID, Visit> visitedItemMap, Map<UUID, ItineraryItem> itemMap) {
+                                         Map<UUID, Visit> visitedItemMap, List<ItineraryItem> allItems) {
         if (log.getThumbnailPhotoUrl() != null) return;
 
         Optional<Map.Entry<UUID, Visit>> earliestWithPhoto = visitedItemMap.entrySet().stream()
@@ -158,14 +161,30 @@ public class TravelLogService {
             return;
         }
 
-        visitedItemMap.entrySet().stream()
+        Map<UUID, ItineraryItem> itemMap = allItems.stream()
+                .collect(Collectors.toMap(ItineraryItem::getId, i -> i));
+        String firstVisitedImage = visitedItemMap.entrySet().stream()
                 .min(Comparator.comparing(entry -> entry.getValue().getVisitedAt()))
                 .map(entry -> itemMap.get(entry.getKey()))
-                .filter(Objects::nonNull)
-                .map(item -> item.getSpot())
-                .map(spot -> spot.getThumbnailUrl() != null ? spot.getThumbnailUrl() : spot.getSwipeImageUrl())
-                .filter(Objects::nonNull)
-                .ifPresent(log::updateThumbnail);
+                .map(item -> spotImageUrl(item.getSpot()))
+                .orElse(null);
+        String image = firstVisitedImage != null
+                ? firstVisitedImage
+                : allItems.stream()
+                        .map(item -> spotImageUrl(item.getSpot()))
+                        .filter(Objects::nonNull)
+                        .findFirst()
+                        .orElse(null);
+        if (image != null) log.updateThumbnail(image);
+    }
+
+    // 관광지 대표 이미지 — TourAPI 썸네일, 없으면 스와이프 큐레이션 이미지.
+    // tour_spots.thumbnail_url에는 NULL이 아니라 빈 문자열('')로 들어간 관광지가 있어서
+    // (2026-09-29 확인, 19곳) null만 보면 빈 값이 대표 사진으로 저장된다 — 공백도 없는 값으로 본다.
+    private static String spotImageUrl(TourSpot spot) {
+        if (spot == null) return null;
+        if (StringUtils.hasText(spot.getThumbnailUrl())) return spot.getThumbnailUrl();
+        return StringUtils.hasText(spot.getSwipeImageUrl()) ? spot.getSwipeImageUrl() : null;
     }
 
     public TravelLogDetailResponse getDetail(UUID logId, UUID userId) {
@@ -389,7 +408,7 @@ public class TravelLogService {
 
         // 관광지 둘러보기 화면 썸네일 폴백용 — 이 관광지의 대표 이미지(TourAPI 썸네일, 없으면 스와이프 큐레이션 이미지)
         String spotFallbackImage = tourSpotRepository.findById(spotId)
-                .map(s -> s.getThumbnailUrl() != null ? s.getThumbnailUrl() : s.getSwipeImageUrl())
+                .map(TravelLogService::spotImageUrl)
                 .orElse(null);
         Set<UUID> thisSpotItineraryItemIds = new HashSet<>(itemIds);
 
