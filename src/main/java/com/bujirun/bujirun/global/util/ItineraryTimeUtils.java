@@ -71,6 +71,54 @@ public final class ItineraryTimeUtils {
         return tripBound != null && !tripBound.equals(LocalTime.MIDNIGHT);
     }
 
+    /** 확정 직후 기본 배치: 하루 시작 시각 */
+    private static final int DEFAULT_VISIT_DAY_START_MINUTE = 10 * 60;
+    /** 확정 직후 기본 배치: 항목 간격 */
+    private static final int DEFAULT_VISIT_GAP_MINUTES = 3 * 60;
+
+    /**
+     * 투표 확정 직후의 기본 방문 시각 — 10:00부터 3시간 간격(추천 화면에서 보여준 시각).
+     * 프론트 scheduleUtils.getDefaultDayMinutes와 같은 규칙이다.
+     *  - 첫날은 여행 시작 시각이 10:00보다 늦으면 그 시각부터 시작한다.
+     *  - 마지막 날은 여행 종료 시각을 넘지 않도록 간격을 좁히고(최소 10분), 그래도 넘치면 하루를 앞당긴다.
+     *  - 관광지가 1곳이면 시작 시각 그대로.
+     * 예전엔 확정 때 이동시간 기준 시각을 저장하고, 방장 화면이 뒤이어 항목별 PATCH로 이 시각으로
+     * 바꿨다. 그 사이 다른 참여자가 일정을 열면 PATCH 전 시각으로 Yjs가 시딩되고, node-yjs flush가
+     * 그 값을 다시 저장해서 기본 시각이 덮어써졌다(2026-09-30). 그래서 확정 시점에 바로 이 값을 저장한다.
+     */
+    public static List<LocalTime> defaultVisitTimes(int dayNumber, int totalDays, int itemCount,
+                                                    LocalTime tripStartTime, LocalTime tripEndTime) {
+        if (itemCount <= 0) return List.of();
+
+        boolean firstDay = dayNumber <= 1;
+        boolean lastDay = totalDays <= 0 || dayNumber >= totalDays;
+        int lastSlot = toMinuteOfDay(LAST_SLOT_OF_DAY);
+
+        int lower = DEFAULT_VISIT_DAY_START_MINUTE;
+        if (firstDay && isSet(tripStartTime)) lower = Math.max(lower, toMinuteOfDay(tripStartTime));
+        int ceiling = (lastDay && isSet(tripEndTime)) ? Math.min(toMinuteOfDay(tripEndTime), lastSlot) : lastSlot;
+
+        if (itemCount == 1) return List.of(toLocalTime(Math.max(0, Math.min(lower, ceiling))));
+
+        int gap = DEFAULT_VISIT_GAP_MINUTES;
+        int span = ceiling - lower;
+        if (span < gap * (itemCount - 1)) {
+            gap = Math.max(MIN_GAP_MINUTES, roundToSlot((double) span / (itemCount - 1)));
+        }
+        lower = Math.max(0, Math.min(lower, ceiling - gap * (itemCount - 1)));
+
+        List<LocalTime> result = new ArrayList<>(itemCount);
+        for (int i = 0; i < itemCount; i++) {
+            result.add(toLocalTime(Math.min(lastSlot, roundToSlot(lower + (double) gap * i))));
+        }
+        return result;
+    }
+
+    // 프론트 roundToNearest10과 같은 반올림 — JS Math.round와 Java Math.round는 둘 다 floor(x + 0.5)다
+    private static int roundToSlot(double minutes) {
+        return (int) Math.round(minutes / SLOT_MINUTES) * SLOT_MINUTES;
+    }
+
     /**
      * 시작 시각에서 항목 사이 간격(체류 시간 + 구간 이동 시간)을 누적해 도착 시각 목록을 만든다.
      * 결과 개수는 gapMinutes.size() + 1 (첫 항목은 시작 시각 그 자체).
