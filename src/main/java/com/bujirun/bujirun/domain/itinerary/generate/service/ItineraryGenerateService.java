@@ -53,6 +53,7 @@ public class ItineraryGenerateService {
     private static final int MAX_ACTIVITY_HOURS = 16; // 하루 최대 활동시간 상한
     private static final int DEFAULT_ACTIVITY_HOURS = 12; // 추가: activityHours 미입력 시 기본값 (09:00~21:00 기준)
     private static final int MIN_PLAN_DIFF_SPOTS = 3; // 추가: 그룹 일정 생성 시 planA/planB 최소 차별화 스팟 수 (다양성 규칙)
+    private static final int MAX_CANDIDATE_SPOTS = 30; // 좋아요한 곳 + 카테고리 후보를 합친 후보 관광지 목표 개수
 
     @Transactional(readOnly = true)
     public ItineraryGenerateResponse generateItinerary(SwipeRequest request, UUID userId) {
@@ -135,7 +136,7 @@ public class ItineraryGenerateService {
         // 좋아요 중심 좌표 기준 거리 필터링 (반경 단계적으로 확대)
         List<TourSpot> categorySpots = filterByRadiusWithFallback(filteredByCategory, centerLat, centerLng)
                 .stream()
-                .limit(30 - likedSpots.size())
+                .limit(remainingCandidateSlots(likedSpots.size()))
                 .toList();
 
         // 좋아요한 곳 + 거리 필터링된 카테고리 후보 합치기
@@ -183,6 +184,13 @@ public class ItineraryGenerateService {
                 activityHours, request.getOptimizationType());
 
         return response;
+    }
+
+    // 좋아요한 곳을 뺀 나머지 후보 자리 수. 그룹은 멤버들의 좋아요를 합치므로 30곳을 넘을 수 있는데,
+    // 그대로 빼면 음수가 되어 Stream.limit(-1)이 IllegalArgumentException("-1")을 던지고 일정 생성이
+    // 400으로 실패했다(2026-09-30, liked=31). 넘치면 추가 후보 없이 좋아요한 곳만으로 만든다.
+    static long remainingCandidateSlots(int likedCount) {
+        return Math.max(0, MAX_CANDIDATE_SPOTS - likedCount);
     }
 
     // 활동시간 계산
